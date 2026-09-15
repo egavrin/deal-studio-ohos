@@ -1,0 +1,8 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/ProjectPage",
+    "pages/RunnerPage",
+    "pages/GeneratePage"
+  ]
+}

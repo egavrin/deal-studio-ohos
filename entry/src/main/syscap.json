@@ -1,0 +1,18 @@
+{
+    "devices": {
+        "general": [
+            "default"
+        ],
+        "custom": [
+            {
+                "default": [
+                    "SystemCapability.Ability.AbilityRuntime.Core",
+                    "SystemCapability.Multimedia.Audio.Renderer",
+                    "SystemCapability.FileManagement.File.FileIO",
+                    "SystemCapability.ArkCompiler.ANI",
+                    "SystemCapability.Multimedia.Media.AVPlayer"
+                ]
+            }
+        ]
+    }
+}

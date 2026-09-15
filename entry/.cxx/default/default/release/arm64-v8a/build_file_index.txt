@@ -1,0 +1,1 @@
+/home/stanislav/work/vera/vera-probe-dynamic/entry/src/main/cpp/CMakeLists.txt

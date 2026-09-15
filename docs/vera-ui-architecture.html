@@ -1,0 +1,537 @@
+<title>VERA-L UI Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #f0efed;
+    --surface-raised: #e8e6e3;
+    --border: #d4d0cb;
+    --text: #1c1917;
+    --text-secondary: #57534e;
+    --text-muted: #78716c;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --green: #15803d;
+    --green-soft: #dcfce7;
+    --orange: #b45309;
+    --orange-soft: #fef3c7;
+    --purple: #6d28d9;
+    --purple-soft: #ede9fe;
+    --red-soft: #fee2e2;
+    --code-bg: #292524;
+    --code-text: #e7e5e4;
+    --code-comment: #78716c;
+    --code-keyword: #93c5fd;
+    --code-string: #86efac;
+    --code-type: #c4b5fd;
+    --code-fn: #fcd34d;
+    --diagram-bg: #fafaf9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1917;
+      --surface: #252420;
+      --surface-raised: #302e29;
+      --border: #44403c;
+      --text: #e7e5e4;
+      --text-secondary: #a8a29e;
+      --text-muted: #78716c;
+      --accent: #60a5fa;
+      --accent-soft: #1e3a5f;
+      --green: #4ade80;
+      --green-soft: #14291e;
+      --orange: #fbbf24;
+      --orange-soft: #2a2010;
+      --purple: #a78bfa;
+      --purple-soft: #1f1635;
+      --red-soft: #3b1c1c;
+      --code-bg: #1c1b19;
+      --code-text: #d6d3d1;
+      --diagram-bg: #1a1917;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1917;
+    --surface: #252420;
+    --surface-raised: #302e29;
+    --border: #44403c;
+    --text: #e7e5e4;
+    --text-secondary: #a8a29e;
+    --text-muted: #78716c;
+    --accent: #60a5fa;
+    --accent-soft: #1e3a5f;
+    --green: #4ade80;
+    --green-soft: #14291e;
+    --orange: #fbbf24;
+    --orange-soft: #2a2010;
+    --purple: #a78bfa;
+    --purple-soft: #1f1635;
+    --red-soft: #3b1c1c;
+    --code-bg: #1c1b19;
+    --code-text: #d6d3d1;
+    --diagram-bg: #1a1917;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.65;
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin: 0 0 48px;
+    max-width: 540px;
+  }
+
+  h2 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 56px 0 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 32px 0 12px;
+    color: var(--text);
+  }
+
+  p {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin: 0 0 16px;
+    max-width: 640px;
+  }
+
+  .stage {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 0 16px;
+    margin: 28px 0;
+    position: relative;
+  }
+
+  .stage-num {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .stage-num.s1 { background: var(--green-soft); color: var(--green); }
+  .stage-num.s2 { background: var(--accent-soft); color: var(--accent); }
+  .stage-num.s3 { background: var(--purple-soft); color: var(--purple); }
+  .stage-num.s4 { background: var(--orange-soft); color: var(--orange); }
+  .stage-num.s5 { background: var(--red-soft); color: var(--accent); }
+
+  .stage-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    padding-top: 7px;
+    color: var(--text);
+  }
+
+  .stage-body {
+    grid-column: 2;
+  }
+
+  .stage-body p {
+    margin: 8px 0 0;
+    font-size: 14px;
+  }
+
+  .connector {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    justify-content: center;
+    padding: 4px 0;
+  }
+  .connector::before {
+    content: '';
+    width: 2px;
+    height: 100%;
+    background: var(--border);
+    border-radius: 1px;
+  }
+
+  code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 20px 24px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+    color: inherit;
+  }
+
+  .kw { color: var(--code-keyword); }
+  .str { color: var(--code-string); }
+  .tp { color: var(--code-type); }
+  .fn { color: var(--code-fn); }
+  .cm { color: var(--code-comment); }
+
+  .mapping-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 16px 0;
+  }
+  .mapping-table th {
+    text-align: left;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    border-bottom: 2px solid var(--border);
+  }
+  .mapping-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-secondary);
+    vertical-align: top;
+  }
+  .mapping-table td:first-child { color: var(--text); font-weight: 500; }
+
+  .diagram-wrap {
+    background: var(--diagram-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 24px 0;
+    overflow-x: auto;
+  }
+  .diagram-wrap svg {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .decisions {
+    display: grid;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .decision {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 16px 20px;
+  }
+  .decision strong {
+    display: block;
+    font-size: 14px;
+    margin-bottom: 4px;
+    color: var(--text);
+  }
+  .decision p {
+    font-size: 13px;
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .loop-diagram {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+  }
+  .loop-box {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .loop-arrow {
+    color: var(--text-muted);
+    font-size: 16px;
+  }
+  .lb-state { background: var(--green-soft); color: var(--green); }
+  .lb-view { background: var(--accent-soft); color: var(--accent); }
+  .lb-decode { background: var(--purple-soft); color: var(--purple); }
+  .lb-arkui { background: var(--orange-soft); color: var(--orange); }
+  .lb-tap { background: var(--surface-raised); color: var(--text-secondary); }
+</style>
+
+<h1>VERA-L UI over ArkUI</h1>
+<p class="subtitle">How pure VERA-L functions produce native HarmonyOS interfaces through a five-stage pipeline with no direct ArkUI access.</p>
+
+<div class="diagram-wrap">
+<svg viewBox="0 0 720 370" xmlns="http://www.w3.org/2000/svg" role="img" style="font-family: 'IBM Plex Mono', monospace;">
+  <title>VERA-L to ArkUI pipeline</title>
+  <defs>
+    <marker id="a" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+      <path d="M0,0 L7,2.5 L0,5" fill="var(--text-muted)" />
+    </marker>
+    <marker id="ab" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+      <path d="M0,0 L7,2.5 L0,5" fill="var(--orange)" />
+    </marker>
+  </defs>
+
+  <!-- Stage 1: VERA-L functions -->
+  <rect x="10" y="12" width="700" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+  <text x="24" y="32" font-size="10" font-weight="600" fill="var(--text-muted)" letter-spacing="0.5">VERA-L PROGRAM</text>
+  <rect x="24" y="42" width="120" height="26" rx="4" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1"/>
+  <text x="84" y="59" text-anchor="middle" font-size="11" font-weight="600" fill="var(--green)">init()</text>
+  <line x1="148" y1="55" x2="170" y2="55" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#a)"/>
+  <rect x="174" y="42" width="180" height="26" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1"/>
+  <text x="264" y="59" text-anchor="middle" font-size="11" font-weight="600" fill="var(--accent)">view(state) → ui.View</text>
+  <rect x="400" y="42" width="200" height="26" rx="4" fill="var(--orange-soft)" stroke="var(--orange)" stroke-width="1"/>
+  <text x="500" y="59" text-anchor="middle" font-size="11" font-weight="600" fill="var(--orange)">handler(state, val)</text>
+
+  <!-- Arrow down -->
+  <line x1="360" y1="76" x2="360" y2="98" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#a)"/>
+
+  <!-- Stage 2: VM -->
+  <rect x="100" y="100" width="520" height="44" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+  <text x="360" y="118" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text)">VM executes view(state)</text>
+  <text x="360" y="134" text-anchor="middle" font-size="10" fill="var(--text-muted)">UiHostEnvironment builds VeraObjectValue tree</text>
+
+  <!-- Arrow down -->
+  <line x1="360" y1="144" x2="360" y2="166" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#a)"/>
+
+  <!-- Stage 3: decode -->
+  <rect x="160" y="168" width="400" height="36" rx="6" fill="var(--purple-soft)" stroke="var(--purple)" stroke-width="1"/>
+  <text x="360" y="191" text-anchor="middle" font-size="11" font-weight="600" fill="var(--purple)">decodeVeraUi() → VeraUiNode[]</text>
+
+  <!-- Arrow down -->
+  <line x1="360" y1="204" x2="360" y2="226" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#a)"/>
+
+  <!-- Stage 4: ArkUI render -->
+  <rect x="140" y="228" width="440" height="36" rx="6" fill="var(--orange-soft)" stroke="var(--orange)" stroke-width="1"/>
+  <text x="360" y="251" text-anchor="middle" font-size="11" font-weight="600" fill="var(--orange)">@Builder renderNode() → ArkUI components</text>
+
+  <!-- Arrow down to screen -->
+  <line x1="360" y1="264" x2="360" y2="286" stroke="var(--text-muted)" stroke-width="1.2" marker-end="url(#a)"/>
+
+  <!-- Screen -->
+  <rect x="300" y="288" width="120" height="36" rx="6" fill="var(--surface-raised)" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="360" y="311" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">Screen</text>
+
+  <!-- Interaction loop arrow: screen → handler → state → view -->
+  <line x1="420" y1="306" x2="660" y2="306" stroke="var(--orange)" stroke-width="1.2"/>
+  <line x1="660" y1="306" x2="660" y2="55" stroke="var(--orange)" stroke-width="1.2"/>
+  <line x1="660" y1="55" x2="604" y2="55" stroke="var(--orange)" stroke-width="1.2" marker-end="url(#ab)"/>
+  <text x="668" y="182" font-size="9" fill="var(--orange)" transform="rotate(90 668 182)">onClick(action, val)</text>
+
+  <!-- handler → state arrow -->
+  <line x1="400" y1="44" x2="400" y2="20" stroke="var(--orange)" stroke-width="1.2"/>
+  <line x1="400" y1="20" x2="170" y2="20" stroke="var(--orange)" stroke-width="1.2"/>
+  <line x1="170" y1="20" x2="170" y2="40" stroke="var(--orange)" stroke-width="1.2" marker-end="url(#ab)"/>
+  <text x="285" y="16" text-anchor="middle" font-size="9" fill="var(--orange)">new AppState</text>
+
+  <!-- Labels -->
+  <text x="12" y="130" font-size="9" fill="var(--text-muted)">2</text>
+  <text x="148" y="191" font-size="9" fill="var(--text-muted)">3</text>
+  <text x="128" y="251" font-size="9" fill="var(--text-muted)">4</text>
+  <text x="288" y="311" font-size="9" fill="var(--text-muted)">5</text>
+</svg>
+</div>
+
+<h2>Pipeline stages</h2>
+
+<div class="stage">
+  <div class="stage-num s1">1</div>
+  <div class="stage-title">Pure functions</div>
+  <div class="connector"></div>
+  <div class="stage-body">
+    <p>A VERA-L program defines three things: <code>init()</code> returns the initial <code>AppState</code>, <code>view(state)</code> builds a UI tree from <code>ui.*</code> constructors, and one or more handlers like <code>change(state, val)</code> return a new state without mutation. These are ordinary functions — no framework hooks, no lifecycle, no side effects.</p>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="stage-num s2">2</div>
+  <div class="stage-title">VM execution</div>
+  <div class="connector"></div>
+  <div class="stage-body">
+    <p>The VBC2 VM calls <code>view(state)</code>. Calls like <code>ui.Column("spacious", [...])</code> dispatch to <code>UiHostEnvironment</code>, which doesn't render anything — it builds <code>VeraObjectValue</code> nodes with fields like <code>{type: "button", action: "change", value: 1}</code>. The result is a pure data tree of <code>RuntimeValue</code> objects.</p>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="stage-num s3">3</div>
+  <div class="stage-title">decodeVeraUi()</div>
+  <div class="connector"></div>
+  <div class="stage-body">
+    <p>Walks the <code>RuntimeValue</code> tree and flattens each node into a <code>VeraUiNode</code> — a typed struct with concrete fields (<code>kind</code>, <code>style</code>, <code>text</code>, <code>action</code>, <code>eventValue</code>, <code>enabled</code>, <code>children</code>). This is where the generic <code>Map&lt;string, RuntimeValue&gt;</code> becomes a shape ArkUI can consume.</p>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="stage-num s4">4</div>
+  <div class="stage-title">@Builder renderNode()</div>
+  <div class="connector"></div>
+  <div class="stage-body">
+    <p>In <code>RunnerPage.ets</code>, a single <code>@Builder</code> switches on <code>node.kind</code> and emits the corresponding ArkUI declarative component. Styles map to ArkUI properties — a closed set, not arbitrary CSS.</p>
+
+    <table class="mapping-table">
+      <thead><tr><th>kind</th><th>ArkUI component</th><th>Style applied via</th></tr></thead>
+      <tbody>
+        <tr><td>"column"</td><td>Column()</td><td>.padding, .alignItems</td></tr>
+        <tr><td>"row"</td><td>Row()</td><td>.justifyContent</td></tr>
+        <tr><td>"text"</td><td>Text(node.text)</td><td>.fontSize, .fontColor</td></tr>
+        <tr><td>"button"</td><td>Button(node.text)</td><td>.onClick → handleAction</td></tr>
+        <tr><td>"card"</td><td>Column().bg().radius()</td><td>.backgroundColor(variant)</td></tr>
+        <tr><td>"cell"</td><td>Row()</td><td>tap row style</td></tr>
+        <tr><td>"spacer"</td><td>Blank()</td><td>height</td></tr>
+        <tr><td>"image"</td><td>Image(node.source)</td><td>.objectFit</td></tr>
+        <tr><td>"scroll"</td><td>Scroll()</td><td>nested children</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="stage-num s5">5</div>
+  <div class="stage-title">Interaction loop</div>
+  <div class="connector"></div>
+  <div class="stage-body">
+    <p>When the user taps a Button or Cell, ArkUI's <code>onClick</code> fires <code>handleAction(node.action, node.eventValue)</code>. This calls the named handler via the VM, which returns a new <code>AppState</code>. The <code>@State</code> update triggers a reactive rebuild — the whole tree is replaced, no diffing.</p>
+
+    <div class="loop-diagram">
+      <span class="loop-box lb-state">@State</span>
+      <span class="loop-arrow">→</span>
+      <span class="loop-box lb-view">view()</span>
+      <span class="loop-arrow">→</span>
+      <span class="loop-box lb-decode">decode</span>
+      <span class="loop-arrow">→</span>
+      <span class="loop-box lb-arkui">ArkUI</span>
+      <span class="loop-arrow">→</span>
+      <span class="loop-box lb-tap">tap</span>
+      <span class="loop-arrow">→</span>
+      <span class="loop-box lb-arkui">handler()</span>
+      <span class="loop-arrow">→</span>
+      <span class="loop-box lb-state">new state</span>
+    </div>
+  </div>
+</div>
+
+<h2>Pseudo-code</h2>
+
+<h3>VERA-L program (user-authored)</h3>
+<pre><code><span class="kw">import</span> * <span class="kw">as</span> ui <span class="kw">from</span> <span class="str">"std/ui"</span>
+
+<span class="cm">@jsonable</span>
+<span class="kw">class</span> <span class="tp">AppState</span> {
+  count: <span class="tp">int</span>;
+}
+
+<span class="kw">function</span> <span class="fn">init</span>(): <span class="tp">AppState</span> {
+  <span class="kw">return</span> {count: 0};
+}
+
+<span class="kw">function</span> <span class="fn">change</span>(state: <span class="tp">AppState</span>, amount: <span class="tp">int</span>): <span class="tp">AppState</span> {
+  <span class="kw">return</span> {count: state.count + amount};
+}
+
+<span class="kw">function</span> <span class="fn">view</span>(state: <span class="tp">AppState</span>): <span class="tp">ui.View</span> {
+  <span class="kw">return</span> ui.<span class="fn">Column</span>(<span class="str">"spacious"</span>, [
+    ui.<span class="fn">Text</span>(<span class="str">"title"</span>, <span class="str">"Counter"</span>),
+    ui.<span class="fn">Text</span>(<span class="str">"metric"</span>, ui.<span class="fn">intToString</span>(state.count)),
+    ui.<span class="fn">Row</span>(<span class="str">"spacious"</span>, [
+      ui.<span class="fn">Button</span>(<span class="str">"secondary"</span>, <span class="str">"-"</span>, <span class="str">"change"</span>, -1, <span class="kw">true</span>),
+      ui.<span class="fn">Button</span>(<span class="str">"primary"</span>,   <span class="str">"+"</span>, <span class="str">"change"</span>,  1, <span class="kw">true</span>)
+    ])
+  ]);
+}</code></pre>
+
+<h3>Host side (ArkTS, simplified)</h3>
+<pre><code><span class="cm">// RunnerPage.ets — simplified pseudo-code</span>
+
+<span class="cm">@State</span> currentState: <span class="tp">RuntimeValue</span> = vm.<span class="fn">execute</span>(<span class="str">"init"</span>, [])
+<span class="cm">@State</span> nodes: <span class="tp">VeraUiNode</span>[] = <span class="fn">decodeVeraUi</span>(
+  vm.<span class="fn">execute</span>(<span class="str">"view"</span>, [currentState])
+)
+
+<span class="fn">handleAction</span>(action: <span class="tp">string</span>, value: <span class="tp">number</span>) {
+  <span class="kw">let</span> intVal = <span class="kw">new</span> <span class="tp">VeraIntValue</span>(value)
+  <span class="kw">let</span> newState = vm.<span class="fn">execute</span>(action, [currentState, intVal])
+  currentState = newState
+  nodes = <span class="fn">decodeVeraUi</span>(vm.<span class="fn">execute</span>(<span class="str">"view"</span>, [newState]))
+}
+
+<span class="cm">@Builder</span> <span class="fn">renderNode</span>(node: <span class="tp">VeraUiNode</span>) {
+  <span class="kw">switch</span> (node.kind) {
+    <span class="kw">case</span> <span class="str">"column"</span>:
+      Column() { ForEach(node.children, child => <span class="fn">renderNode</span>(child)) }
+    <span class="kw">case</span> <span class="str">"text"</span>:
+      Text(node.text).<span class="fn">fontSize</span>(<span class="fn">styleToSize</span>(node.style))
+    <span class="kw">case</span> <span class="str">"button"</span>:
+      Button(node.text)
+        .<span class="fn">onClick</span>(() => <span class="fn">handleAction</span>(node.action, node.eventValue))
+        .<span class="fn">enabled</span>(node.enabled)
+  }
+}</code></pre>
+
+<h2>Design decisions</h2>
+
+<div class="decisions">
+  <div class="decision">
+    <strong>VERA-L never sees ArkUI</strong>
+    <p>The <code>ui.*</code> functions in the VM just build value objects. All rendering is in one <code>@Builder</code> in RunnerPage — a single, mechanical mapping layer.</p>
+  </div>
+  <div class="decision">
+    <strong>No diffing</strong>
+    <p>Every state change rebuilds the full view tree. VERA-L programs stay under 80 nodes, so this is fast and avoids reconciliation complexity.</p>
+  </div>
+  <div class="decision">
+    <strong>Actions are strings</strong>
+    <p><code>ui.Button("primary", "+", "change", 1, true)</code> stores the handler name <code>"change"</code> as a string. On tap, RunnerPage looks up and calls the VM function by name.</p>
+  </div>
+  <div class="decision">
+    <strong>State is opaque</strong>
+    <p>RunnerPage holds <code>currentState</code> as a <code>RuntimeValue</code> — it never inspects or modifies it. Only VERA-L handlers produce new state.</p>
+  </div>
+  <div class="decision">
+    <strong>Styles are a closed set</strong>
+    <p>Each component kind has a fixed set of allowed style names (Button: <code>primary</code>, <code>secondary</code>, <code>success</code>, <code>danger</code>). The <code>@Builder</code> maps these to ArkUI properties. No CSS, no arbitrary styling.</p>
+  </div>
+</div>

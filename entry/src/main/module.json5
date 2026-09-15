@@ -1,0 +1,80 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    "deviceTypes": ["default"],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    // INTERNET is for the model. The other four are what std/intent needs, and
+    // they are granted by the signing profile or not at all -- they are
+    // system_grant, so there is no runtime request and no reason/usedScene.
+    //
+    //   ohos.permission.EXECUTE_INSIGHT_INTENT            system_basic, every execute()
+    //   ohos.permission.START_INVISIBLE_ABILITY           system_core, target not exported
+    //   ohos.permission.ABILITY_BACKGROUND_COMMUNICATION  system_basic, UI_ABILITY_BACKGROUND
+    //   ohos.permission.GET_BUNDLE_INFO_PRIVILEGED        system_basic, getInsightIntentInfo*
+    //
+    // These four MUST be signed with signing/UnsgnedReleasedProfileTemplate.json
+    // via ./sign-system.sh. A plain arkui-sign build cannot carry them, and the
+    // device does not ignore the ones it cannot grant -- it refuses the install:
+    //
+    //   error: install failed due to grant request permissions failed.
+    //   PermissionName: ohos.permission.ABILITY_BACKGROUND_COMMUNICATION
+    //
+    // which makes the install itself the test of whether the profile was
+    // accepted.
+    // READ_CALENDAR and WRITE_CALENDAR are normal level but user_grant, so
+    // unlike the four below they are NOT granted by the signature: they need a
+    // runtime request, which VeraCalendar.requestCalendarPermissions makes at
+    // startup, and reason/usedScene are mandatory for them. reason must be a
+    // $string resource, never a literal.
+    "requestPermissions": [
+      { "name": "ohos.permission.INTERNET" },
+      {
+        "name": "ohos.permission.READ_CALENDAR",
+        "reason": "$string:read_calendar_reason",
+        "usedScene": { "abilities": ["EntryAbility"], "when": "inuse" }
+      },
+      {
+        "name": "ohos.permission.WRITE_CALENDAR",
+        "reason": "$string:write_calendar_reason",
+        "usedScene": { "abilities": ["EntryAbility"], "when": "inuse" }
+      },
+      { "name": "ohos.permission.EXECUTE_INSIGHT_INTENT" },
+      { "name": "ohos.permission.START_INVISIBLE_ABILITY" },
+      { "name": "ohos.permission.ABILITY_BACKGROUND_COMMUNICATION" },
+      { "name": "ohos.permission.GET_BUNDLE_INFO_PRIVILEGED" }
+    ],
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "skills": [
+          { "entities": ["entity.system.home"], "actions": ["action.system.home"] }
+        ]
+      }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "VeraFormAbility",
+        "srcEntry": "./ets/formability/VeraFormAbility.ets",
+        "type": "form",
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
+      }
+    ]
+  }
+}

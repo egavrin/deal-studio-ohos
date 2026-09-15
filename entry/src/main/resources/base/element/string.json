@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Generates and runs VERA-L programs on the device"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "VERA program library, generator and runner"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "VERA"
+    },
+    {
+      "name": "read_calendar_reason",
+      "value": "Read your calendar so a generated app can show what is already scheduled"
+    },
+    {
+      "name": "write_calendar_reason",
+      "value": "Add reminders to your calendar when a generated app asks"
+    }
+  ]
+}
