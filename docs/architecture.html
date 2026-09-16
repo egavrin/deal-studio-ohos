@@ -293,8 +293,125 @@
   </section>
 
   <section>
+    <h2>Two worlds, and the seam between them</h2>
+    <p><strong>ArkUI is HarmonyOS's own UI framework.</strong> It owns the native components, the layout
+      pass and the pixels on the glass. It is not something we wrote, and it is not a browser.</p>
+    <p><strong>The machine is ours, and it is sealed.</strong> It runs bytecode a language model wrote, and
+      it holds no handle to anything the system owns — no component, no screen, no clock, no socket. The
+      only thing it can produce is data.</p>
+    <p>Between the two sits one component of ours. Everything a generated program will ever put on screen
+      passes through it, and the traffic across it is asymmetric: a screen described as data goes one way,
+      a handler name and a single value come back the other.</p>
+    <figure style="margin-top:20px">
+      <div class="scroller">
+        <svg class="diagram" viewBox="0 0 1040 360" role="img"
+             aria-label="Three columns: the program and the machine that runs it, sealed off from the system; our renderer, which decodes the description, holds what ArkUI watches and turns a tap into a call; and ArkUI itself, owned by HarmonyOS. Data crosses rightward, and the only leftward call from ArkUI is the one that runs our code">
+          <defs>
+            <marker id="f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,1 L9,5 L0,9 z" fill="var(--signal)"/></marker>
+            <marker id="f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,1 L9,5 L0,9 z" fill="var(--muted)"/></marker>
+            <marker id="f3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,1 L9,5 L0,9 z" fill="var(--warn)"/></marker>
+          </defs>
+
+          <text class="lane" x="40" y="24">OURS · SEALED</text>
+          <text class="lane" x="390" y="24">OURS · THE SEAM</text>
+          <text class="lane" x="790" y="24">HARMONYOS · NOT OURS</text>
+
+          <line class="divider" x1="705" y1="16" x2="705" y2="112"/>
+          <line class="divider" x1="705" y1="272" x2="705" y2="344"/>
+
+          <rect class="ghost" x="40" y="40" width="200" height="56"/>
+          <text class="t" x="140" y="66" text-anchor="middle">Program</text>
+          <text class="s" x="140" y="86" text-anchor="middle">written by the model</text>
+          <path class="edge" d="M140,96 L140,118"/>
+
+          <rect class="box" x="40" y="120" width="200" height="130"/>
+          <text class="t" x="140" y="166" text-anchor="middle">Machine</text>
+          <text class="s" x="140" y="192" text-anchor="middle">runs the bytecode</text>
+          <text class="s" x="140" y="212" text-anchor="middle">returns data only</text>
+          <text class="s" x="140" y="286" text-anchor="middle">no system handle · no screen</text>
+          <text class="s" x="140" y="304" text-anchor="middle">no clock · no socket</text>
+
+          <rect class="box" x="390" y="40" width="230" height="250"/>
+          <text class="t" x="505" y="72" text-anchor="middle">Renderer</text>
+          <text class="s" x="505" y="92" text-anchor="middle">one component</text>
+          <rect class="box-soft" x="410" y="112" width="190" height="44"/>
+          <text class="s" x="505" y="139" text-anchor="middle">decode the description</text>
+          <rect class="box-soft" x="410" y="166" width="190" height="44"/>
+          <text class="s" x="505" y="193" text-anchor="middle">hold what ArkUI watches</text>
+          <rect class="box-soft" x="410" y="220" width="190" height="44"/>
+          <text class="s" x="505" y="247" text-anchor="middle">turn a tap into a call</text>
+          <text class="s" x="505" y="314" text-anchor="middle">38 component kinds, one theme,</text>
+          <text class="s" x="505" y="332" text-anchor="middle">and no way to draw outside them</text>
+
+          <rect class="box" x="790" y="40" width="210" height="250"/>
+          <text class="t" x="895" y="76" text-anchor="middle">ArkUI</text>
+          <text class="s" x="895" y="100" text-anchor="middle">HarmonyOS's own</text>
+          <text class="s" x="895" y="118" text-anchor="middle">UI framework</text>
+          <path class="edge" d="M815,140 L975,140"/>
+          <text class="s" x="895" y="172" text-anchor="middle">native components</text>
+          <text class="s" x="895" y="194" text-anchor="middle">layout and pixels</text>
+          <text class="s" x="895" y="216" text-anchor="middle">text input</text>
+          <text class="s" x="895" y="238" text-anchor="middle">accessibility</text>
+          <text class="s" x="895" y="270" text-anchor="middle">not our code</text>
+
+          <path class="flow" marker-end="url(#f1)" d="M240,150 L386,150"/>
+          <text class="e" x="313" y="128" text-anchor="middle">a screen, described</text>
+          <text class="e" x="313" y="142" text-anchor="middle">as plain data</text>
+
+          <path class="back" marker-end="url(#f2)" d="M386,230 L244,230"/>
+          <text class="s" x="315" y="250" text-anchor="middle">a handler name</text>
+          <text class="s" x="315" y="264" text-anchor="middle">and one value</text>
+
+          <path class="flow" marker-end="url(#f1)" d="M620,150 L786,150"/>
+          <text class="e" x="703" y="128" text-anchor="middle">writes into what</text>
+          <text class="e" x="703" y="142" text-anchor="middle">ArkUI is watching</text>
+
+          <path class="gate" marker-end="url(#f3)" d="M786,230 L624,230"/>
+          <text class="w" x="705" y="250" text-anchor="middle">calls us — once to</text>
+          <text class="w" x="705" y="264" text-anchor="middle">build, then on taps</text>
+
+        </svg>
+      </div>
+      <figcaption>Three arrows carry data. The ochre one is a call, it points left, and it is the only
+        moment the system runs our code. The program never appears on the right-hand side of this picture —
+        which is why a bad generation can produce a wrong screen but not a wrong system call.</figcaption>
+    </figure>
+    <div class="rules" style="margin-top:28px">
+      <div class="rule">
+        <h3>Is this a WebView?</h3>
+        <p>No. Every box on screen is a <strong>real ArkUI component</strong> — the system's own look, its
+          own text field, its own scrolling. A separate probe renders the same two prompts as HTML,
+          precisely so the two can be measured against each other on one phone.</p>
+      </div>
+      <div class="rule">
+        <h3>What can a bad generation break?</h3>
+        <p>A wrong screen, or a trap inside the machine — which the renderer reports and which stops that
+          program's timers. <strong>It cannot reach the platform except through a catalogued row</strong>,
+          and it never holds a system object at all.</p>
+      </div>
+      <div class="rule">
+        <h3>Why keep a second copy of the screen?</h3>
+        <p>Because ArkUI works by <strong>subscription, not by handoff</strong>: it redraws what it is
+          watching when that thing is written into, and ignores a replacement handed to it. The next two
+          figures are that mechanism.</p>
+      </div>
+      <div class="rule">
+        <h3>What does the seam cost?</h3>
+        <p>Running the program and translating its answer: <strong>1.2 ms</strong> for an 18-node board,
+          <strong>0.4 ms</strong> for a 13-node dashboard, cold, on the API 22 phone; 0.2 to 0.9 MB
+          resident. Dynamic ArkTS — not to be blended with the static-runtime host figures.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
     <h2>Runtime</h2>
-    <figure>
+    <p>The seam in detail: the loop a tap runs through, why the renderer keeps a tree of its own,
+      and which side makes the calls.</p>
+    <figure style="margin-top:20px">
       <div class="scroller">
         <svg class="diagram" viewBox="0 0 1040 490" role="img"
              aria-label="The machine renders into ArkUI, the person taps, the dispatcher runs a handler back in the machine; a platform call made inside that handler is queued, runs after it through the intent driver or Calendar Kit, and its answer returns to the same dispatcher">
@@ -532,6 +649,29 @@
         <h3>The catalogue is data, not code</h3>
         <p>One row yields a compiler signature, a host call and a prompt paragraph. A new intent touches
           none of the three.</p>
+      </div>
+      <div class="rule">
+        <h3>The look is one word</h3>
+        <p>A program names a preset — <code>clean soft expressive editorial technical playful</code> —
+          and that settles the palette, the corners, the rhythm, the typeface and the type scale
+          together — <code>technical</code> is monospace, <code>editorial</code> is serif. Seventeen
+          components above the primitives say what a part of a screen <em>is</em>; the renderer
+          decides how that looks. Two generated apps no longer arrive looking the same.</p>
+      </div>
+      <div class="rule">
+        <h3>It follows the phone into the dark</h3>
+        <p>Each preset carries a second palette — its own hue taken down to near-black, not an
+          inversion — and the renderer follows the system setting. The program is never asked: it is
+          a pure function of state and cannot see the phone. A program written before any of this
+          existed goes dark correctly, because the look was never its job. Every text-on-background
+          pair in all twelve palettes is checked against WCAG contrast floors.</p>
+      </div>
+      <div class="rule">
+        <h3>A number stays a number</h3>
+        <p>The language has no number formatting and no way back from a string to an int, so every
+          figure on screen used to be a string the program had built, padded by a function it wrote
+          by hand. <code>IntText</code>, <code>IntStat</code> and <code>IntListItem</code> take the
+          number; <code>IntField</code> and <code>TimeField</code> give one back.</p>
       </div>
     </div>
   </section>

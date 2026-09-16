@@ -1,8 +1,9 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
-import { CATALOG, ComponentSpec, stylesFor, payloadKindFor } from './VeraUiCatalog'
+import { CATALOG, ComponentSpec, ChildRule, stylesFor, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
+import { iconPath, iconNames } from './VeraIcons'
 import { INTENT_CATALOG, intentByName } from './VeraIntentCatalog'
 import { IntentParam } from './VeraIntentCatalog'
-import { CALENDAR_EVENT_PARAMS } from './VeraCalendarCatalog'
+import { CALENDAR_CATALOG, calendarFnByName } from './VeraCalendarCatalog'
 
 // ===== AST Nodes =====
 
@@ -319,8 +320,12 @@ class VeraFunctionType extends VeraType {
   result: VeraType
   isAsync: boolean
   identity: string
-  constructor(parameters: VeraType[], result: VeraType, isAsync: boolean, identity: string) {
+  /** See ExternalFunction.required; equal to parameters.length for everything else. */
+  required: number
+  constructor(parameters: VeraType[], result: VeraType, isAsync: boolean, identity: string,
+      required: number = -1) {
     super(); this.parameters = parameters; this.result = result; this.isAsync = isAsync; this.identity = identity
+    this.required = required < 0 ? parameters.length : required
   }
   display(): string {
     let parts: string[] = []
@@ -1039,8 +1044,12 @@ class ExternalFunction {
   parameters: VeraType[]
   result: VeraType
   isAsync: boolean
-  constructor(name: string, parameters: VeraType[], result: VeraType, isAsync: boolean) {
+  /** How many of the parameters must actually be passed; the rest are trailing optionals. */
+  required: number
+  constructor(name: string, parameters: VeraType[], result: VeraType, isAsync: boolean,
+      required: number = -1) {
     this.name = name; this.parameters = parameters; this.result = result; this.isAsync = isAsync
+    this.required = required < 0 ? parameters.length : required
   }
 }
 
@@ -1080,7 +1089,11 @@ function buildStdUiModule(): ModuleInterface {
       else if (p.kind === 'string[]') params.push(new VeraArrayType(STRING))
       else params.push(STRING)
     }
-    fns.push(new ExternalFunction(spec.name, params, viewType, false))
+    // Trailing optionals may be left off, so a program written against an
+    // older version of the catalogue still compiles.
+    let required = params.length
+    while (required > 0 && spec.props[required - 1].optional) { required -= 1 }
+    fns.push(new ExternalFunction(spec.name, params, viewType, false, required))
   }
   fns.push(new ExternalFunction('When', [BOOLEAN, viewType], viewType, false))
   fns.push(new ExternalFunction('intToString', [INT], STRING, false))
@@ -1222,14 +1235,17 @@ function buildStdIntentModule(): ModuleInterface {
  * the program sees one idiom rather than two.
  */
 function buildStdCalendarModule(): ModuleInterface {
-  let paramsType = new VeraClassType('std/calendar:EventParams', 'EventParams')
-  for (let p of CALENDAR_EVENT_PARAMS) {
-    paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
+  let fns: ExternalFunction[] = []
+  let classes: ExternalClass[] = []
+  for (let fn of CALENDAR_CATALOG) {
+    let paramsType = new VeraClassType('std/calendar:' + fn.paramsClass, fn.paramsClass)
+    for (let p of fn.params) {
+      paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
+    }
+    classes.push(new ExternalClass(fn.paramsClass, paramsType))
+    fns.push(new ExternalFunction(fn.name, [paramsType, STRING], INT, false))
   }
-  let fns: ExternalFunction[] = [
-    new ExternalFunction('addEvent', [paramsType, STRING], INT, false),
-  ]
-  return new ModuleInterface('std/calendar', fns, [new ExternalClass('EventParams', paramsType)])
+  return new ModuleInterface('std/calendar', fns, classes)
 }
 
 class Scope {
@@ -1323,7 +1339,7 @@ class Analyzer {
       let resolved: ModuleInterface | null = found !== undefined ? found : null
       if (resolved === null) { this.addError('E2002', 'module not found: ' + decl.specifier, decl.span); continue }
       let members = new Map<string, VeraType>()
-      for (let fn of resolved.functions) members.set(fn.name, new VeraFunctionType(fn.parameters, fn.result, fn.isAsync, 'external:' + resolved.specifier + ':' + fn.name))
+      for (let fn of resolved.functions) members.set(fn.name, new VeraFunctionType(fn.parameters, fn.result, fn.isAsync, 'external:' + resolved.specifier + ':' + fn.name, fn.required))
       for (let cls of resolved.classes) members.set(cls.name, cls.type)
       this.model.imports.set(decl.name, resolved)
       this.globals.values.set(decl.name, new NamespaceType(decl.name, members))
@@ -1652,14 +1668,118 @@ class Analyzer {
     let callee = this.checkExpression(expr.callee, scope, null)
     if (!(callee instanceof VeraFunctionType)) { this.addError('E2034', 'callee is not a function', expr.callee.span); return VOID }
     if (callee.isAsync !== awaited) this.addError('E2035', callee.isAsync ? 'async call must be awaited' : 'synchronous call cannot be awaited', expr.span)
-    if (expr.argumentsList.length !== callee.parameters.length) this.addError('E2036', 'expected ' + callee.parameters.length + ' arguments, found ' + expr.argumentsList.length, expr.span)
+    if (expr.argumentsList.length < callee.required ||
+        expr.argumentsList.length > callee.parameters.length) {
+      let want = callee.required === callee.parameters.length
+        ? callee.parameters.length.toString()
+        : callee.required.toString() + ' to ' + callee.parameters.length.toString()
+      this.addError('E2036', 'expected ' + want + ' arguments, found ' +
+        expr.argumentsList.length, expr.span)
+    }
     for (let i = 0; i < expr.argumentsList.length; i++) {
       let param = i < callee.parameters.length ? callee.parameters[i] : null
       this.checkExpression(expr.argumentsList[i], scope, param)
     }
     this.checkStyleArguments(expr, callee)
+    this.checkComposition(expr, callee)
     this.checkIntentArguments(expr, callee)
     return callee.result
+  }
+
+  /**
+   * The composition rules in VeraUiCatalog's CHILD_RULES, where the source
+   * shows enough to check them.
+   *
+   * These are design rules rather than type rules -- a ListGroup full of Cards
+   * type-checks perfectly and draws precisely the thing ListGroup was added to
+   * replace. They are caught here and not in the renderer because a compile
+   * error is handed back to the model and fixed on the next attempt, while
+   * anything the renderer notices is seen only by whoever is watching.
+   *
+   * Literal children only. A list built by a loop -- which is how every real
+   * list is built -- cannot be read here and passes, the same limitation
+   * checkStyleArguments has. That is the prompt's half of the job.
+   */
+  private checkComposition(expr: CallExpression, callee: VeraFunctionType): void {
+    const prefix = 'external:std/ui:'
+    if (!callee.identity.startsWith(prefix)) return
+    let name = callee.identity.substring(prefix.length)
+    let rule: ChildRule | null = childRuleFor(name)
+    if (rule === null) return
+
+    if (rule!.allowed.length > 0) {
+      for (let spec of CATALOG) {
+        if (spec.name !== name) continue
+        for (let i = 0; i < spec.props.length && i < expr.argumentsList.length; i++) {
+          if (spec.props[i].kind !== 'view[]') continue
+          let arg = expr.argumentsList[i]
+          if (!(arg instanceof ArrayExpression)) break
+          for (let element of (arg as ArrayExpression).elements) {
+            // Only a child we can positively name is judged. Anything else --
+            // a variable, a call that returns a View -- is unknowable here and
+            // is left alone rather than guessed at.
+            let childName = this.uiComponentName(element)
+            if (childName.length === 0) continue
+            if (rule!.allowed.indexOf(childName) < 0) {
+              this.addError('E2107', name + ' takes only ' + listWords(rule!.allowed) +
+                ' children, not ' + childName, element.span)
+            }
+          }
+          break
+        }
+        break
+      }
+    }
+
+    for (let bad of rule!.refusedInside) {
+      for (let arg of expr.argumentsList) {
+        let found = this.findUiDescendant(arg, bad)
+        if (found !== null) {
+          this.addError('E2107', name + ' may not contain another ' + bad, found!.span)
+          break
+        }
+      }
+    }
+  }
+
+  /**
+   * The std/ui component a literal `ui.Name(...)` names, or '' when the call is
+   * not one.
+   *
+   * Read off the syntax rather than the types, because the arguments have
+   * already been checked by the time this runs and checking them again would
+   * report every mistake in them twice. The field name alone is enough: a
+   * program cannot declare a namespace of its own, and no member of std/time,
+   * std/math, std/strings, std/intent or std/calendar shares a name with a
+   * component.
+   */
+  private uiComponentName(expr: Expression): string {
+    if (!(expr instanceof CallExpression)) return ''
+    let callee = (expr as CallExpression).callee
+    if (!(callee instanceof SelectExpression)) return ''
+    let field = (callee as SelectExpression).field
+    if (field === 'When') return 'When'
+    for (let spec of CATALOG) { if (spec.name === field) return field }
+    return ''
+  }
+
+  /** The first `ui.<name>` call anywhere below this expression, or null. */
+  private findUiDescendant(expr: Expression, name: string): Expression | null {
+    if (expr instanceof ArrayExpression) {
+      for (let element of (expr as ArrayExpression).elements) {
+        let found = this.findUiDescendant(element, name)
+        if (found !== null) return found
+      }
+      return null
+    }
+    if (expr instanceof CallExpression) {
+      if (this.uiComponentName(expr) === name) return expr
+      for (let arg of (expr as CallExpression).argumentsList) {
+        let found = this.findUiDescendant(arg, name)
+        if (found !== null) return found
+      }
+    }
+    return null
   }
 
   /**
@@ -1688,8 +1808,29 @@ class Analyzer {
             '"; allowed: ' + allowed.join(' '), arg.span)
         }
       }
+      this.checkIconArguments(expr, spec)
       this.checkHandlerSignature(expr, spec)
       return
+    }
+  }
+
+  /**
+   * An icon name outside the set draws nothing, which on screen is
+   * indistinguishable from the renderer having failed. Same closed-set
+   * treatment as a style, and the same limit: only a literal is checked.
+   */
+  private checkIconArguments(expr: CallExpression, spec: ComponentSpec): void {
+    for (let i = 0; i < spec.props.length && i < expr.argumentsList.length; i++) {
+      if (spec.props[i].kind !== 'icon') continue
+      let arg = expr.argumentsList[i]
+      if (!(arg instanceof StringExpression)) continue
+      let value = (arg as StringExpression).value
+      // '' is how a component that takes an icon is told not to draw one.
+      if (value.length === 0) continue
+      if (iconPath(value).length === 0) {
+        this.addError('E2108', 'unknown icon "' + value + '"; the icons are: ' +
+          iconNames().join(' '), arg.span)
+      }
     }
   }
 
@@ -1722,8 +1863,11 @@ class Analyzer {
       label = 'intent.' + name
       params = spec!.params
     } else if (callee.identity.startsWith(calendarPrefix)) {
-      label = 'calendar.' + callee.identity.substring(calendarPrefix.length)
-      params = CALENDAR_EVENT_PARAMS
+      let name = callee.identity.substring(calendarPrefix.length)
+      let fn = calendarFnByName(name)
+      if (fn === null) return
+      label = 'calendar.' + name
+      params = fn!.params
     } else {
       return
     }
@@ -1783,7 +1927,9 @@ class Analyzer {
       }
       let want: VeraType = payload === 'string' ? STRING : payload === 'boolean' ? BOOLEAN : INT
       if (fn.parameters.length < 2 || !identical(fn.parameters[1], want)) {
-        this.addError('E2106', spec.name + ' hands its handler a ' + payload + ', so "' +
+        // "a int" reads as a typo in a message the model is asked to act on.
+        let article = payload === 'int' ? 'an ' : 'a '
+        this.addError('E2106', spec.name + ' hands its handler ' + article + payload + ', so "' +
           handlerName + '" must take (state, value: ' + payload + ')', arg.span)
       }
       return

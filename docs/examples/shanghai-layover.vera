@@ -1,0 +1,175 @@
+// What the model writes for the Shanghai prompt.
+//
+// Prompt 3 of docs/demo-prompts.md, typed into the Generate screen word for
+// word. Verbatim output: nothing here has been tidied, reordered or fixed.
+// deepseek-flash, compiled on the first attempt, 16 September 2026, on the
+// SGT-AL00 running 7.0.0.846 (API 26).
+//
+// It is kept because it is the only honest answer to "what does this system
+// actually produce". Read it for what the model reaches for unprompted -- the
+// coordinates it recalls, the theme it picks, which components it composes
+// with -- and re-record it when the catalogue or the prompt changes, because a
+// stale example is worse than none.
+//
+// Line comments are the only kind the language has; a /* block */ will not
+// parse. This file compiles as it stands.
+
+import * as ui from "std/ui"
+import * as time from "std/time"
+import * as intent from "std/intent"
+import * as calendar from "std/calendar"
+
+@jsonable
+class Stop {
+  name: string;
+  minutes: int;
+  latitude: string;
+  longitude: string;
+  reached: boolean;
+  reachedMinute: int;
+}
+
+@jsonable
+class AppState {
+  stops: Stop[];
+  lastReachedIndex: int;
+  lastAnswer: string;
+  leaveByMinute: int;
+  startMinute: int;
+}
+
+function init(): AppState {
+  let stops: Stop[] = [
+    {name: "The Bund", minutes: 90, latitude: "31.2397", longitude: "121.4900", reached: false, reachedMinute: 0},
+    {name: "Yu Garden", minutes: 75, latitude: "31.2270", longitude: "121.4920", reached: false, reachedMinute: 0},
+    {name: "Nanjing Road", minutes: 60, latitude: "31.2340", longitude: "121.4750", reached: false, reachedMinute: 0},
+    {name: "Shanghai Museum", minutes: 90, latitude: "31.2280", longitude: "121.4750", reached: false, reachedMinute: 0},
+    {name: "Xintiandi", minutes: 75, latitude: "31.2190", longitude: "121.4760", reached: false, reachedMinute: 0},
+    {name: "Tianzifang", minutes: 60, latitude: "31.2100", longitude: "121.4640", reached: false, reachedMinute: 0},
+    {name: "Lujiazui Skyline", minutes: 60, latitude: "31.2390", longitude: "121.5010", reached: false, reachedMinute: 0}
+  ];
+  return {stops: stops, lastReachedIndex: -1, lastAnswer: "", leaveByMinute: 1080, startMinute: 540};
+}
+
+function markReached(state: AppState, index: int): AppState {
+  let out: Stop[] = [];
+  let i: int = 0;
+  while (i < state.stops.length()) {
+    let s: Stop = state.stops[i];
+    if (i === index) {
+      out.push({name: s.name, minutes: s.minutes, latitude: s.latitude, longitude: s.longitude, reached: true, reachedMinute: time.hourOfDay() * 60 + time.minuteOfHour()});
+    } else {
+      out.push(s);
+    }
+    i = i + 1;
+  }
+  return {stops: out, lastReachedIndex: index, lastAnswer: state.lastAnswer, leaveByMinute: state.leaveByMinute, startMinute: state.startMinute};
+}
+
+function navigate(state: AppState, index: int): AppState {
+  let fromPlace: string = "Pudong International Airport";
+  let fromLat: string = "31.1443";
+  let fromLon: string = "121.8083";
+  if (state.lastReachedIndex >= 0) {
+    let prev: Stop = state.stops[state.lastReachedIndex];
+    fromPlace = prev.name;
+    fromLat = prev.latitude;
+    fromLon = prev.longitude;
+  }
+  let target: Stop = state.stops[index];
+  intent.navigateTo({place: target.name, latitude: target.latitude, longitude: target.longitude, fromPlace: fromPlace, fromLatitude: fromLat, fromLongitude: fromLon, traffic: "Drive"}, "onAnswer");
+  return state;
+}
+
+function addToCalendar(state: AppState, index: int): AppState {
+  let target: Stop = state.stops[index];
+  let startMin: int = state.startMinute;
+  let i: int = 0;
+  while (i < index) {
+    startMin = startMin + state.stops[i].minutes + 30;
+    i = i + 1;
+  }
+  let hour: int = startMin / 60;
+  let minute: int = startMin % 60;
+  calendar.addEvent({title: target.name, hour: hour, minute: minute, durationMinutes: target.minutes, remindBefore: 15, repeat: "once"}, "onAnswer");
+  return state;
+}
+
+function clearCalendar(state: AppState, ignored: int): AppState {
+  calendar.clearEvents({}, "onAnswer");
+  return state;
+}
+
+function openCalendar(state: AppState, ignored: int): AppState {
+  intent.openCalendar({}, "onAnswer");
+  return state;
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  return {stops: state.stops, lastReachedIndex: state.lastReachedIndex, lastAnswer: value, leaveByMinute: state.leaveByMinute, startMinute: state.startMinute};
+}
+
+function view(state: AppState): ui.View {
+  let count: int = state.stops.length();
+  let reachedCount: int = 0;
+  let plannedMinutes: int = 0;
+  let i: int = 0;
+  while (i < count) {
+    let s: Stop = state.stops[i];
+    if (s.reached) {
+      reachedCount = reachedCount + 1;
+    }
+    plannedMinutes = plannedMinutes + s.minutes;
+    i = i + 1;
+  }
+
+  let rows: ui.View[] = [];
+  let j: int = 0;
+  while (j < count) {
+    let s: Stop = state.stops[j];
+    let icon: string = "pin";
+    if (s.reached) {
+      icon = "check";
+    }
+    let subtitle: string = ui.intToString(s.minutes) + " min";
+    if (s.reached) {
+      subtitle = subtitle + " - reached";
+    }
+    rows.push(ui.ListItem("default", s.name, subtitle, "", "markReached", j, true, icon));
+    rows.push(ui.ActionBar("end", [
+      ui.IconButton("secondary", "calendar", "Add to calendar", "addToCalendar", j, true),
+      ui.Button("primary", "Navigate", "navigate", j, true)
+    ]));
+    j = j + 1;
+  }
+
+  return ui.AppTheme("expressive", "", [
+    ui.Header("default", "Shanghai Layover", "11 HOURS", "Land 09:00, back at Pudong in time", "clock"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 3, [
+        ui.IntStat("default", "Stops", count, "", "", 1, "", "pin"),
+        ui.IntStat("accent", "Reached", reachedCount, "", "", 1, "of " + ui.intToString(count), "check"),
+        ui.IntStat("default", "Planned", plannedMinutes, "", " min", 1, "on the ground", "clock")
+      ]),
+      ui.KeyValueGroup("default", 2, [
+        ui.KeyValueItem("default", "Land", "09:00", "Pudong International"),
+        ui.KeyValueItem("warning", "Leave for airport", "18:00", "allow 2 hours")
+      ]),
+      ui.ClockText("caption", state.leaveByMinute, "Latest departure ", "")
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "The day, hour by hour", "Tap a stop to mark it reached", ui.intToString(reachedCount) + " of " + ui.intToString(count)),
+      ui.When(count === 0,
+        ui.EmptyState("default", "No stops planned", "Add a stop to build your day.", "", "", "pin")),
+      ui.When(count > 0, ui.ListGroup("default", "", rows))
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.When(state.lastAnswer !== "",
+        ui.InsetBanner("default", "Last action", state.lastAnswer, "", "", "info")),
+      ui.ActionBar("spread", [
+        ui.Button("secondary", "Open calendar", "openCalendar", 0, true),
+        ui.Button("danger", "Clear my events", "clearCalendar", 0, true)
+      ])
+    ])
+  ]);
+}

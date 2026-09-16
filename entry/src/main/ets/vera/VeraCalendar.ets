@@ -22,11 +22,11 @@ import { BusinessError } from '@ohos.base'
 const DOMAIN = 0x0000
 
 /**
- * The ability context, needed both to ask for the permissions and to get the
- * manager. EntryAbility fills it in; until it does, a calendar call reports
+ * The ability context. Needed to ask for the permissions and to get the manager
+ * here, and to launch another app from VeraIntents. EntryAbility fills it in; until it does, a calendar call reports
  * that rather than throwing.
  */
-export class CalendarContext {
+export class AbilityContext {
   static value: common.UIAbilityContext | null = null
 }
 
@@ -40,7 +40,7 @@ let manager: calendarManager.CalendarManager | null = null
  * would arrive with no explanation of what asked for it.
  */
 export async function requestCalendarPermissions(context: common.UIAbilityContext): Promise<void> {
-  CalendarContext.value = context
+  AbilityContext.value = context
   let permissions: Permissions[] = ['ohos.permission.READ_CALENDAR', 'ohos.permission.WRITE_CALENDAR']
   try {
     await abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions)
@@ -70,6 +70,39 @@ function nextOccurrence(hour: number, minute: number): number {
 }
 
 /**
+ * Removes every event this app put in the calendar, and nothing else.
+ *
+ * Calendar Kit gives each app its own calendar account and getCalendar()
+ * returns that one, so getEvents() sees only what this app wrote -- the
+ * person's own entries are in other accounts and are never touched.
+ *
+ * A demo that cannot be reset is a demo that gets less legible every run, so
+ * this exists mainly to put the phone back to a known state.
+ */
+export async function clearCalendarEvents(): Promise<string> {
+  let context = AbilityContext.value
+  if (context === null) { return 'error: no ability context yet' }
+  if (manager === null) { manager = calendarManager.getCalendarManager(context) }
+  try {
+    let calendar = await manager!.getCalendar()
+    let events: calendarManager.Event[] = await calendar.getEvents()
+    if (events.length === 0) { return 'ok, nothing to remove' }
+    let ids: number[] = []
+    for (let e of events) {
+      let id = e.id
+      if (id !== undefined) { ids.push(id as number) }
+    }
+    await calendar.deleteEvents(ids)
+    hilog.info(DOMAIN, 'VERA', 'VERA-CALENDAR cleared ' + ids.length.toString() + ' events')
+    return 'ok, removed ' + ids.length.toString()
+  } catch (e) {
+    let err = e as BusinessError
+    hilog.error(DOMAIN, 'VERA', 'VERA-CALENDAR clear failed ' + err.code.toString())
+    return 'error ' + err.code.toString() + ': ' + err.message
+  }
+}
+
+/**
  * Adds one event and describes the outcome in a line a person can read.
  *
  * `repeat` is 'once' or 'daily'; `remindBefore` is minutes ahead of the start,
@@ -78,7 +111,7 @@ function nextOccurrence(hour: number, minute: number): number {
  */
 export async function addCalendarEvent(title: string, hour: number, minute: number,
     durationMinutes: number, remindBefore: number, repeat: string): Promise<string> {
-  let context = CalendarContext.value
+  let context = AbilityContext.value
   if (context === null) {
     return 'error: no ability context yet'
   }

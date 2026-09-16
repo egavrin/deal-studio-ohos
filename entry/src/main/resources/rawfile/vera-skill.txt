@@ -28,8 +28,88 @@ Syntax the compiler enforces. These differ from TypeScript and are the usual cau
 - Every let needs a type annotation: let total: int = 0. A bare let total = 0 will not parse.
 - Assignment is = only. There is no +=, -=, ++ or --. Write total = total + 1.
 - The complete operator set is || && === !== < <= > >= + - * / % and unary - and !.
+- What may be assigned to: a let you declared in the same block, a field, or an
+  array element. Nothing else, and the compiler calls the rest an "invalid
+  assignment target":
+    state = {...}          no -- state is the parameter; build the new value and
+                           return it directly: return {stops: out, leaveBy: m};
+    for (let s: Stop of stops) { s = other; }   no -- the loop name is not a
+                           variable you may point elsewhere
+    total = 0;             no, unless a let total: int was declared in this same
+                           block; one declared inside an if is gone after it
+  Build a new value and return it rather than assembling it in place.
 
 {{UI_CATALOG}}
+VISUAL COMPOSITION. The components above fall into two layers. The primitives
+say what to draw; the compositional ones say what a part of the screen is, and
+the renderer decides how that looks. Reach for the second layer first. A screen
+built only out of Column, Card and Text is the screen every program produced
+before those existed, and they read as a dump of the state class rather than as
+something designed.
+
+Wrap everything view returns in exactly one ui.AppTheme and choose its preset
+for the app you were actually asked for -- clean for restrained and neutral,
+soft for calm and friendly, expressive for bold and atmospheric, editorial when
+the content leads, technical for dense precise numbers, playful for something
+energetic. One word settles the palette, the corners, the spacing and the type
+together, so a running app looks like itself and not like every other one. Do
+not pick clean merely because the example below uses it.
+
+Then:
+  - Open with one ui.Header, not a bare ui.Text. It is the app's own title.
+  - Give each part of the screen its own ui.Section and let the role say what
+    the part is for. The gap between sections comes from the theme, so do not
+    separate them with ui.Spacer.
+  - Put two to four summary figures in a ui.MetricGroup of ui.Stat. A Stat draws
+    no box of its own; the group draws the one they share.
+  - When the order is chronological rather than merely grouped, use ui.Timeline
+    of ui.TimelineItem instead of a ListGroup. An itinerary, a course of
+    treatment, a history: the rail between the markers is what says these things
+    follow one another, and a list cannot say it. Put the time in the entry's
+    trailing field so the times line up down the edge, and give each entry the
+    icon that suits its moment -- "pin" for a place, "check" for something done,
+    "warning" for the one you must not miss.
+  - Put related rows in one ui.ListGroup of ui.ListItem. The frame and the
+    separators are drawn for you. A Card around each row is the mistake this
+    exists to prevent, and so is the opposite one: a ListGroup holding a single
+    row is a box drawn around nothing. One row is a ui.ListItem on its own; a
+    thing with a title and several facts is a ui.Card with a ui.SectionHeader
+    and a ui.KeyValueGroup inside it, not a ListGroup.
+  - Use ui.SectionHeader for a heading inside a section, rather than starting
+    another Card.
+  - Use ui.InsetBanner for something that stays true while the person works: a
+    refused permission, a warning, the answer from the last platform call.
+  - Every collection can be empty, and state starts empty, so a ui.EmptyState
+    behind ui.When(list.length() === 0, ...) is the first thing the person sees.
+    A blank screen is not an acceptable first impression.
+  - Gather a screen's buttons into one ui.ActionBar rather than leaving them
+    loose. One of them is primary and the rest are not.
+  - Use ui.KeyValueGroup of ui.KeyValueItem for the details of a thing -- where,
+    how long, which platform -- when the values are words rather than figures.
+  - Give things icons, and pick the icon that *means* the thing: "pin" for a
+    place, "clock" for a time, "calendar" for a date, "check" for something
+    done, "warning" for a risk, "navigate" for going somewhere. An icon that
+    does not mean anything is worse than no icon at all. Header, Stat, IntStat, ListItem, IntListItem, InsetBanner and
+    EmptyState all take one; pass "" when nothing honestly fits.
+  - Where one thing has several actions, make the one most likely to be wanted a
+    ui.Button and the rest ui.IconButton. Six stops with "Navigate", "Add to
+    calendar" and "Mark reached" is eighteen blocks of text on one screen; the
+    same six with one button and two glyphs is readable. Write it as
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "calendar", "Add to calendar", "addStop", 3, true),
+        ui.Button("primary", "Navigate", "goTo", 3, true)
+      ])
+    The IconButton's label is never drawn -- it is what a screen reader says --
+    but it must still be written.
+  - Use ui.Badge for the state of a thing -- "Reached", "Overdue", "3 left" --
+    rather than another line of grey text.
+  - Keep ui.Card scarce, and never put one inside another. One obvious primary
+    action per screen; secondary and danger buttons say what they are.
+  - Prefer the components that take a number -- ui.IntText, ui.IntStat,
+    ui.IntListItem -- over formatting the number yourself. A column count is a
+    maximum, not a promise: a narrow screen uses fewer, so ask for what suits
+    the content.
+
 ui.Path draws real vector graphics — circles, gears, arrows, icons, diagrams, chart shapes.
 Use it whenever the user asks to draw something. Do not substitute a number and buttons.
   - commands is an SVG path string: M L C Q A Z, absolute coordinates only.
@@ -95,13 +175,25 @@ import * as strings from "std/strings":
   strings.length(s), strings.substring(s, start, end)  -- positions are characters
   strings.contains(s, part), strings.startsWith(s, part), strings.endsWith(s, part)
   strings.replace(s, from, to), strings.split(s, sep), strings.trim(s)
-There is no padStart and no number formatting anywhere, so a fixed-width number
-is a function you write:
-  function pad2(n: int): string {
-    if (n < 10) { return "0" + ui.intToString(n); }
-    return ui.intToString(n);
-  }
-A clock reading is then pad2(m / 60) + ":" + pad2(m % 60).
+There is no padStart and no number formatting in the language, so do not build
+a number into a string. Hand the number to a component that takes one and say
+how to show it:
+  ui.IntText("metric", state.count, "", " steps", 1)
+minimumDigits pads: 7 at two digits is "07".
+
+A time of day is ui.ClockText and nothing else. It takes minutes since
+midnight -- the same thing time.hourOfDay() * 60 + time.minuteOfHour() gives --
+and writes HH:MM:
+  ui.ClockText("body", leaveMinute, "Leave by ", "")
+Do not build a clock from two ui.IntText, and do not write a padding function
+for one. Both were tried and both come out as "1305" or "17:  00".
+ui.IntStat and ui.IntListItem take a number the same way. Keep ui.intToString
+for the cases with no such component -- a number inside a longer sentence.
+
+Numbers also come back. ui.TextField hands its handler a string, and there is no
+way to turn a string into an int, so a quantity the person sets goes through
+ui.IntField and a time through ui.TimeField, both of which hand the handler an
+int. Never ask for a number as text.
 
 The platform — import * as intent from "std/intent". This is the only way a
 program reaches anything outside itself: there is no audio, no navigation, no
@@ -213,7 +305,7 @@ function view(state: AppState): ui.View {
 
 Example — a log with statistics. This is the shape of any record-keeping app: a
 record class, an array of them in state, a handler that stamps the clock, a
-counting loop, and a list built by pushing ui.ListItem into a ui.View[].
+counting loop, and a list built by pushing rows into a ui.View[].
 import * as ui from "std/ui"
 import * as time from "std/time"
 
@@ -229,33 +321,27 @@ class Entry {
 class AppState {
   log: Entry[];
   goal: int;
+  size: int;
 }
 
 function init(): AppState {
   let empty: Entry[] = [];
-  return {log: empty, goal: 100};
+  return {log: empty, goal: 100, size: 25};
 }
 
-function pad2(n: int): string {
-  if (n < 10) {
-    return "0" + ui.intToString(n);
-  }
-  return ui.intToString(n);
+function setSize(state: AppState, value: int): AppState {
+  return {log: state.log, goal: state.goal, size: value};
 }
 
-function clockText(minute: int): string {
-  return pad2(minute / 60) + ":" + pad2(minute % 60);
-}
-
-function add(state: AppState, amount: int): AppState {
+function add(state: AppState, ignored: int): AppState {
   let entry: Entry = {
     month: time.monthOfYear(),
     dayOfMonth: time.dayOfMonth(),
     minute: time.hourOfDay() * 60 + time.minuteOfHour(),
-    amount: amount
+    amount: state.size
   };
   state.log.push(entry);
-  return {log: state.log, goal: state.goal};
+  return {log: state.log, goal: state.goal, size: state.size};
 }
 
 function view(state: AppState): ui.View {
@@ -264,33 +350,57 @@ function view(state: AppState): ui.View {
   for (let e: Entry of state.log) {
     sum = sum + e.amount;
   }
-  let percent: int = 0;
-  if (state.goal > 0) {
-    percent = sum * 100 / state.goal;
+
+  let lastMinute: int = 0;
+  if (count > 0) {
+    lastMinute = state.log[count - 1].minute;
   }
 
   let rows: ui.View[] = [];
   let i: int = count - 1;
   while (i >= 0 && i > count - 15) {
     let e: Entry = state.log[i];
-    rows.push(ui.ListItem("default",
-      ui.intToString(e.month) + "/" + ui.intToString(e.dayOfMonth) + " " + clockText(e.minute),
-      "", ui.intToString(e.amount), "", 0, false));
+    rows.push(ui.IntListItem("default",
+      ui.intToString(e.month) + "/" + ui.intToString(e.dayOfMonth),
+      "", e.amount, "", "", 1, "", 0, false, "check"));
     i = i - 1;
   }
 
-  return ui.Column("spacious", [
-    ui.Text("title", "Log"),
-    ui.Row("spacious", [
-      ui.Button("secondary", "Add 10", "add", 10, true),
-      ui.Button("primary", "Add 25", "add", 25, true)
+  return ui.AppTheme("technical", "", [
+    ui.Header("default", "Log", "TODAY", "Every entry, and what they add up to", "chart"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("default", "Entries", count, "", "", 1, "", "list"),
+        ui.IntStat("accent", "Total", sum, "", "", 1, "of " + ui.intToString(state.goal), "star")
+      ]),
+      ui.Progress("accent", "", sum, state.goal),
+      ui.When(count > 0, ui.ClockText("caption", lastMinute, "last at ", ""))
     ]),
-    ui.Card("surface", [
-      ui.Text("heading", "Progress"),
-      ui.Text("metric", ui.intToString(percent) + "%"),
-      ui.Progress("default", "", sum, state.goal),
-      ui.Text("caption", ui.intToString(count) + " entries, " + ui.intToString(sum) + " total")
+    ui.Section("content", "", "", [
+      ui.IntField("default", "Amount to add", state.size, 5, 100, "setSize"),
+      ui.ActionBar("end", [
+        ui.Button("primary", "Add entry", "add", 0, true)
+      ])
     ]),
-    ui.Scroll("default", rows)
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Recent", "Newest first", ui.intToString(count)),
+      ui.When(count === 0,
+        ui.EmptyState("default", "Nothing logged yet",
+          "Set an amount and add your first entry.", "", "", "list")),
+      ui.When(count > 0, ui.ListGroup("default", "", rows))
+    ])
   ]);
 }
+
+Note what that last example does and does not do. Not one number is turned into
+a string for display: the counts go to ui.IntStat, the amounts to
+ui.IntListItem, and the clock to ui.ClockText, so there is no pad function
+anywhere. The amount comes back from ui.IntField as an int,
+which ui.TextField could not have done. The rows go into one ui.ListGroup, not a
+ui.Card each. There is no ui.Spacer, because the sections space themselves. And
+the empty case is written before the full one, because it is the case that
+actually happens first.
+
+One trap that example avoids: ui.When evaluates both of its arguments, so it
+cannot guard an index. state.log[count - 1] inside a ui.When would still trap on
+an empty log. Read it into a variable behind a real if, as lastMinute is.

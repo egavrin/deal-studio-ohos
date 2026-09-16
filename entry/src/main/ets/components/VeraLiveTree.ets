@@ -41,6 +41,12 @@ export class LiveNode {
   @Trace minimum: number = 0
   @Trace maximum: number = 100
   @Trace options: string[] = []
+  // The typed numeric layer; see VeraUiNode.
+  @Trace intValue: number = 0
+  @Trace prefix: string = ''
+  @Trace suffix: string = ''
+  @Trace minimumDigits: number = 1
+  @Trace icon: string = ''
   @Trace children: LiveNode[] = []
 }
 
@@ -65,6 +71,11 @@ export function toLive(node: VeraUiNode): LiveNode {
   live.minimum = node.minimum
   live.maximum = node.maximum
   live.options = node.options
+  live.intValue = node.intValue
+  live.prefix = node.prefix
+  live.suffix = node.suffix
+  live.minimumDigits = node.minimumDigits
+  live.icon = node.icon
   let kids: LiveNode[] = []
   for (let child of node.children) { kids.push(toLive(child)) }
   live.children = kids
@@ -111,6 +122,11 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.minimum !== next.minimum) { live.minimum = next.minimum }
   if (live.maximum !== next.maximum) { live.maximum = next.maximum }
   if (live.options.join('\u0000') !== next.options.join('\u0000')) { live.options = next.options }
+  if (live.intValue !== next.intValue) { live.intValue = next.intValue }
+  if (live.prefix !== next.prefix) { live.prefix = next.prefix }
+  if (live.suffix !== next.suffix) { live.suffix = next.suffix }
+  if (live.minimumDigits !== next.minimumDigits) { live.minimumDigits = next.minimumDigits }
+  if (live.icon !== next.icon) { live.icon = next.icon }
 
   // Reconcile the positions that already exist, in place, so the components
   // rendering them keep pointing at a node that is still being updated.

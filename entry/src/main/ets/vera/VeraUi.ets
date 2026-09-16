@@ -12,7 +12,7 @@ import {
   RuntimeTrap,
 } from './VeraInterpreter'
 import { IntentSpec, intentByName } from './VeraIntentCatalog'
-import { CALENDAR_EVENT_PARAMS } from './VeraCalendarCatalog'
+import { calendarFnByName } from './VeraCalendarCatalog'
 
 export class VeraUiNode {
   id: number = 0
@@ -35,6 +35,27 @@ export class VeraUiNode {
   maximum: number = 100
   options: string[] = []
   children: VeraUiNode[] = []
+
+  /**
+   * The typed numeric layer.
+   *
+   * A number used to reach the screen only as a string the program had already
+   * built -- ui.intToString, and a hand-written pad2 for anything wider than
+   * one digit, because the language has no number formatting and no way back
+   * from a string to an int. So every count was formatted by the program, and
+   * a program that wanted "07" wrote the function to produce it.
+   *
+   * These carry the number itself and say how to show it, and the renderer does
+   * the formatting. `intValue` is the number; `eventValue` stays what it always
+   * was, the payload of a tap, so a row can carry both.
+   */
+  intValue: number = 0
+  prefix: string = ''
+  suffix: string = ''
+  minimumDigits: number = 1
+
+  /** The name of an icon in VeraIcons; '' for none. */
+  icon: string = ''
 }
 
 function asString(v: RuntimeValue): string {
@@ -57,6 +78,40 @@ function asArray(v: RuntimeValue): VeraArrayValue {
   throw new RuntimeTrap('R0020', 'expected array argument')
 }
 
+/**
+ * Reading an argument that a saved program may not have passed.
+ *
+ * The VM hands `invoke` exactly the arguments the bytecode pushed, so the day a
+ * component gains a property, every program compiled before that day calls it
+ * one argument short and asString(undefined) traps. The programs are stored as
+ * bytecode, not source, so they cannot be recompiled -- a saved app would simply
+ * stop running.
+ *
+ * Reading past the end as "not given" is what makes the vocabulary extensible:
+ * a property may be appended to any component for ever after, old programs keep
+ * running with the default, and new ones still have to pass it because the
+ * compiler checks arity (E2036) against the catalogue.
+ */
+function argString(args: RuntimeValue[], i: number, fallback: string = ''): string {
+  if (i >= args.length) { return fallback }
+  return asString(args[i])
+}
+
+function argInt(args: RuntimeValue[], i: number, fallback: number = 0): number {
+  if (i >= args.length) { return fallback }
+  return asInt(args[i])
+}
+
+function argBool(args: RuntimeValue[], i: number, fallback: boolean = true): boolean {
+  if (i >= args.length) { return fallback }
+  return asBool(args[i])
+}
+
+function argArray(args: RuntimeValue[], i: number): VeraArrayValue {
+  if (i >= args.length) { return new VeraArrayValue([]) }
+  return asArray(args[i])
+}
+
 function viewNode(type: string, fields: Array<[string, RuntimeValue]>): VeraObjectValue {
   let map = new Map<string, RuntimeValue>()
   map.set('type', new VeraStringValue(type))
@@ -68,8 +123,8 @@ function viewNode(type: string, fields: Array<[string, RuntimeValue]>): VeraObje
 
 function containerNode(type: string, args: RuntimeValue[]): RuntimeValue {
   return viewNode(type, [
-    ['style', new VeraStringValue(asString(args[0]))],
-    ['children', asArray(args[1])],
+    ['style', new VeraStringValue(argString(args, 0))],
+    ['children', argArray(args, 1)],
   ])
 }
 
@@ -277,13 +332,15 @@ export class HostEffect {
   id: number
   /** 'intent' or 'calendar' -- which host the request is for. */
   kind: string
+  /** Which function of that host: the intent's row name, or addEvent/clearEvents. */
+  fn: string
   /** The intent's row; null for any other kind. */
   spec: IntentSpec | null
   values: Map<string, string>
   resultHandler: string
-  constructor(id: number, kind: string, spec: IntentSpec | null,
+  constructor(id: number, kind: string, fn: string, spec: IntentSpec | null,
       values: Map<string, string>, resultHandler: string) {
-    this.id = id; this.kind = kind; this.spec = spec
+    this.id = id; this.kind = kind; this.fn = fn; this.spec = spec
     this.values = values; this.resultHandler = resultHandler
   }
 }
@@ -317,107 +374,293 @@ export class UiHostEnvironment extends HostEnvironment {
       case 'Canvas': return containerNode('canvas', args)
       case 'Text':
         return viewNode('text', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['text', new VeraStringValue(asString(args[1]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
         ])
       case 'Spacer':
         return viewNode('spacer', [
-          ['style', new VeraStringValue(asString(args[0]))],
+          ['style', new VeraStringValue(argString(args, 0))],
         ])
       case 'Image':
         return viewNode('image', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['src', new VeraStringValue(asString(args[1]))],
-          ['alt', new VeraStringValue(asString(args[2]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['src', new VeraStringValue(argString(args, 1))],
+          ['alt', new VeraStringValue(argString(args, 2))],
         ])
       case 'Path':
         return viewNode('path', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['commands', new VeraStringValue(asString(args[1]))],
-          ['spinPeriodMs', new VeraIntValue(asInt(args[2]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['commands', new VeraStringValue(argString(args, 1))],
+          ['spinPeriodMs', new VeraIntValue(argInt(args, 2))],
         ])
       case 'TextField':
         return viewNode('field', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['label', new VeraStringValue(asString(args[1]))],
-          ['value', new VeraStringValue(asString(args[2]))],
-          ['action', new VeraStringValue(asString(args[3]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['value', new VeraStringValue(argString(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
         ])
       case 'Toggle':
       case 'Checkbox':
         return viewNode(name === 'Toggle' ? 'toggle' : 'checkbox', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['label', new VeraStringValue(asString(args[1]))],
-          ['checked', new VeraBooleanValue(asBool(args[2]))],
-          ['action', new VeraStringValue(asString(args[3]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['checked', new VeraBooleanValue(argBool(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
         ])
       case 'Slider':
         return viewNode('slider', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['label', new VeraStringValue(asString(args[1]))],
-          ['value', new VeraIntValue(asInt(args[2]))],
-          ['minimum', new VeraIntValue(asInt(args[3]))],
-          ['maximum', new VeraIntValue(asInt(args[4]))],
-          ['action', new VeraStringValue(asString(args[5]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['value', new VeraIntValue(argInt(args, 2))],
+          ['minimum', new VeraIntValue(argInt(args, 3))],
+          ['maximum', new VeraIntValue(argInt(args, 4))],
+          ['action', new VeraStringValue(argString(args, 5))],
         ])
       case 'Select':
         return viewNode('select', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['label', new VeraStringValue(asString(args[1]))],
-          ['options', asArray(args[2])],
-          ['value', new VeraIntValue(asInt(args[3]))],
-          ['action', new VeraStringValue(asString(args[4]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['options', argArray(args, 2)],
+          ['value', new VeraIntValue(argInt(args, 3))],
+          ['action', new VeraStringValue(argString(args, 4))],
         ])
       case 'Grid':
         return viewNode('grid', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['columns', new VeraIntValue(asInt(args[1]))],
-          ['children', asArray(args[2])],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['columns', new VeraIntValue(argInt(args, 1))],
+          ['children', argArray(args, 2)],
         ])
       case 'ListItem':
         return viewNode('listitem', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['text', new VeraStringValue(asString(args[1]))],
-          ['label', new VeraStringValue(asString(args[2]))],
-          ['value', new VeraStringValue(asString(args[3]))],
-          ['action', new VeraStringValue(asString(args[4]))],
-          ['eventValue', new VeraIntValue(asInt(args[5]))],
-          ['enabled', new VeraBooleanValue(asBool(args[6]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+          ['action', new VeraStringValue(argString(args, 4))],
+          ['eventValue', new VeraIntValue(argInt(args, 5))],
+          ['enabled', new VeraBooleanValue(argBool(args, 6))],
+          ['icon', new VeraStringValue(argString(args, 7))],
         ])
       case 'Ticker':
         return viewNode('ticker', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['tickerId', new VeraStringValue(asString(args[1]))],
-          ['minimum', new VeraIntValue(asInt(args[2]))],
-          ['checked', new VeraBooleanValue(asBool(args[3]))],
-          ['action', new VeraStringValue(asString(args[4]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['tickerId', new VeraStringValue(argString(args, 1))],
+          ['minimum', new VeraIntValue(argInt(args, 2))],
+          ['checked', new VeraBooleanValue(argBool(args, 3))],
+          ['action', new VeraStringValue(argString(args, 4))],
         ])
       case 'Divider':
         return viewNode('divider', [
-          ['style', new VeraStringValue(asString(args[0]))],
+          ['style', new VeraStringValue(argString(args, 0))],
         ])
       case 'Progress':
         return viewNode('progress', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['label', new VeraStringValue(asString(args[1]))],
-          ['value', new VeraIntValue(asInt(args[2]))],
-          ['maximum', new VeraIntValue(asInt(args[3]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['value', new VeraIntValue(argInt(args, 2))],
+          ['maximum', new VeraIntValue(argInt(args, 3))],
         ])
       case 'Button':
         return viewNode('button', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['text', new VeraStringValue(asString(args[1]))],
-          ['action', new VeraStringValue(asString(args[2]))],
-          ['value', new VeraIntValue(asInt(args[3]))],
-          ['enabled', new VeraBooleanValue(asBool(args[4]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['action', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraIntValue(argInt(args, 3))],
+          ['enabled', new VeraBooleanValue(argBool(args, 4))],
         ])
       case 'Cell':
         return viewNode('cell', [
-          ['style', new VeraStringValue(asString(args[0]))],
-          ['text', new VeraStringValue(asString(args[1]))],
-          ['action', new VeraStringValue(asString(args[2]))],
-          ['value', new VeraIntValue(asInt(args[3]))],
-          ['enabled', new VeraBooleanValue(asBool(args[4]))],
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['action', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraIntValue(argInt(args, 3))],
+          ['enabled', new VeraBooleanValue(argBool(args, 4))],
+        ])
+      // The compositional layer. Every one of these reuses fields the decoder
+      // already reads -- text, label, value, columns, children -- so nothing
+      // below decodeNode changes and its measured cost stays where it was.
+      case 'AppTheme':
+        return viewNode('apptheme', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          // The seed colour, under the name the decoder already reads a string
+          // from. '' means the preset keeps its own primary.
+          ['value', new VeraStringValue(argString(args, 1))],
+          ['children', argArray(args, 2)],
+        ])
+      case 'Header':
+        return viewNode('header', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+          ['icon', new VeraStringValue(argString(args, 4))],
+        ])
+      case 'Section':
+        return viewNode('section', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['children', argArray(args, 3)],
+        ])
+      case 'SectionHeader':
+        return viewNode('sectionheader', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+        ])
+      case 'ListGroup':
+        return viewNode('listgroup', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['children', argArray(args, 2)],
+        ])
+      case 'InsetBanner':
+        return viewNode('banner', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+          ['action', new VeraStringValue(argString(args, 4))],
+          ['icon', new VeraStringValue(argString(args, 5))],
+        ])
+      case 'EmptyState':
+        return viewNode('emptystate', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+          ['action', new VeraStringValue(argString(args, 4))],
+          ['icon', new VeraStringValue(argString(args, 5))],
+        ])
+      case 'Stat':
+        // label is the caption, text the figure, value the line beneath -- the
+        // figure goes in 'text' because that is the field a Text-like node
+        // carries and the renderer draws largest.
+        return viewNode('stat', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['text', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+          ['icon', new VeraStringValue(argString(args, 4))],
+        ])
+      case 'MetricGroup':
+        return viewNode('metricgroup', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['columns', new VeraIntValue(argInt(args, 1))],
+          ['children', argArray(args, 2)],
+        ])
+      // The typed numeric layer. The number travels as a number and the
+      // renderer formats it, so a program never builds a digit string and
+      // never needs the padding function it cannot write.
+      case 'IntText':
+        return viewNode('inttext', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['intValue', new VeraIntValue(argInt(args, 1))],
+          ['prefix', new VeraStringValue(argString(args, 2))],
+          ['suffix', new VeraStringValue(argString(args, 3))],
+          ['minimumDigits', new VeraIntValue(argInt(args, 4))],
+        ])
+      case 'ClockText':
+        return viewNode('clocktext', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['intValue', new VeraIntValue(argInt(args, 1))],
+          ['prefix', new VeraStringValue(argString(args, 2))],
+          ['suffix', new VeraStringValue(argString(args, 3))],
+        ])
+      case 'IntStat':
+        return viewNode('intstat', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['intValue', new VeraIntValue(argInt(args, 2))],
+          ['prefix', new VeraStringValue(argString(args, 3))],
+          ['suffix', new VeraStringValue(argString(args, 4))],
+          ['minimumDigits', new VeraIntValue(argInt(args, 5))],
+          ['value', new VeraStringValue(argString(args, 6))],
+          ['icon', new VeraStringValue(argString(args, 7))],
+        ])
+      case 'IntField':
+        return viewNode('intfield', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['intValue', new VeraIntValue(argInt(args, 2))],
+          ['minimum', new VeraIntValue(argInt(args, 3))],
+          ['maximum', new VeraIntValue(argInt(args, 4))],
+          ['action', new VeraStringValue(argString(args, 5))],
+        ])
+      case 'TimeField':
+        return viewNode('timefield', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['intValue', new VeraIntValue(argInt(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
+        ])
+      case 'IntListItem':
+        return viewNode('intlistitem', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['intValue', new VeraIntValue(argInt(args, 3))],
+          ['prefix', new VeraStringValue(argString(args, 4))],
+          ['suffix', new VeraStringValue(argString(args, 5))],
+          ['minimumDigits', new VeraIntValue(argInt(args, 6))],
+          ['action', new VeraStringValue(argString(args, 7))],
+          ['eventValue', new VeraIntValue(argInt(args, 8))],
+          ['enabled', new VeraBooleanValue(argBool(args, 9))],
+          ['icon', new VeraStringValue(argString(args, 10))],
+        ])
+      case 'ActionBar':
+        return containerNode('actionbar', args)
+      case 'Timeline':
+        return viewNode('timeline', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['children', argArray(args, 2)],
+        ])
+      case 'TimelineItem':
+        return viewNode('timelineitem', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+          ['action', new VeraStringValue(argString(args, 4))],
+          ['eventValue', new VeraIntValue(argInt(args, 5))],
+          ['enabled', new VeraBooleanValue(argBool(args, 6))],
+          ['icon', new VeraStringValue(argString(args, 7))],
+        ])
+      case 'KeyValueGroup':
+        return viewNode('kvgroup', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['columns', new VeraIntValue(argInt(args, 1))],
+          ['children', argArray(args, 2)],
+        ])
+      case 'KeyValueItem':
+        return viewNode('kvitem', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['text', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+        ])
+      case 'Icon':
+        return viewNode('icon', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['icon', new VeraStringValue(argString(args, 1))],
+        ])
+      case 'IconButton':
+        return viewNode('iconbutton', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['icon', new VeraStringValue(argString(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
+          ['value', new VeraIntValue(argInt(args, 4))],
+          ['enabled', new VeraBooleanValue(argBool(args, 5))],
+        ])
+      case 'Badge':
+        return viewNode('badge', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['icon', new VeraStringValue(argString(args, 2))],
         ])
       case 'When':
         if (asBool(args[0])) { return args[1] }
@@ -470,7 +713,7 @@ export class UiHostEnvironment extends HostEnvironment {
     }
     let id = this.nextEffectId
     this.nextEffectId = id + 1
-    this.pendingEffects.push(new HostEffect(id, 'intent', spec!, values, asString(args[1])))
+    this.pendingEffects.push(new HostEffect(id, 'intent', name, spec!, values, asString(args[1])))
     return new VeraIntValue(id)
   }
 
@@ -480,7 +723,8 @@ export class UiHostEnvironment extends HostEnvironment {
    * Calendar Kit calls anything either.
    */
   private queueCalendar(name: string, args: RuntimeValue[]): RuntimeValue {
-    if (name !== 'addEvent') {
+    let fn = calendarFnByName(name)
+    if (fn === null) {
       throw new RuntimeTrap('R0015', `unknown std/calendar function: ${name}`)
     }
     if (!this.effectsAllowed) {
@@ -492,7 +736,7 @@ export class UiHostEnvironment extends HostEnvironment {
     }
     let record = args[0] as VeraObjectValue
     let values = new Map<string, string>()
-    for (let p of CALENDAR_EVENT_PARAMS) {
+    for (let p of fn!.params) {
       let field = record.fields.get(p.name)
       if (field === undefined) { continue }
       let value = field as RuntimeValue
@@ -504,7 +748,7 @@ export class UiHostEnvironment extends HostEnvironment {
     }
     let id = this.nextEffectId
     this.nextEffectId = id + 1
-    this.pendingEffects.push(new HostEffect(id, 'calendar', null, values, asString(args[1])))
+    this.pendingEffects.push(new HostEffect(id, 'calendar', name, null, values, asString(args[1])))
     return new VeraIntValue(id)
   }
 }
@@ -524,97 +768,117 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
   let node = new VeraUiNode()
   node.id = nextNodeId
   nextNodeId += 1
-  let typeVal = obj.fields.get('type')
-  if (typeVal != undefined && typeVal instanceof VeraStringValue) {
-    node.kind = (typeVal as VeraStringValue).value
-  }
-  let styleVal = obj.fields.get('style')
-  if (styleVal != undefined && styleVal instanceof VeraStringValue) {
-    node.style = (styleVal as VeraStringValue).value
-  }
-  let textVal = obj.fields.get('text')
-  if (textVal != undefined && textVal instanceof VeraStringValue) {
-    node.text = (textVal as VeraStringValue).value
-  }
-  let srcVal = obj.fields.get('src')
-  if (srcVal != undefined && srcVal instanceof VeraStringValue) {
-    node.source = (srcVal as VeraStringValue).value
-  }
-  let altVal = obj.fields.get('alt')
-  if (altVal != undefined && altVal instanceof VeraStringValue) {
-    node.alt = (altVal as VeraStringValue).value
-  }
-  let actionVal = obj.fields.get('action')
-  if (actionVal != undefined && actionVal instanceof VeraStringValue) {
-    node.action = (actionVal as VeraStringValue).value
-  }
-  let valueVal = obj.fields.get('value')
-  if (valueVal != undefined && valueVal instanceof VeraIntValue) {
-    node.eventValue = (valueVal as VeraIntValue).value
-  }
-  let commandsVal = obj.fields.get('commands')
-  if (commandsVal != undefined && commandsVal instanceof VeraStringValue) {
-    node.commands = (commandsVal as VeraStringValue).value
-  }
-  let spinVal = obj.fields.get('spinPeriodMs')
-  if (spinVal != undefined && spinVal instanceof VeraIntValue) {
-    node.spinPeriodMs = (spinVal as VeraIntValue).value
-  }
-  let columnsVal = obj.fields.get('columns')
-  if (columnsVal != undefined && columnsVal instanceof VeraIntValue) {
-    node.columns = (columnsVal as VeraIntValue).value
-  }
-  // ListItem names its tap payload explicitly; Button and Cell call the same
-  // thing 'value', which a ListItem uses for its trailing text instead.
-  let eventValField = obj.fields.get('eventValue')
-  if (eventValField != undefined && eventValField instanceof VeraIntValue) {
-    node.eventValue = (eventValField as VeraIntValue).value
-  }
-  let tickerIdVal = obj.fields.get('tickerId')
-  if (tickerIdVal != undefined && tickerIdVal instanceof VeraStringValue) {
-    node.tickerId = (tickerIdVal as VeraStringValue).value
-  }
-  let labelVal = obj.fields.get('label')
-  if (labelVal != undefined && labelVal instanceof VeraStringValue) {
-    node.label = (labelVal as VeraStringValue).value
-  }
-  // 'value' carries the text of a field and the position of a slider or select,
-  // so it arrives as either a string or an int.
-  let valueField = obj.fields.get('value')
-  if (valueField != undefined && valueField instanceof VeraStringValue) {
-    node.value = (valueField as VeraStringValue).value
-  }
-  let checkedVal = obj.fields.get('checked')
-  if (checkedVal != undefined && checkedVal instanceof VeraBooleanValue) {
-    node.checked = (checkedVal as VeraBooleanValue).value
-  }
-  let minVal = obj.fields.get('minimum')
-  if (minVal != undefined && minVal instanceof VeraIntValue) {
-    node.minimum = (minVal as VeraIntValue).value
-  }
-  let maxVal = obj.fields.get('maximum')
-  if (maxVal != undefined && maxVal instanceof VeraIntValue) {
-    node.maximum = (maxVal as VeraIntValue).value
-  }
-  let optionsVal = obj.fields.get('options')
-  if (optionsVal != undefined && optionsVal instanceof VeraArrayValue) {
-    let opts: string[] = []
-    for (let o of (optionsVal as VeraArrayValue).elements) {
-      if (o instanceof VeraStringValue) { opts.push((o as VeraStringValue).value) }
-    }
-    node.options = opts
-  }
-  let enabledVal = obj.fields.get('enabled')
-  if (enabledVal != undefined && enabledVal instanceof VeraBooleanValue) {
-    node.enabled = (enabledVal as VeraBooleanValue).value
-  }
-  let childrenVal = obj.fields.get('children')
-  if (childrenVal != undefined && childrenVal instanceof VeraArrayValue) {
-    let arr = childrenVal as VeraArrayValue
-    for (let child of arr.elements) {
-      if (child instanceof VeraObjectValue) {
-        node.children.push(decodeNode(child as VeraObjectValue, depth + 1))
-      }
+
+  // Walk the fields the node actually carries, rather than asking after each of
+  // the two dozen a node might carry.
+  //
+  // This used to be one obj.fields.get() per possible field, so a ui.Text -- a
+  // kind, a style and a string -- paid for twenty lookups to find its three,
+  // and every node in every tree paid the same flat toll. Decode is a measured
+  // phase, and the toll grew every time the vocabulary did. Reading what is
+  // there instead makes the cost proportional to the node rather than to the
+  // catalogue, which is why the typed numeric fields above could be added at
+  // all.
+  //
+  // Iteration order is insertion order, which is the order the case in
+  // UiHostEnvironment.invoke wrote the fields in. Exactly one pair depends on
+  // that: ListItem writes 'value' -- its trailing text -- before 'eventValue',
+  // its tap payload, and both can land in eventValue. The later write wins, as
+  // it did when these were two statements in a fixed order.
+  for (let entry of obj.fields.entries()) {
+    let key: string = entry[0]
+    let v: RuntimeValue = entry[1]
+    switch (key) {
+      case 'type':
+        if (v instanceof VeraStringValue) { node.kind = (v as VeraStringValue).value }
+        break
+      case 'style':
+        if (v instanceof VeraStringValue) { node.style = (v as VeraStringValue).value }
+        break
+      case 'text':
+        if (v instanceof VeraStringValue) { node.text = (v as VeraStringValue).value }
+        break
+      case 'src':
+        if (v instanceof VeraStringValue) { node.source = (v as VeraStringValue).value }
+        break
+      case 'alt':
+        if (v instanceof VeraStringValue) { node.alt = (v as VeraStringValue).value }
+        break
+      case 'action':
+        if (v instanceof VeraStringValue) { node.action = (v as VeraStringValue).value }
+        break
+      case 'label':
+        if (v instanceof VeraStringValue) { node.label = (v as VeraStringValue).value }
+        break
+      case 'tickerId':
+        if (v instanceof VeraStringValue) { node.tickerId = (v as VeraStringValue).value }
+        break
+      case 'commands':
+        if (v instanceof VeraStringValue) { node.commands = (v as VeraStringValue).value }
+        break
+      case 'prefix':
+        if (v instanceof VeraStringValue) { node.prefix = (v as VeraStringValue).value }
+        break
+      case 'icon':
+        if (v instanceof VeraStringValue) { node.icon = (v as VeraStringValue).value }
+        break
+      case 'suffix':
+        if (v instanceof VeraStringValue) { node.suffix = (v as VeraStringValue).value }
+        break
+      // 'value' carries the text of a field, the position of a slider or
+      // select, and the trailing text of a list row, so it arrives as either a
+      // string or an int and means something different in each.
+      case 'value':
+        if (v instanceof VeraIntValue) { node.eventValue = (v as VeraIntValue).value }
+        else if (v instanceof VeraStringValue) { node.value = (v as VeraStringValue).value }
+        break
+      case 'eventValue':
+        if (v instanceof VeraIntValue) { node.eventValue = (v as VeraIntValue).value }
+        break
+      case 'intValue':
+        if (v instanceof VeraIntValue) { node.intValue = (v as VeraIntValue).value }
+        break
+      case 'minimumDigits':
+        if (v instanceof VeraIntValue) { node.minimumDigits = (v as VeraIntValue).value }
+        break
+      case 'spinPeriodMs':
+        if (v instanceof VeraIntValue) { node.spinPeriodMs = (v as VeraIntValue).value }
+        break
+      case 'columns':
+        if (v instanceof VeraIntValue) { node.columns = (v as VeraIntValue).value }
+        break
+      case 'minimum':
+        if (v instanceof VeraIntValue) { node.minimum = (v as VeraIntValue).value }
+        break
+      case 'maximum':
+        if (v instanceof VeraIntValue) { node.maximum = (v as VeraIntValue).value }
+        break
+      case 'checked':
+        if (v instanceof VeraBooleanValue) { node.checked = (v as VeraBooleanValue).value }
+        break
+      case 'enabled':
+        if (v instanceof VeraBooleanValue) { node.enabled = (v as VeraBooleanValue).value }
+        break
+      case 'options':
+        if (v instanceof VeraArrayValue) {
+          let opts: string[] = []
+          for (let o of (v as VeraArrayValue).elements) {
+            if (o instanceof VeraStringValue) { opts.push((o as VeraStringValue).value) }
+          }
+          node.options = opts
+        }
+        break
+      case 'children':
+        if (v instanceof VeraArrayValue) {
+          for (let child of (v as VeraArrayValue).elements) {
+            if (child instanceof VeraObjectValue) {
+              node.children.push(decodeNode(child as VeraObjectValue, depth + 1))
+            }
+          }
+        }
+        break
+      default:
+        break
     }
   }
   return node

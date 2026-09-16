@@ -14,10 +14,15 @@ import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraIntValue, VeraString
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
 import { runIntent } from '../vera/VeraIntents'
-import { addCalendarEvent } from '../vera/VeraCalendar'
+import { addCalendarEvent, clearCalendarEvents } from '../vera/VeraCalendar'
 import { LengthMetrics } from '@ohos.arkui.node'
+import mediaquery from '@ohos.mediaquery'
 
 import { catalogKinds } from '../vera/VeraUiCatalog'
+import { iconPath, ICON_STROKE, ICON_VIEWPORT, ICON_ORIGIN } from '../vera/VeraIcons'
+import { ResolvedTheme, resolveTheme, containerFill, toneFill, toneEdge, toneInk,
+  textSize, textWeight, textInk, buttonFill, buttonInk, pathFill, densityPad,
+  densityGap, spacerSize } from '../vera/VeraTheme'
 import { store } from '../vera/ProjectStore'
 import { LiveNode, toLive, reconcile } from './VeraLiveTree'
 
@@ -32,6 +37,28 @@ import { LiveNode, toLive, reconcile } from './VeraLiveTree'
 @ObservedV2
 class SpinAngle {
   @Trace angle: number = 0
+}
+
+/**
+ * The look the running program asked for.
+ *
+ * Observed for the same reason SpinAngle is: the branches of renderNode are
+ * built once and retained, so a plain field they read would never redraw them
+ * if a program switched preset from its own state.
+ *
+ * One traced field, holding the whole table, replaced whole. That is the same
+ * move reconcile makes on `children`: @Trace notices a field being *written*,
+ * so swapping the object in is one notification for the one fact that matters
+ * -- the theme changed -- rather than the fifty a traced field per value would
+ * need to say it. The two strings beside it are plain: they exist only so an
+ * unchanged frame can tell it has nothing to write.
+ */
+@ObservedV2
+class LiveTheme {
+  @Trace resolved: ResolvedTheme = resolveTheme('clean', '', false)
+  preset: string = 'clean'
+  primary: string = ''
+  dark: boolean = false
 }
 
 @Component
@@ -73,6 +100,33 @@ export struct VeraPreview {
   private timerLastFire: Map<string, number> = new Map<string, number>()
   private ticking: boolean = false
   private spin: SpinAngle = new SpinAngle()
+  private theme: LiveTheme = new LiveTheme()
+  /**
+   * Whether the phone is in dark mode.
+   *
+   * The program is not asked and cannot say. A generated app holding a white
+   * screen up at someone whose phone is dark is the app being wrong, and it is
+   * not a judgement the program is in a position to make -- view() is a pure
+   * function of state and has no way to see the phone. So the renderer follows
+   * the system, and the preset supplies the dark palette that keeps the app
+   * looking like itself.
+   */
+  private dark: boolean = false
+  private darkListener: mediaquery.MediaQueryListener | null = null
+  /**
+   * How wide this renderer actually is, in vp.
+   *
+   * Measured from the box it is drawn in, not from the display. The two are not
+   * the same and the difference showed: this component serves both the
+   * full-screen run and the Generate page's inline preview, and sizing columns
+   * by the display width put three metrics in a preview box wide enough for
+   * two, so "1020 kg" wrapped onto a second line.
+   *
+   * @State because it arrives after the first frame: the first layout uses what
+   * the program asked for, the measurement comes back, and the count is
+   * corrected.
+   */
+  @State viewportWidth: number = 0
   private spinTimer: number = -1
   private spinPeriod: number = 0
 
@@ -81,7 +135,12 @@ export struct VeraPreview {
   // discovered as a blank space in someone's generated app.
   private static RENDERED: string[] = ['column', 'scroll', 'row', 'card', 'text',
     'button', 'cell', 'spacer', 'path', 'image', 'field', 'toggle', 'checkbox',
-    'slider', 'select', 'divider', 'progress', 'ticker', 'grid', 'listitem', 'canvas']
+    'slider', 'select', 'divider', 'progress', 'ticker', 'grid', 'listitem', 'canvas',
+    'apptheme', 'header', 'section', 'sectionheader', 'listgroup', 'banner',
+    'emptystate', 'stat', 'metricgroup',
+    'inttext', 'intstat', 'intfield', 'timefield', 'intlistitem', 'actionbar',
+    'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
+    'timeline', 'timelineitem']
 
   aboutToAppear(): void {
     let missing: string[] = []
@@ -92,11 +151,38 @@ export struct VeraPreview {
       console.error('VERA-RENDER catalogue kinds with no render branch: ' + missing.join(','))
       this.error = 'Renderer is missing: ' + missing.join(', ')
     }
+    this.watchDarkMode()
     this.load()
   }
 
   onProgramChanged(): void {
     this.load()
+  }
+
+  /**
+   * Follow the system's light/dark setting, and keep following it.
+   *
+   * A listener rather than a one-off read, so the app turns over while it is on
+   * screen instead of only at launch. Wrapped because a media query is not
+   * worth failing to draw over: if it is unavailable the app stays light, which
+   * is what it has always been.
+   */
+  private watchDarkMode(): void {
+    try {
+      let listener = mediaquery.matchMediaSync('(dark-mode: true)')
+      this.dark = listener.matches
+      listener.on('change', (result: mediaquery.MediaQueryResult) => {
+        if (this.disposed || result.matches === this.dark) { return }
+        this.dark = result.matches
+        // The palette is chosen in reconcileTheme, off the frame, so the way to
+        // repaint is to ask for a frame.
+        this.renderView()
+      })
+      this.darkListener = listener
+    } catch (e) {
+      this.dark = false
+      console.info('VERA-RENDER dark mode unavailable: ' + (e as Error).message)
+    }
   }
 
   private load(): void {
@@ -227,6 +313,16 @@ export struct VeraPreview {
     // Without this the tickers -- and the VM they drive -- outlive the screen.
     this.disposed = true
     this.stopAllTimers()
+    // The same applies to the dark-mode listener: it holds this component, and
+    // its callback re-enters the VM.
+    if (this.darkListener !== null) {
+      try {
+        this.darkListener!.off('change')
+      } catch (e) {
+        console.info('VERA-RENDER dark listener off failed: ' + (e as Error).message)
+      }
+      this.darkListener = null
+    }
   }
 
   private stateKeys(): string[] {
@@ -279,6 +375,7 @@ export struct VeraPreview {
       console.info('VERA-VIEW rev=' + (this.revision + 1).toString() +
         ' root=' + (root !== null ? root!.kind : 'null') +
         ' children=' + (root !== null ? root!.children.length.toString() : '0'))
+      this.reconcileTheme(root)
       if (root === null) {
         this.liveRoot = null
         this.hasRoot = false
@@ -294,6 +391,41 @@ export struct VeraPreview {
     } catch (e) {
       this.error = 'View error: ' + (e as Error).message
     }
+  }
+
+  /**
+   * Take the look from the root of the frame, if the program named one.
+   *
+   * A program that does not use ui.AppTheme -- which is every program written
+   * before it existed, and both benchmark artifacts -- resolves to 'clean',
+   * whose values are the ones the renderer used when they were hardcoded. So
+   * those programs draw exactly what they always drew.
+   */
+  private reconcileTheme(root: VeraUiNode | null): void {
+    let preset = 'clean'
+    let primary = ''
+    if (root !== null && root!.kind === 'apptheme') {
+      preset = root!.style
+      primary = root!.value
+    }
+    if (this.theme.preset === preset && this.theme.primary === primary &&
+        this.theme.dark === this.dark) { return }
+    this.theme.preset = preset
+    this.theme.primary = primary
+    this.theme.dark = this.dark
+    // Written last, because writing it is what triggers the redraw.
+    this.theme.resolved = resolveTheme(preset, primary, this.dark)
+  }
+
+  /**
+   * The theme, for a render branch.
+   *
+   * Every branch reaches the table through here, so every branch reads the
+   * traced field and is therefore rebuilt when the table is replaced. A branch
+   * that cached it instead would stay at the look it was first built with.
+   */
+  private t(): ResolvedTheme {
+    return this.theme.resolved
   }
 
   private handleAction(action: string, value: number): void {
@@ -358,7 +490,7 @@ export struct VeraPreview {
     if (effects.length === 0) { return }
     this.host!.pendingEffects = []
     for (let effect of effects) {
-      console.info('VERA-EFFECT id=' + effect.id.toString() + ' ' + effect.kind +
+      console.info('VERA-EFFECT id=' + effect.id.toString() + ' ' + effect.kind + '.' + effect.fn +
         ' -> ' + effect.resultHandler)
       this.runEffect(effect)
     }
@@ -367,7 +499,9 @@ export struct VeraPreview {
   /** One effect, whichever host it belongs to, answered through its handler. */
   private runEffect(effect: HostEffect): void {
     let answer: Promise<string>
-    if (effect.kind === 'calendar') {
+    if (effect.kind === 'calendar' && effect.fn === 'clearEvents') {
+      answer = clearCalendarEvents()
+    } else if (effect.kind === 'calendar') {
       answer = addCalendarEvent(
         this.effectText(effect, 'title'),
         this.effectInt(effect, 'hour', 9),
@@ -425,6 +559,18 @@ export struct VeraPreview {
     }
     .width('100%')
     .height('100%')
+    // Writing this back is what makes the column counts adapt. Guarded by a
+    // whole vp: the write triggers a re-layout, and a re-layout that reports a
+    // width a fraction different would write again, and so on.
+    .onAreaChange((_old: Area, now: Area) => {
+      let w = now.width as number
+      if (Math.abs(w - this.viewportWidth) >= 1) { this.viewportWidth = w }
+    })
+    // The page behind the program, so a theme whose background is not white
+    // reaches past the tree to the edges of the screen. Reading the theme here
+    // also subscribes build() itself, so a program that changes its own preset
+    // repaints the page and not only its contents.
+    .backgroundColor(this.t().background)
   }
 
   /**
@@ -456,9 +602,187 @@ export struct VeraPreview {
     }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
   }
 
+  /**
+   * Values the theme does not own.
+   *
+   * The line is: anything that makes one preset look like a different app --
+   * colour, type size, radius, padding -- comes from VeraTheme. Structural
+   * dimensions that are about fitting on a phone rather than about character --
+   * how tall a canvas band is, how far a scroll may grow, how big an image box
+   * is -- stay here as literals, because varying them per preset would change
+   * what fits on the screen rather than how it looks.
+   */
+  private gridPad(style: string): number {
+    let t = this.t()
+    if (style === 'compact') { return t.padGrid - 2 }
+    if (style === 'spacious') { return t.padGrid + 2 }
+    return t.padGrid
+  }
+
+  /** What a Section's role fills its box with; transparent for plain content. */
+  private sectionFill(style: string): string {
+    let t = this.t()
+    if (style === 'hero') { return t.primaryFill }
+    if (style === 'summary') { return t.surface }
+    if (style === 'warning') { return t.warningFill }
+    return '#00000000'
+  }
+
+  private sectionFills(style: string): boolean {
+    return style === 'hero' || style === 'summary' || style === 'warning'
+  }
+
+  /**
+   * A role that fills its box insets its content from the fill. One that does
+   * not still holds its content off the edge of the screen -- which it did not
+   * at first: a plain section ran its heading and its controls flush into the
+   * left margin while the Header above sat properly indented, and a
+   * SectionHeader's count ran off the right edge and was cut in half.
+   */
+  private sectionPadX(style: string): number {
+    return this.sectionFills(style) ? this.t().padCard : this.t().padBase
+  }
+
+  /** Vertical padding belongs to the fill, so an unfilled section has none. */
+  private sectionPadY(style: string): number {
+    return this.sectionFills(style) ? this.t().padCard : 0
+  }
+
+  /**
+   * A number, as the program asked for it to be shown.
+   *
+   * This is the formatting the language cannot do. VERA-L has no padStart and
+   * no number formatting of any kind, so a program wanting "07" had to carry a
+   * pad2 function, and one wanting "$1,204" had to build the string by hand.
+   * The node carries the number and the three things worth saying about it.
+   */
+  private formatInt(node: LiveNode): string {
+    let n = node.intValue
+    let negative = n < 0
+    let digits = (negative ? -n : n).toString()
+    // minimumDigits pads the digits, not the sign: -7 to two digits is "-07".
+    while (digits.length < node.minimumDigits) { digits = '0' + digits }
+    return node.prefix + (negative ? '-' : '') + digits + node.suffix
+  }
+
+  /**
+   * The same minutes as a Date, because the picker wants one.
+   *
+   * The day part is never read back -- only hour and minute return through
+   * onAccept -- so today's date is as good as any.
+   */
+  private minutesToDate(total: number): Date {
+    let m = total < 0 ? 0 : total % 1440
+    let d = new Date()
+    d.setHours(Math.floor(m / 60), m % 60, 0, 0)
+    return d
+  }
+
+  /**
+   * The typeface, or undefined to leave the system's alone.
+   *
+   * Passed on every piece of text rather than only on the headings: a screen
+   * where the title is serif and the list rows are not does not read as a
+   * choice, it reads as a mistake. undefined rather than a default family name
+   * so the five presets that do not ask for a typeface get exactly the
+   * rendering they had before there was such a thing as asking.
+   */
+  private textFamily(): string | undefined {
+    let f = this.t().fontFamily
+    return f.length > 0 ? f : undefined
+  }
+
+  /** Minutes since midnight as HH:MM, which is what TimeField holds. */
+  private formatMinutes(total: number): string {
+    let m = total < 0 ? 0 : total % 1440
+    let h = Math.floor(m / 60)
+    let mm = m % 60
+    return (h < 10 ? '0' : '') + h.toString() + ':' + (mm < 10 ? '0' : '') + mm.toString()
+  }
+
+  /**
+   * How many columns actually fit, rather than how many were asked for.
+   *
+   * The requested count is a maximum. Four metrics side by side is a fine
+   * layout on a tablet and four unreadable slivers on this phone, and the
+   * program cannot know which it is running on -- it is a pure function of
+   * state and has no way to ask. So the renderer decides, from the width it can
+   * see and the narrowest a cell may usefully be.
+   */
+  private fittingColumns(requested: number, minimumCellWidth: number): number {
+    let want = requested < 1 ? 1 : requested
+    if (this.viewportWidth <= 0) { return want }
+    let fits = Math.floor(this.viewportWidth / minimumCellWidth)
+    if (fits < 1) { fits = 1 }
+    return fits < want ? fits : want
+  }
+
+  /** Two to four; anything else is a number the model should not have picked. */
+  private metricColumns(node: LiveNode): number {
+    if (node.columns < 2) { return 2 }
+    if (node.columns > 4) { return 4 }
+    return node.columns
+  }
+
+  private sectionRadius(style: string): number {
+    return this.sectionFills(style) ? this.t().radiusCard : 0
+  }
+
+  /**
+   * One icon, at a size, in a colour.
+   *
+   * The paths are written in the same 0..100 box as ui.Path, so drawing one at
+   * sixteen points is a scale of 0.16 about the centre of a box that size. They
+   * are stroked rather than filled -- see VeraIcons for why -- with round caps,
+   * which is what keeps a two-segment tick from ending in two blunt chisels.
+   */
+  @Builder
+  drawIcon(name: string, size: number, colour: string) {
+    // The viewport is the whole trick, and its unit is half the trick.
+    //
+    // ArkUI's Path has no viewBox of its own: its commands are drawn in a fixed
+    // unit and its width/height only set the box they are clipped to, so
+    // .scale() on the Path fights the layout rather than sizing the drawing.
+    // Three rounds of that put a speck in the corner of every button.
+    // Shape.viewPort is the mechanism that does exist -- it maps the 0..100 box
+    // the icons are drawn in onto whatever size this component is given, and it
+    // carries the stroke along with the geometry, so the weight stays even from
+    // twelve points to thirty-eight.
+    //
+    // The unit of that box is the pixel. Stated as bare numbers the viewPort
+    // and the stroke are read as vp while the commands are read as px, the
+    // three disagree by the display density, and the glyph lands at a quarter
+    // of its box -- measured at 0.25 where 0.78 was wanted. Hence '100px' and
+    // '8px'. This was settled by drawing the candidates on the phone and
+    // measuring them, after three rounds of reasoning about it got it wrong.
+    //
+    // Every icon is normalised to span 78 of those 100 units, so a glyph drawn
+    // at `size` reads at about the cap height of text at the same size. That
+    // normalisation lives in the path data, done once; nothing is scaled here.
+    Shape() {
+      Path({ commands: iconPath(name) })
+        .fill(Color.Transparent)
+        .stroke(colour)
+        .strokeWidth(ICON_STROKE)
+        .strokeLineCap(LineCapStyle.Round)
+        .strokeLineJoin(LineJoinStyle.Round)
+    }
+    .viewPort({ x: ICON_ORIGIN, y: ICON_ORIGIN, width: ICON_VIEWPORT, height: ICON_VIEWPORT })
+    .width(size)
+    .height(size)
+  }
+
   @Builder
   renderNode(node: LiveNode, parentKind: string) {
-    if (node.kind === 'scroll') {
+    if (node.kind === 'apptheme') {
+      // The look itself is picked up in reconcileTheme, off the root of the
+      // frame. All this branch does is paint the page and get out of the way.
+      Column() {
+        this.renderChildren(node)
+      }
+      .width('100%')
+      .backgroundColor(this.t().background)
+    } else if (node.kind === 'scroll') {
       // Rendered as a plain Column until now, so a program asking for a
       // scrolling region got one that could not scroll and simply grew.
       Scroll() {
@@ -466,41 +790,38 @@ export struct VeraPreview {
           this.renderChildren(node)
         }
         .width('100%')
-        .alignItems(node.style === 'center' ? HorizontalAlign.Center : HorizontalAlign.Start)
-        .padding(node.style === 'compact' ? 6 : node.style === 'spacious' ? 16 : 10)
+        .alignItems(node.style === 'center' ? HorizontalAlign.Center :
+          node.style === 'end' ? HorizontalAlign.End : HorizontalAlign.Start)
+        .padding(densityPad(this.t(), node.style))
       }
       .width('100%')
       .constraintSize({ maxHeight: 420 })
       .align(Alignment.Top)
       .scrollBar(BarState.Auto)
-      .backgroundColor(
-        node.style === 'surface' ? '#F3F6FA' :
-          node.style === 'accent' ? '#EBF0FF' : '#00000000')
+      .backgroundColor(containerFill(this.t(), node.style))
     } else if (node.kind === 'column') {
       Column() {
         this.renderChildren(node)
       }
       .width('100%')
-      .alignItems(node.style === 'center' ? HorizontalAlign.Center : HorizontalAlign.Start)
-      .padding(node.style === 'compact' ? 6 : node.style === 'spacious' ? 16 : 10)
-      .backgroundColor(
-        node.style === 'surface' ? '#F3F6FA' :
-          node.style === 'accent' ? '#EBF0FF' : '#00000000')
+      .alignItems(node.style === 'center' ? HorizontalAlign.Center :
+        node.style === 'end' ? HorizontalAlign.End : HorizontalAlign.Start)
+      .padding(densityPad(this.t(), node.style))
+      .backgroundColor(containerFill(this.t(), node.style))
     } else if (node.kind === 'row' && this.rowDistributes(node)) {
       // A row of cells or cards is a grid row: the children share the width by
       // weight, and a wrapping Flex does not distribute weight, which collapses
       // a board to nothing.
-      Row({ space: node.style === 'compact' ? 4 : node.style === 'spacious' ? 12 : 8 }) {
+      Row({ space: densityGap(this.t(), node.style) }) {
         this.renderChildren(node)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .justifyContent(node.style === 'split' ? FlexAlign.SpaceBetween :
-        node.style === 'center' ? FlexAlign.Center : FlexAlign.Start)
-      .padding(6)
-      .backgroundColor(
-        node.style === 'surface' ? '#F3F6FA' :
-          node.style === 'accent' ? '#EBF0FF' : '#00000000')
+        node.style === 'center' ? FlexAlign.Center :
+          node.style === 'end' ? FlexAlign.End : FlexAlign.Start)
+      .padding(this.t().padRow)
+      .backgroundColor(containerFill(this.t(), node.style))
     } else if (node.kind === 'row') {
       // Everything else wraps rather than pushing children past the right edge,
       // where they cannot be tapped. Half the probes lost a control that way --
@@ -509,18 +830,17 @@ export struct VeraPreview {
       Flex({
         wrap: FlexWrap.Wrap,
         justifyContent: node.style === 'split' ? FlexAlign.SpaceBetween :
-          node.style === 'center' ? FlexAlign.Center : FlexAlign.Start,
+          node.style === 'center' ? FlexAlign.Center :
+            node.style === 'end' ? FlexAlign.End : FlexAlign.Start,
         alignItems: ItemAlign.Center,
-        space: { main: LengthMetrics.vp(node.style === 'compact' ? 4 : node.style === 'spacious' ? 12 : 8),
-                 cross: LengthMetrics.vp(6) }
+        space: { main: LengthMetrics.vp(densityGap(this.t(), node.style)),
+                 cross: LengthMetrics.vp(this.t().padRow) }
       }) {
         this.renderChildren(node)
       }
       .width('100%')
-      .padding(6)
-      .backgroundColor(
-        node.style === 'surface' ? '#F3F6FA' :
-          node.style === 'accent' ? '#EBF0FF' : '#00000000')
+      .padding(node.style === 'joined' ? 0 : this.t().padRow)
+      .backgroundColor(containerFill(this.t(), node.style))
     } else if (node.kind === 'card') {
       Column() {
         this.renderChildren(node)
@@ -528,30 +848,17 @@ export struct VeraPreview {
       .width(parentKind === 'row' ? undefined : '100%')
       .layoutWeight(parentKind === 'row' ? 1 : 0)
       .alignItems(HorizontalAlign.Start)
-      .padding(14)
-      .backgroundColor(
-        node.style === 'accent' ? '#EBF0FF' :
-          node.style === 'success' ? '#E8F8E8' :
-            node.style === 'warning' ? '#FFF8E0' :
-              node.style === 'danger' ? '#FFECEC' : '#F3F6FA')
-      .border({ width: 1, color: '#D8E1ED' })
-      .borderRadius(14)
+      .padding(this.t().padCard)
+      .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
+      .border({ width: this.t().borderWidth, color: this.t().line })
+      .borderRadius(this.t().radiusCard)
     } else if (node.kind === 'text') {
       Text(node.text)
-        .fontSize(
-          node.style === 'title' ? 24 :
-            node.style === 'heading' ? 18 :
-              node.style === 'metric' ? 32 :
-                node.style === 'caption' ? 12 : 15)
-        .fontWeight(
-          node.style === 'title' ? FontWeight.Bold :
-            node.style === 'heading' ? FontWeight.Medium :
-              node.style === 'metric' ? FontWeight.Bold : FontWeight.Normal)
-        .fontColor(
-          node.style === 'muted' ? '#888888' :
-            node.style === 'success' ? '#2E7D32' :
-              node.style === 'warning' ? '#E65100' :
-                node.style === 'danger' ? '#C62828' : '#000000')
+        .fontSize(textSize(this.t(), node.style))
+        .fontFamily(this.textFamily())
+        .fontWeight(textWeight(this.t(), node.style))
+        .fontColor(textInk(this.t(), node.style))
+        .letterSpacing(node.style === 'eyebrow' ? this.t().eyebrowSpacing : 0)
         // In a row the text takes only what it needs and shrinks rather than
         // shoving its siblings out of the window; the row wraps if it must.
         // Making it greedy instead (an earlier attempt) merely moved the problem
@@ -560,17 +867,710 @@ export struct VeraPreview {
         .constraintSize({ maxWidth: '100%' })
         .flexShrink(1)
         .padding({ top: 2, bottom: 2 })
+    } else if (node.kind === 'header') {
+      // The app's own title block. A generated program used to open with a bare
+      // ui.Text and nothing to distinguish it from the first line of content.
+      Column({ space: this.t().gapTight }) {
+        if (node.label.length > 0) {
+          Text(node.label)
+            .fontSize(this.t().sizeEyebrow)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightHeading)
+            .fontColor(this.t().inkMuted)
+            .letterSpacing(this.t().eyebrowSpacing)
+            .width('100%')
+            .textAlign(node.style === 'center' ? TextAlign.Center : TextAlign.Start)
+        }
+        Row({ space: this.t().gapBase }) {
+          if (node.icon.length > 0) {
+            this.drawIcon(node.icon, this.t().sizeTitle, this.t().primaryInk)
+          }
+          Text(node.text)
+            .fontSize(this.t().sizeDisplay)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightDisplay)
+            .fontColor(this.t().ink)
+            .layoutWeight(1)
+            .textAlign(node.style === 'center' ? TextAlign.Center : TextAlign.Start)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        if (node.value.length > 0) {
+          Text(node.value)
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft)
+            .width('100%')
+            .textAlign(node.style === 'center' ? TextAlign.Center : TextAlign.Start)
+        }
+      }
+      .width('100%')
+      .alignItems(node.style === 'center' ? HorizontalAlign.Center : HorizontalAlign.Start)
+      .padding({ left: this.t().padBase, right: this.t().padBase,
+                 top: this.t().padLoose, bottom: this.t().padBase })
+    } else if (node.kind === 'section') {
+      Column({ space: this.t().gapTight }) {
+        if (node.text.length > 0) {
+          Text(node.text)
+            .fontSize(this.t().sizeHeading)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightHeading)
+            .fontColor(node.style === 'warning' ? this.t().warningInk :
+              node.style === 'supporting' ? this.t().inkSoft : this.t().ink)
+            .width('100%')
+        }
+        if (node.label.length > 0) {
+          Text(node.label)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkMuted)
+            .width('100%')
+        }
+        this.renderChildren(node)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({
+        left: this.sectionPadX(node.style), right: this.sectionPadX(node.style),
+        top: this.sectionPadY(node.style), bottom: this.sectionPadY(node.style)
+      })
+      .backgroundColor(this.sectionFill(node.style))
+      .borderRadius(this.sectionRadius(node.style))
+      // The gap between one section and the next comes from the theme, so a
+      // program does not have to punctuate itself with ui.Spacer.
+      .margin({ top: this.t().gapTight, bottom: this.t().gapSection })
+    } else if (node.kind === 'sectionheader') {
+      Column({ space: 2 }) {
+        Row() {
+          Text(node.text)
+            .fontSize(this.t().sizeHeading)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightHeading)
+            .fontColor(node.style === 'accent' ? this.t().primary :
+              node.style === 'muted' ? this.t().inkMuted : this.t().ink)
+            .layoutWeight(1)
+          if (node.value.length > 0) {
+            Text(node.value)
+              .fontSize(this.t().sizeCaption)
+              .fontFamily(this.textFamily())
+              .fontColor(this.t().inkMuted)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        if (node.label.length > 0) {
+          Text(node.label)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkMuted)
+            .width('100%')
+        }
+      }
+      .width('100%')
+      // Indents itself only when nothing else is doing it: inside a Section the
+      // section already owns the margin, and doing it twice reads as a stray
+      // indent rather than as alignment.
+      .padding({
+        left: parentKind === 'section' ? 0 : this.t().padBase,
+        right: parentKind === 'section' ? 0 : this.t().padBase,
+        top: this.t().gapBase, bottom: this.t().gapTight
+      })
+    } else if (node.kind === 'listgroup') {
+      // One frame around the whole collection, with the separators drawn here.
+      // Before this, a list was a Card per row: every row had its own border,
+      // its own radius and its own margin, and a list of eight read as eight
+      // unrelated things.
+      Column() {
+        if (node.text.length > 0) {
+          Text(node.text)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightHeading)
+            .fontColor(this.t().inkMuted)
+            .width('100%')
+            .padding({ left: this.t().padListX, right: this.t().padListX,
+                       top: this.t().gapBase, bottom: this.t().gapTight })
+        }
+        ForEach(node.children, (child: LiveNode, index: number) => {
+          // A hairline between rows, never above the first. Drawn by the group
+          // rather than by the row so a row does not have to know whether it is
+          // last.
+          // Rules go between rows. A program that puts something else in a
+          // group -- an ActionBar for the row above it, most often -- was
+          // getting a rule drawn across it, which read as a broken list.
+          if (index > 0 && (child.kind === 'listitem' || child.kind === 'intlistitem')) {
+            Divider()
+              .strokeWidth(this.t().borderWidth)
+              .color(this.t().lineSoft)
+              .margin({ left: this.t().padListX, right: this.t().padListX })
+          }
+          this.renderNode(child, 'listgroup')
+          // Same keying as renderChildren; see the note there.
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .backgroundColor(this.t().surfaceRaised)
+      .border({ width: this.t().borderWidth, color: this.t().line })
+      .borderRadius(this.t().radiusCard)
+      .clip(true)
+      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'banner') {
+      Row({ space: this.t().gapBase }) {
+        if (node.icon.length > 0) {
+          this.drawIcon(node.icon, this.t().sizeHeading,
+            toneEdge(this.t(), node.style, this.t().primaryInk))
+        }
+        Column({ space: 2 }) {
+          if (node.text.length > 0) {
+            Text(node.text)
+              .fontSize(this.t().sizeBody)
+              .fontFamily(this.textFamily())
+              .fontWeight(this.t().weightHeading)
+              .fontColor(toneInk(this.t(), node.style, this.t().ink))
+              .width('100%')
+          }
+          if (node.label.length > 0) {
+            Text(node.label)
+              .fontSize(this.t().sizeCaption)
+              .fontFamily(this.textFamily())
+              .fontColor(this.t().inkSoft)
+              .width('100%')
+          }
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        if (node.value.length > 0) {
+          Button(node.value)
+            .height(this.t().chipHeight)
+            .fontSize(this.t().sizeCaption + 1)
+            .fontFamily(this.textFamily())
+            .type(ButtonType.Capsule)
+            .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
+            .fontColor(this.t().onPrimary)
+            .onClick(() => {
+              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+            })
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding(this.t().padBase)
+      .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
+      .borderRadius(this.t().radiusControl)
+      // A rail in the tone, so the banner reads as a status at a glance rather
+      // than as one more tinted box.
+      .borderWidth({ left: 4 })
+      .borderColor({ left: toneEdge(this.t(), node.style, this.t().primary) })
+      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'emptystate') {
+      // State starts empty, so for most programs this is the first thing anyone
+      // sees. It used to be a blank column.
+      Column({ space: this.t().gapBase }) {
+        if (node.icon.length > 0) {
+          this.drawIcon(node.icon, this.t().sizeDisplay, this.t().inkMuted)
+        }
+        Text(node.text)
+          .fontSize(this.t().sizeHeading)
+          .fontFamily(this.textFamily())
+          .fontWeight(this.t().weightHeading)
+          .fontColor(node.style === 'muted' ? this.t().inkMuted : this.t().ink)
+          .textAlign(TextAlign.Center)
+          .width('100%')
+        if (node.label.length > 0) {
+          Text(node.label)
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkMuted)
+            .textAlign(TextAlign.Center)
+            .width('100%')
+        }
+        if (node.value.length > 0) {
+          Button(node.value)
+            .height(this.t().controlHeight)
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
+            .type(ButtonType.Capsule)
+            .backgroundColor(this.t().primary)
+            .fontColor(this.t().onPrimary)
+            .onClick(() => {
+              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+            })
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
+      .justifyContent(FlexAlign.Center)
+      .padding(this.t().padLoose)
+    } else if (node.kind === 'stat') {
+      // Carries no surface of its own: it is meant to sit inside a MetricGroup,
+      // which owns the one surface the group shares.
+      Column({ space: 2 }) {
+        Row({ space: this.t().gapTight }) {
+          if (node.icon.length > 0) {
+            this.drawIcon(node.icon, this.t().sizeCaption,
+              toneInk(this.t(), node.style, this.t().inkMuted))
+          }
+          if (node.label.length > 0) {
+            Text(node.label)
+              .fontSize(this.t().sizeCaption)
+              .fontFamily(this.textFamily())
+              .fontColor(this.t().inkMuted)
+              .layoutWeight(1)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        Text(node.text)
+          .fontSize(this.t().sizeMetric)
+          .fontFamily(this.textFamily())
+          .fontWeight(this.t().weightMetric)
+          .fontColor(toneInk(this.t(), node.style, this.t().ink))
+          .width('100%')
+        if (node.value.length > 0) {
+          Text(node.value)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft)
+            .width('100%')
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(this.t().padBase)
+    } else if (node.kind === 'metricgroup') {
+      // Equal columns over one shared surface, built the same way ui.Grid is
+      // and for the same reason -- see the note in the grid branch.
+      Flex({
+        wrap: FlexWrap.Wrap,
+        justifyContent: FlexAlign.Start,
+        alignItems: ItemAlign.Start
+      }) {
+        ForEach(node.children, (child: LiveNode) => {
+          Column() {
+            this.renderNode(child, 'metricgroup')
+          }
+          .width(Math.floor(100 / this.fittingColumns(this.metricColumns(node), 128)).toString() + '%')
+          // Same keying as renderChildren; see the note there.
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+      }
+      .width('100%')
+      .padding(densityPad(this.t(), node.style) - this.t().padTight)
+      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'inttext') {
+      // ui.Text's twin for a number the program holds as a number.
+      Text(this.formatInt(node))
+        .fontSize(textSize(this.t(), node.style))
+        .fontFamily(this.textFamily())
+        .fontWeight(textWeight(this.t(), node.style))
+        .fontColor(textInk(this.t(), node.style))
+        .width(parentKind === 'row' ? undefined : '100%')
+        .constraintSize({ maxWidth: '100%' })
+        .flexShrink(1)
+        .padding({ top: 2, bottom: 2 })
+    } else if (node.kind === 'clocktext') {
+      Text(node.prefix + this.formatMinutes(node.intValue) + node.suffix)
+        .fontSize(textSize(this.t(), node.style))
+        .fontFamily(this.textFamily())
+        .fontWeight(textWeight(this.t(), node.style))
+        .fontColor(textInk(this.t(), node.style))
+        .width(parentKind === 'row' ? undefined : '100%')
+        .constraintSize({ maxWidth: '100%' })
+        .flexShrink(1)
+        .padding({ top: 2, bottom: 2 })
+    } else if (node.kind === 'intstat') {
+      Column({ space: 2 }) {
+        Row({ space: this.t().gapTight }) {
+          if (node.icon.length > 0) {
+            this.drawIcon(node.icon, this.t().sizeCaption,
+              toneInk(this.t(), node.style, this.t().inkMuted))
+          }
+          if (node.label.length > 0) {
+            Text(node.label)
+              .fontSize(this.t().sizeCaption)
+              .fontFamily(this.textFamily())
+              .fontColor(this.t().inkMuted)
+              .layoutWeight(1)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        Text(this.formatInt(node))
+          .fontSize(this.t().sizeMetric)
+          .fontFamily(this.textFamily())
+          .fontWeight(this.t().weightMetric)
+          .fontColor(toneInk(this.t(), node.style, this.t().ink))
+          .width('100%')
+        if (node.value.length > 0) {
+          Text(node.value)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft)
+            .width('100%')
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(this.t().padBase)
+    } else if (node.kind === 'intfield') {
+      // Stepper rather than a keyboard: the value has to come back as an int,
+      // and there is no way to turn typed text into one.
+      Column({ space: this.t().gapTight }) {
+        if (node.label.length > 0) {
+          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
+        }
+        Row({ space: this.t().gapBase }) {
+          Button('-')
+            .width(this.t().controlHeight)
+            .height(this.t().controlHeight)
+            .type(ButtonType.Circle)
+            .enabled(node.enabled && node.intValue > node.minimum)
+            .backgroundColor(this.t().secondaryFill)
+            .fontColor(this.t().secondaryInk)
+            .onClick(() => {
+              if (node.action.length === 0) { return }
+              let next = node.intValue - 1
+              if (next >= node.minimum) { this.handleAction(node.action, next) }
+            })
+          Text(this.formatInt(node))
+            .fontSize(this.t().sizeHeading)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightHeading)
+            .fontColor(this.t().ink)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+          Button('+')
+            .width(this.t().controlHeight)
+            .height(this.t().controlHeight)
+            .type(ButtonType.Circle)
+            .enabled(node.enabled && node.intValue < node.maximum)
+            .backgroundColor(this.t().primary)
+            .fontColor(this.t().onPrimary)
+            .onClick(() => {
+              if (node.action.length === 0) { return }
+              let next = node.intValue + 1
+              if (next <= node.maximum) { this.handleAction(node.action, next) }
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'timefield') {
+      Row({ space: this.t().gapBase }) {
+        Text(node.label).fontSize(this.t().sizeBody).layoutWeight(1)
+        Button(this.formatMinutes(node.intValue))
+          .height(this.t().chipHeight)
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .type(ButtonType.Capsule)
+          .enabled(node.enabled)
+          .backgroundColor(this.t().secondaryFill)
+          .fontColor(this.t().secondaryInk)
+          .onClick(() => {
+            if (node.action.length === 0) { return }
+            // The phone's own picker, so the value is always a real time and
+            // the program never has to validate one.
+            TimePickerDialog.show({
+              selected: this.minutesToDate(node.intValue),
+              useMilitaryTime: true,
+              onAccept: (result: TimePickerResult) => {
+                let h = result.hour !== undefined ? result.hour as number : 0
+                let m = result.minute !== undefined ? result.minute as number : 0
+                this.handleAction(node.action, h * 60 + m)
+              }
+            })
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding({ top: this.t().padRow, bottom: this.t().padRow })
+    } else if (node.kind === 'intlistitem') {
+      Row({ space: this.t().gapBase + 2 }) {
+        if (node.icon.length > 0) {
+          this.drawIcon(node.icon, this.t().sizeHeading,
+            toneInk(this.t(), node.style, this.t().inkSoft))
+        }
+        Column({ space: 2 }) {
+          Text(node.text).fontSize(this.t().sizeBody + 1).width('100%')
+          if (node.label.length > 0) {
+            Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkMuted).width('100%')
+          }
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        Text(this.formatInt(node))
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .fontWeight(this.t().weightHeading)
+          .fontColor(toneInk(this.t(), node.style, this.t().inkStrong))
+      }
+      .width('100%')
+      .padding({ left: this.t().padListX, right: this.t().padListX,
+                 top: this.t().padListY, bottom: this.t().padListY })
+      // Identical framing rules to ui.ListItem, so the two mix inside one
+      // ListGroup without the rows disagreeing about whether they have borders.
+      .backgroundColor(toneFill(this.t(), node.style,
+        parentKind === 'listgroup' ? '#00000000' : this.t().surfaceRaised))
+      .border({
+        width: parentKind === 'listgroup' ? 0 : this.t().borderWidth,
+        color: this.t().lineSoft
+      })
+      .borderRadius(parentKind === 'listgroup' ? 0 : this.t().radiusControl)
+      .margin({
+        top: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1,
+        bottom: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1
+      })
+      .opacity(node.enabled ? 1 : 0.5)
+      .onClick(() => {
+        if (node.action.length > 0 && node.enabled) {
+          this.handleAction(node.action, node.eventValue)
+        }
+      })
+    } else if (node.kind === 'actionbar' && parentKind === 'listgroup') {
+      // Inside a group the bar belongs to the row above it, so it is inset to
+      // the row's own margin and packs to one end instead of spreading across
+      // the full width, where two buttons end up in opposite corners.
+      Flex({
+        wrap: FlexWrap.Wrap,
+        justifyContent: FlexAlign.End,
+        alignItems: ItemAlign.Center,
+        space: { main: LengthMetrics.vp(this.t().gapBase),
+                 cross: LengthMetrics.vp(this.t().gapTight) }
+      }) {
+        this.renderChildren(node)
+      }
+      .width('100%')
+      .padding({ left: this.t().padListX, right: this.t().padListX,
+                 top: 0, bottom: this.t().gapBase })
+    } else if (node.kind === 'actionbar') {
+      // Wraps rather than overflowing, for the reason the plain row branch
+      // gives: a control past the right edge cannot be tapped.
+      Flex({
+        wrap: FlexWrap.Wrap,
+        justifyContent: node.style === 'end' ? FlexAlign.End :
+          node.style === 'center' ? FlexAlign.Center :
+            node.style === 'spread' ? FlexAlign.SpaceBetween : FlexAlign.Start,
+        alignItems: ItemAlign.Center,
+        space: { main: LengthMetrics.vp(this.t().gapBase),
+                 cross: LengthMetrics.vp(this.t().gapTight) }
+      }) {
+        this.renderChildren(node)
+      }
+      .width('100%')
+      .padding({ top: this.t().gapBase, bottom: this.t().gapBase })
+    } else if (node.kind === 'timeline') {
+      // The rail belongs to the timeline, not to the entry.
+      //
+      // An entry cannot draw the line below itself, because it does not know
+      // whether it is the last one, and a rail that runs on past the final
+      // marker reads as an unfinished list. The parent knows, so the parent
+      // draws both the marker and the line, and the entry draws only its words.
+      Column() {
+        if (node.text.length > 0) {
+          Text(node.text)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightHeading)
+            .fontColor(this.t().inkMuted)
+            .width('100%')
+            .padding({ bottom: this.t().gapTight })
+        }
+        ForEach(node.children, (child: LiveNode, index: number) => {
+          // The rail is the entry's own left border.
+          //
+          // It has to be exactly as tall as the entry beside it, and every way
+          // of asking for that height directly fails: height('100%') inside a
+          // Scroll resolves against an unbounded height and stretches the first
+          // entry down the whole screen, in a Row and in a Stack alike -- both
+          // were tried and both did it. A border needs no height at all. It is
+          // drawn down the side of the content whatever the content turns out
+          // to be, which is the thing that was wanted, and the last entry
+          // simply has none so the rail stops where the events do.
+          //
+          // The marker then sits over the line on a disc of the background
+          // colour, which is what breaks the rail at each node.
+          Stack({ alignContent: Alignment.TopStart }) {
+            Column() {
+              this.renderNode(child, 'timeline')
+            }
+            .width('100%')
+            .padding({ left: this.t().gapLoose })
+            .border({
+              width: { left: index < node.children.length - 1 ? this.t().borderWidth * 2 : 0 },
+              color: { left: this.t().line }
+            })
+
+            // A marker means "a moment happened here", so only an entry gets
+            // one. The other things a timeline may hold -- the ActionBar that
+            // belongs to the entry above it -- sit against the rail without
+            // interrupting it, which is what they are: part of that moment, not
+            // another one.
+            Column() {
+              if (child.kind === 'timelineitem' && child.icon.length > 0) {
+                this.drawIcon(child.icon, this.t().sizeBody,
+                  toneEdge(this.t(), child.style, this.t().primaryInk))
+              } else if (child.kind === 'timelineitem') {
+                Column()
+                  .width(this.t().gapBase)
+                  .height(this.t().gapBase)
+                  .borderRadius(this.t().gapBase / 2)
+                  .backgroundColor(toneEdge(this.t(), child.style, this.t().primaryInk))
+              }
+            }
+            .width(child.kind === 'timelineitem' ? this.t().sizeBody * 1.5 : 0)
+            .height(child.kind === 'timelineitem' ? this.t().sizeBody * 1.5 : 0)
+            .borderRadius(this.t().sizeBody * 0.75)
+            .backgroundColor(child.kind === 'timelineitem'
+              ? this.t().background : '#00000000')
+            .alignItems(HorizontalAlign.Center)
+            .justifyContent(FlexAlign.Center)
+            .offset({ x: -(this.t().sizeBody * 0.75) })
+            // Same keying as renderChildren; see the note there.
+          }
+          .width('100%')
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({
+        left: densityPad(this.t(), node.style) + this.t().sizeBody * 0.75,
+        right: densityPad(this.t(), node.style),
+        top: densityPad(this.t(), node.style),
+        bottom: densityPad(this.t(), node.style)
+      })
+      .margin({ top: this.t().gapTight, bottom: this.t().gapSection })
+    } else if (node.kind === 'timelineitem') {
+      // Only the words: the marker and the rail beside it are the timeline's.
+      Column({ space: 2 }) {
+        Row({ space: this.t().gapBase }) {
+          Text(node.text)
+            .fontSize(this.t().sizeBody + 1)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightHeading)
+            .fontColor(toneInk(this.t(), node.style, this.t().ink))
+            .layoutWeight(1)
+          if (node.value.length > 0) {
+            Text(node.value)
+              .fontSize(this.t().sizeBody)
+              .fontFamily(this.textFamily())
+              .fontColor(this.t().inkSoft)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        if (node.label.length > 0) {
+          Text(node.label)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkMuted)
+            .width('100%')
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({ bottom: node.style === 'compact' ? this.t().gapBase : this.t().gapLoose })
+      .opacity(node.enabled ? 1 : 0.5)
+      .onClick(() => {
+        if (node.action.length > 0 && node.enabled) {
+          this.handleAction(node.action, node.eventValue)
+        }
+      })
+    } else if (node.kind === 'kvgroup') {
+      Flex({
+        wrap: FlexWrap.Wrap,
+        justifyContent: FlexAlign.Start,
+        alignItems: ItemAlign.Start
+      }) {
+        ForEach(node.children, (child: LiveNode) => {
+          Column() {
+            this.renderNode(child, 'kvgroup')
+          }
+          // A fact needs more room than a figure, so it asks for a wider cell.
+          .width(Math.floor(100 / this.fittingColumns(
+            node.columns > 0 ? node.columns : 2, 160)).toString() + '%')
+          // Same keying as renderChildren; see the note there.
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+      }
+      .width('100%')
+      .padding(densityPad(this.t(), node.style) - this.t().padTight)
+      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'kvitem') {
+      Column({ space: 2 }) {
+        Text(node.label)
+          .fontSize(this.t().sizeCaption)
+          .fontFamily(this.textFamily())
+          .fontColor(this.t().inkMuted)
+          .width('100%')
+        Text(node.text)
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .fontWeight(this.t().weightHeading)
+          .fontColor(toneInk(this.t(), node.style, this.t().ink))
+          .width('100%')
+        if (node.value.length > 0) {
+          Text(node.value)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft)
+            .width('100%')
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(this.t().padBase)
+    } else if (node.kind === 'icon') {
+      this.drawIcon(node.icon, this.t().sizeHeading,
+        toneInk(this.t(), node.style, this.t().inkStrong))
+    } else if (node.kind === 'iconbutton') {
+      // Sized to the same 44 as a text button, so a row of mixed actions lines
+      // up and the tap target stays a tap target.
+      Column() {
+        this.drawIcon(node.icon, this.t().sizeHeading,
+          node.style === 'quiet' || node.style === 'secondary'
+            ? this.t().secondaryInk : this.t().onPrimary)
+      }
+      .width(this.t().controlHeight)
+      .height(this.t().controlHeight)
+      .alignItems(HorizontalAlign.Center)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(node.style === 'quiet' ? '#00000000'
+        : node.style === 'secondary' ? this.t().secondaryFill
+          : buttonFill(this.t(), node.style))
+      .borderRadius(this.t().controlHeight / 2)
+      .opacity(node.enabled ? 1 : 0.4)
+      .accessibilityText(node.label)
+      .onClick(() => {
+        if (node.action.length > 0 && node.enabled) {
+          this.handleAction(node.action, node.eventValue)
+        }
+      })
+    } else if (node.kind === 'badge') {
+      Row({ space: this.t().gapTight }) {
+        if (node.icon.length > 0) {
+          this.drawIcon(node.icon, this.t().sizeCaption,
+            toneInk(this.t(), node.style, this.t().inkSoft))
+        }
+        Text(node.text)
+          .fontSize(this.t().sizeCaption)
+          .fontFamily(this.textFamily())
+          .fontWeight(this.t().weightHeading)
+          .fontColor(toneInk(this.t(), node.style, this.t().inkSoft))
+      }
+      .padding({ left: this.t().gapBase, right: this.t().gapBase,
+                 top: this.t().gapTight - 1, bottom: this.t().gapTight - 1 })
+      .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
+      .borderRadius(this.t().radiusSmall)
     } else if (node.kind === 'button') {
       Button(node.text.length === 0 ? ' ' : node.text)
-        .height(44)
-        .fontSize(15)
+        .height(this.t().controlHeight)
+        .fontSize(this.t().sizeBody)
+        .fontFamily(this.textFamily())
         .enabled(node.enabled)
         .type(node.style === 'secondary' ? ButtonType.Normal : ButtonType.Capsule)
-        .backgroundColor(
-          node.style === 'success' ? '#4CAF50' :
-            node.style === 'danger' ? '#F44336' :
-              node.style === 'secondary' ? '#E0E0E0' : '#007DFF')
-        .fontColor(node.style === 'secondary' ? '#333333' : '#FFFFFF')
+        .backgroundColor(buttonFill(this.t(), node.style))
+        .fontColor(buttonInk(this.t(), node.style))
         .onClick(() => {
           if (node.action.length > 0 && node.enabled) {
             this.handleAction(node.action, node.eventValue)
@@ -578,8 +1578,9 @@ export struct VeraPreview {
         })
     } else if (node.kind === 'cell') {
       Column() {
-        Text(node.text).fontSize(22).fontWeight(FontWeight.Bold)
-          .fontColor(node.enabled ? '#333333' : '#CCCCCC')
+        // Two steps below the title size: a board glyph, not a heading.
+        Text(node.text).fontSize(this.t().sizeTitle - 2).fontWeight(FontWeight.Bold)
+          .fontColor(node.enabled ? this.t().inkStrong : this.t().inkDisabled)
       }
       .layoutWeight(parentKind === 'grid' ? 0 : 1)
       .width(parentKind === 'grid' ? '100%' : undefined)
@@ -588,14 +1589,12 @@ export struct VeraPreview {
       .aspectRatio(parentKind === 'row' || parentKind === 'grid' ? 1 : 0)
       .height(parentKind === 'row' || parentKind === 'grid' ? undefined : 68)
       .justifyContent(FlexAlign.Center)
-      .backgroundColor(node.enabled ? '#FFFFFF' : '#F5F5F5')
+      .backgroundColor(node.enabled ? this.t().surfaceRaised : this.t().surfaceDisabled)
       .border({
-        width: node.style === 'accent' ? 2 : 1,
-        color: node.style === 'accent' ? '#007DFF' :
-          node.style === 'success' ? '#4CAF50' :
-            node.style === 'danger' ? '#F44336' : '#CBD6E4'
+        width: node.style === 'accent' ? this.t().borderWidth * 2 : this.t().borderWidth,
+        color: toneEdge(this.t(), node.style, this.t().lineStrong)
       })
-      .borderRadius(10)
+      .borderRadius(this.t().radiusControl)
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
           this.handleAction(node.action, node.eventValue)
@@ -604,21 +1603,19 @@ export struct VeraPreview {
     } else if (node.kind === 'spacer') {
       if (node.style !== 'none') {
         Blank()
-          .height(parentKind === 'row' ? 0 :
-            (node.style === 'large' ? 32 : node.style === 'small' ? 8 : 18))
-          .width(parentKind === 'row' ?
-            (node.style === 'large' ? 32 : node.style === 'small' ? 8 : 18) : 0)
+          .height(parentKind === 'row' ? 0 : spacerSize(this.t(), node.style))
+          .width(parentKind === 'row' ? spacerSize(this.t(), node.style) : 0)
       }
     } else if (node.kind === 'field') {
-      Column({ space: 4 }) {
+      Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(12).fontColor('#666666').width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
         }
         // Commits on submit rather than on every keystroke. The tree no longer
         // rebuilds under the caret, but echoing each character back through the
         // VM and into .text() still fights whoever is typing.
         TextInput({ placeholder: node.label, text: node.value })
-          .height(node.style === 'multiline' ? 88 : 44)
+          .height(node.style === 'multiline' ? this.t().controlHeight * 2 : this.t().controlHeight)
           .width('100%')
           .enabled(node.enabled)
           .onSubmit((_key: EnterKeyType, _event: SubmitEvent) => {})
@@ -627,13 +1624,14 @@ export struct VeraPreview {
           })
       }
       .width('100%')
-      .padding({ top: 4, bottom: 4 })
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'toggle' || node.kind === 'checkbox') {
-      Row({ space: 10 }) {
-        Text(node.label).fontSize(15).layoutWeight(1)
+      Row({ space: this.t().gapBase + 2 }) {
+        Text(node.label).fontSize(this.t().sizeBody).layoutWeight(1)
         if (node.kind === 'toggle') {
           Toggle({ type: ToggleType.Switch, isOn: node.checked })
             .enabled(node.enabled)
+            .selectedColor(this.t().primary)
             .onChange((on: boolean) => {
               if (node.action.length > 0) { this.handleBoolAction(node.action, on) }
             })
@@ -641,18 +1639,19 @@ export struct VeraPreview {
           Checkbox()
             .select(node.checked)
             .enabled(node.enabled)
+            .selectedColor(this.t().primary)
             .onChange((on: boolean) => {
               if (node.action.length > 0) { this.handleBoolAction(node.action, on) }
             })
         }
       }
       .width('100%')
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: this.t().padRow, bottom: this.t().padRow })
     } else if (node.kind === 'slider') {
       Column({ space: 2 }) {
         Row() {
-          Text(node.label).fontSize(12).fontColor('#666666').layoutWeight(1)
-          Text(node.eventValue.toString()).fontSize(12).fontColor('#333333')
+          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).layoutWeight(1)
+          Text(node.eventValue.toString()).fontSize(this.t().sizeCaption).fontColor(this.t().inkStrong)
         }.width('100%')
         Slider({
           value: node.eventValue,
@@ -663,6 +1662,7 @@ export struct VeraPreview {
         })
           .width('100%')
           .enabled(node.enabled)
+          .selectedColor(this.t().primary)
           .onChange((v: number, mode: SliderChangeMode) => {
             // Every position reaches the program, so the thing being controlled
             // follows the thumb instead of jumping when the finger lifts -- a
@@ -674,21 +1674,22 @@ export struct VeraPreview {
           })
       }
       .width('100%')
-      .padding({ top: 4, bottom: 4 })
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'select') {
-      Column({ space: 4 }) {
+      Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(12).fontColor('#666666').width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
         }
-        Row({ space: 6 }) {
+        Row({ space: this.t().padRow }) {
           ForEach(node.options, (opt: string, index: number) => {
             Button(opt)
-              .height(36)
-              .fontSize(13)
+              .height(this.t().chipHeight)
+              .fontSize(this.t().sizeCaption + 1)
+              .fontFamily(this.textFamily())
               .type(ButtonType.Capsule)
               .enabled(node.enabled)
-              .backgroundColor(index === node.eventValue ? '#007DFF' : '#E0E0E0')
-              .fontColor(index === node.eventValue ? '#FFFFFF' : '#333333')
+              .backgroundColor(index === node.eventValue ? this.t().primary : this.t().secondaryFill)
+              .fontColor(index === node.eventValue ? this.t().onPrimary : this.t().secondaryInk)
               .onClick(() => {
                 if (node.action.length > 0) { this.handleAction(node.action, index) }
               })
@@ -697,7 +1698,7 @@ export struct VeraPreview {
         .width('100%')
       }
       .width('100%')
-      .padding({ top: 4, bottom: 4 })
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'grid') {
       // Equal columns built from a wrapping Flex rather than ArkUI's Grid: Grid
       // wants an explicit height, while a generated tree grows to whatever the
@@ -713,36 +1714,47 @@ export struct VeraPreview {
             this.renderNode(child, 'grid')
           }
           .width(Math.floor(100 / (node.columns > 0 ? node.columns : 1)).toString() + '%')
-          .padding(node.style === 'compact' ? 2 : node.style === 'spacious' ? 6 : 4)
+          .padding(this.gridPad(node.style))
           // Same keying as renderChildren; see the note there.
         }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
       }
       .width('100%')
-      .padding(4)
+      .padding(this.t().padGrid)
     } else if (node.kind === 'listitem') {
-      Row({ space: 10 }) {
+      Row({ space: this.t().gapBase + 2 }) {
+        if (node.icon.length > 0) {
+          this.drawIcon(node.icon, this.t().sizeHeading,
+            toneInk(this.t(), node.style, this.t().inkSoft))
+        }
         Column({ space: 2 }) {
-          Text(node.text).fontSize(16).width('100%')
+          Text(node.text).fontSize(this.t().sizeBody + 1).width('100%')
           if (node.label.length > 0) {
-            Text(node.label).fontSize(12).fontColor('#888888').width('100%')
+            Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkMuted).width('100%')
           }
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
         if (node.value.length > 0) {
-          Text(node.value).fontSize(14).fontColor('#666666')
+          Text(node.value).fontSize(this.t().sizeBody - 1).fontColor(this.t().inkSoft)
         }
       }
       .width('100%')
-      .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-      .backgroundColor(
-        node.style === 'accent' ? '#EBF0FF' :
-          node.style === 'success' ? '#E8F8E8' :
-            node.style === 'warning' ? '#FFF8E0' :
-              node.style === 'danger' ? '#FFECEC' : '#FFFFFF')
-      .border({ width: 1, color: '#E4EAF2' })
-      .borderRadius(10)
-      .margin({ top: 3, bottom: 3 })
+      .padding({ left: this.t().padListX, right: this.t().padListX,
+                 top: this.t().padListY, bottom: this.t().padListY })
+      // Inside a ListGroup the row owns no frame of its own: the group draws
+      // one border, one radius and the separators, which is the whole reason
+      // ListGroup exists. On its own the row is still a standalone card.
+      .backgroundColor(toneFill(this.t(), node.style,
+        parentKind === 'listgroup' ? '#00000000' : this.t().surfaceRaised))
+      .border({
+        width: parentKind === 'listgroup' ? 0 : this.t().borderWidth,
+        color: this.t().lineSoft
+      })
+      .borderRadius(parentKind === 'listgroup' ? 0 : this.t().radiusControl)
+      .margin({
+        top: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1,
+        bottom: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1
+      })
       .opacity(node.enabled ? 1 : 0.5)
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
@@ -753,11 +1765,12 @@ export struct VeraPreview {
       // Draws nothing: it exists so the host will call the program on a timer.
       Blank().height(0).width(0)
     } else if (node.kind === 'divider') {
-      Divider().strokeWidth(1).color('#D8E1ED').margin({ top: 6, bottom: 6 })
+      Divider().strokeWidth(this.t().borderWidth).color(this.t().line)
+        .margin({ top: this.t().padRow, bottom: this.t().padRow })
     } else if (node.kind === 'progress') {
       Column({ space: 3 }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(12).fontColor('#666666').width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
         }
         Progress({
           value: node.eventValue,
@@ -765,13 +1778,10 @@ export struct VeraPreview {
           type: ProgressType.Linear
         })
           .width('100%')
-          .color(
-            node.style === 'success' ? '#4CAF50' :
-              node.style === 'warning' ? '#E65100' :
-                node.style === 'danger' ? '#F44336' : '#007DFF')
+          .color(toneEdge(this.t(), node.style, this.t().primary))
       }
       .width('100%')
-      .padding({ top: 4, bottom: 4 })
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'canvas') {
       // One shared coordinate field. Every other container divides space between
       // its children; this one hands all of them the same 0..100 box and lets
@@ -795,13 +1805,7 @@ export struct VeraPreview {
       // position the shape was given, and a per-shape scale throws away its size
       // relative to its neighbours.
       Path({ commands: node.commands })
-        .fill(
-          node.style === 'accent' ? '#007DFF' :
-            node.style === 'success' ? '#4CAF50' :
-              node.style === 'warning' ? '#E65100' :
-                node.style === 'danger' ? '#F44336' :
-                  node.style === 'muted' ? '#B0BEC5' :
-                    node.style === 'light' ? '#FFFFFF' : '#37474F')
+        .fill(pathFill(this.t(), node.style))
         .rotate({ angle: node.spinPeriodMs > 0 ? this.spin.angle : 0 })
     } else if (node.kind === 'path') {
       Column() {
@@ -817,12 +1821,7 @@ export struct VeraPreview {
         // swings the shape around a point outside itself, so it orbits instead
         // of spinning.
         Path({ commands: node.commands })
-          .fill(
-            node.style === 'accent' ? '#007DFF' :
-              node.style === 'success' ? '#4CAF50' :
-                node.style === 'warning' ? '#E65100' :
-                  node.style === 'danger' ? '#F44336' :
-                    node.style === 'muted' ? '#B0BEC5' : '#37474F')
+          .fill(pathFill(this.t(), node.style))
           .rotate({ angle: node.spinPeriodMs > 0 ? this.spin.angle : 0 })
           .scale({ x: 2.4, y: 2.4 })
       }
@@ -839,28 +1838,30 @@ export struct VeraPreview {
           .width('100%')
           .height(180)
           .objectFit(ImageFit.Contain)
-          .borderRadius(10)
+          .borderRadius(this.t().radiusControl)
           .accessibilityText(node.alt)
       } else {
         Text(node.alt.length > 0 ? node.alt : 'image')
-          .fontSize(13)
-          .fontColor('#888888')
+          .fontSize(this.t().sizeCaption + 1)
+          .fontFamily(this.textFamily())
+          .fontColor(this.t().inkMuted)
           .width('100%')
           .height(180)
           .textAlign(TextAlign.Center)
-          .backgroundColor('#F3F6FA')
-          .borderRadius(10)
+          .backgroundColor(this.t().surface)
+          .borderRadius(this.t().radiusControl)
       }
     } else {
       // A kind the decoder produced but no branch above renders. Saying so is
       // worth more than a blank: a silent gap looks like a model failure.
       Text('unrendered component: ' + node.kind)
-        .fontSize(12)
-        .fontColor('#C62828')
+        .fontSize(this.t().sizeCaption)
+        .fontFamily(this.textFamily())
+        .fontColor(this.t().dangerInk)
         .width('100%')
-        .padding(8)
-        .backgroundColor('#FFECEC')
-        .borderRadius(8)
+        .padding(this.t().gapBase)
+        .backgroundColor(this.t().dangerFill)
+        .borderRadius(this.t().radiusSmall)
     }
   }
 }

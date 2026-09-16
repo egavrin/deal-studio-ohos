@@ -18,6 +18,8 @@ import insightIntent from '@ohos.app.ability.insightIntent'
 import hilog from '@ohos.hilog'
 import { BusinessError } from '@ohos.base'
 import { IntentSpec } from './VeraIntentCatalog'
+import { AbilityContext } from './VeraCalendar'
+import Want from '@ohos.app.ability.Want'
 
 const DOMAIN = 0x0000
 
@@ -67,6 +69,27 @@ function buildParams(spec: IntentSpec, values: Map<string, string>): Record<stri
 }
 
 /**
+ * Opens the target's ability directly, for rows that have nothing to tell it.
+ *
+ * This is ordinary public API -- no intent framework, no system signature -- and
+ * it is the right tool when the whole request is "show me that app".
+ */
+async function launchTarget(spec: IntentSpec): Promise<string> {
+  let context = AbilityContext.value
+  if (context === null) { return 'error: no ability context yet' }
+  let want: Want = { bundleName: spec.bundle, abilityName: spec.ability }
+  hilog.info(DOMAIN, 'VERA', 'VERA-LAUNCH ' + spec.bundle + '/' + spec.ability)
+  try {
+    await context.startAbility(want)
+    return 'ok'
+  } catch (e) {
+    let err = e as BusinessError
+    hilog.error(DOMAIN, 'VERA', 'VERA-LAUNCH failed ' + err.code.toString() + ': ' + err.message)
+    return 'error ' + err.code.toString() + ': ' + err.message
+  }
+}
+
+/**
  * Runs one intent and describes the outcome in a line a person can read.
  *
  * The code in a resolved ExecuteResult is chosen by the target's developer, not
@@ -75,6 +98,7 @@ function buildParams(spec: IntentSpec, values: Map<string, string>): Record<stri
  * than as a failed call.
  */
 export async function runIntent(spec: IntentSpec, values: Map<string, string>): Promise<string> {
+  if (spec.via === 'launch') { return launchTarget(spec) }
   let params = buildParams(spec, values)
   let param: insightIntentDriver.ExecuteParam = {
     bundleName: spec.bundle,

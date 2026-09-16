@@ -71,12 +71,24 @@ export class IntentSpec {
    * page, and needs ohos.permission.ABILITY_BACKGROUND_COMMUNICATION.
    */
   mode: string
+  /**
+   * How the target is reached: 'intent' through insightIntentDriver, or
+   * 'launch' by simply starting its ability.
+   *
+   * Launching is the honest answer when a target has nothing to be told. The
+   * calendar app's ViewCalendarEvent declares no parameters and refuses an
+   * empty payload with its own code 10020012, so there is a contract there that
+   * cannot be guessed -- while "open the calendar" needs no contract at all.
+   * startAbility is public API and needs no system signature.
+   */
+  via: string
   constructor(name: string, paramsClass: string, bundle: string, moduleName: string,
       ability: string, intentName: string, params: IntentParam[], summary: string,
-      tier: string, mode: string) {
+      tier: string, mode: string, via: string = 'intent') {
     this.name = name; this.paramsClass = paramsClass; this.bundle = bundle
     this.moduleName = moduleName; this.ability = ability; this.intentName = intentName
     this.params = params; this.summary = summary; this.tier = tier; this.mode = mode
+    this.via = via
   }
 }
 
@@ -223,6 +235,17 @@ export const INTENT_CATALOG: IntentSpec[] = [
       new Map<string, string>(),
       'which section: localSongs is music already on the phone')],
     'opens a section of the music app', 'schema', 'foreground'),
+
+  // Opens the phone's Calendar app -- by launching it, not through an intent.
+  //
+  // ViewCalendarEvent was tried first and refused an empty payload with the
+  // target's own code 10020012. It declares no inputParams and is not a
+  // standard intent name, so whatever it wants cannot be established without
+  // guessing. "Open the calendar" needs nothing said, so the row launches the
+  // ability directly: public API, no system signature, no contract to get wrong.
+  new IntentSpec('openCalendar', 'CalendarViewParams',
+    'com.huawei.hmos.calendar', 'phone', 'MainAbility', '',
+    [], 'opens the phone\'s calendar app', 'probed', 'foreground', 'launch'),
 
   // The one target here that needs no account, which is why it exists.
   //
