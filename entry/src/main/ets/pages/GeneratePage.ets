@@ -15,7 +15,10 @@ import { describeIntentsForPrompt } from '../vera/VeraIntentCatalog'
 import { describeCalendarForPrompt } from '../vera/VeraCalendarCatalog'
 
 const MAX_RETRIES: number = 3
-const DEFAULT_SERVER_URL: string = 'http://31.77.129.17:8787'
+// vera-server's address is not written down here. It lives in settings, given
+// the same way as the API key -- `--ps veraServer http://host:port` -- because
+// one person's machine address has no business in a shared repository.
+function serverUrl(): string { return settings.getServerUrl() }
 
 // DeepSeek and Local both run the agent loop on the device and differ only in
 // which model writes the code; Server hands the whole job to vera-server.
@@ -276,10 +279,18 @@ struct GeneratePage {
   }
 
   private async checkServer(): Promise<void> {
+    if (!settings.hasServerUrl()) {
+      // Said in full, because the address is not written down anywhere in the
+      // app and the person has no other way to learn what is missing.
+      this.status = 'No server address. Pass one at launch: ' +
+        'hdc shell aa start -a EntryAbility -b com.vera.probe.dyn ' +
+        '--ps veraServer http://host:port'
+      return
+    }
     this.status = 'Checking server...'
     let client = http.createHttp()
     try {
-      let resp = await client.request(DEFAULT_SERVER_URL + '/health', {
+      let resp = await client.request(serverUrl() + '/health', {
         method: http.RequestMethod.GET,
         connectTimeout: 5000,
         readTimeout: 5000
@@ -333,7 +344,7 @@ struct GeneratePage {
     this.status = 'Downloading model (one-time, ~1.9GB)...'
     try {
       let task = await request.downloadFile(getContext(this), {
-        url: DEFAULT_SERVER_URL + '/models/qwen2.5-coder-3b-instruct-q4_k_m.gguf',
+        url: serverUrl() + '/models/qwen2.5-coder-3b-instruct-q4_k_m.gguf',
         filePath: modelPath
       })
       task.on('progress', (received: number, total: number): void => {
@@ -354,6 +365,7 @@ struct GeneratePage {
   private doGenerate(): void {
     if (this.prompt.trim().length === 0) { return }
     if (this.mode === MODE_SERVER) {
+      if (!settings.hasServerUrl()) { this.checkServer(); return }
       this.doServerGenerate()
       return
     }
@@ -418,7 +430,7 @@ struct GeneratePage {
         requestBody = JSON.stringify(refine)
         contentType = 'application/json'
       }
-      let resp = await client.request(DEFAULT_SERVER_URL + '/compile', {
+      let resp = await client.request(serverUrl() + '/compile', {
         method: http.RequestMethod.POST,
         header: { 'Content-Type': contentType },
         extraData: requestBody,
@@ -948,7 +960,7 @@ struct GeneratePage {
 
   private modeSubtitle(): string {
     if (this.mode === MODE_DEEPSEEK) { return settings.getModel() + ' - agent loop on device' }
-    if (this.mode === MODE_SERVER) { return DEFAULT_SERVER_URL }
+    if (this.mode === MODE_SERVER) { return serverUrl() }
     return 'On-device Qwen3-Coder-3B'
   }
 
@@ -979,7 +991,7 @@ struct GeneratePage {
   }
 
   private canGenerate(): boolean {
-    if (this.mode === MODE_SERVER) { return true }
+    if (this.mode === MODE_SERVER) { return settings.hasServerUrl() }
     if (this.mode === MODE_DEEPSEEK) { return settings.hasApiKey() }
     return this.modelReady
   }

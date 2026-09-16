@@ -16,8 +16,10 @@
 
 set -euo pipefail
 
-export PATH="/home/mbolshov/agentsdk/ohos_sdk/26/toolchains:$PATH"
-KIT_ROOT=${KIT_ROOT:-/home/mbolshov/ArkTS_Agent_Kit}
+. "$(cd -- "$(dirname -- "$0")" && pwd)/tool-paths.sh"
+vera_add_toolchains_to_path
+HDC_PATH=$(vera_hdc_dir 2>/dev/null) && export PATH="$HDC_PATH:$PATH"
+DEVICE_CLI=$(vera_kit_bin arkui-device-cli)
 BUNDLE="com.vera.probe.dyn"
 REPS="${1:-3}"
 OUT="${OUT:-results/device.jsonl}"
@@ -26,7 +28,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 # Centre of the on-screen element whose text contains $1, from a layout dump.
 locate() {
-  "$KIT_ROOT/tools/arkui-device-cli" dump-layout "$WORK" >/dev/null 2>&1 || return 1
+  "$DEVICE_CLI" dump-layout "$WORK" >/dev/null 2>&1 || return 1
   local f
   f=$(find "$WORK" -name "*.json" -newermt "-2 minutes" | head -1)
   [[ -n "$f" ]] || return 1

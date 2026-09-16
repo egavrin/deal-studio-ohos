@@ -100,7 +100,32 @@ leaves your hands.
 The same file holds `model` and `baseUrl`, so pointing the app at another
 OpenAI-compatible endpoint needs no rebuild.
 
+`vera-server`'s address is supplied the same way and kept in the same file:
+
+```bash
+hdc shell aa start -a EntryAbility -b com.vera.probe.dyn \
+  --ps veraServer http://host:port
+```
+
+There is no default. It used to be one machine's address written into the
+source, which meant nothing to anyone else; with none given, Server mode says
+so and the other two modes are unaffected.
+
 ## Running it
+
+Three things are needed and none of them is in this repo: the **ArkTS Agent
+Kit** (`arkui-hvigor`, `arkui-sign`, `arkui-device-cli`), **hdc**, and
+**hapsigner** with a JRE, for system signing. The scripts look for all three
+rather than assuming a location — `tool-paths.sh` does the looking, and
+`KIT_ROOT`, `HDC_DIR` and `HAPSIGNER` override it. To see what it finds here:
+
+```bash
+bash -c 'source ./tool-paths.sh
+for t in arkui-hvigor arkui-sign arkui-device-cli; do
+  printf "%-18s %s\n" "$t" "$(vera_kit_bin $t 2>&1 | tail -1)"; done
+printf "%-18s %s\n" hdc "$(vera_hdc_dir 2>&1 | tail -1)"
+printf "%-18s %s\n" hapsigner "$(vera_hapsigner 2>&1 | tail -1)"'
+```
 
 ```bash
 ./build-hap.sh      # builds and signs; finds the UDID itself

@@ -1,6 +1,0 @@
-# ninja log v7
-1	536	1789126752917324289	CMakeFiles/llama.dir/napi_llama.cpp.o	f1ae77e0770b7bed
-2	24	1789473928549909089	/home/stanislav/work/vera/vera-probe-dynamic/entry/build/default/intermediates/cmake/default/obj/arm64-v8a/libllama.so	975e05868915fb66
-2	683	1789489330866702435	CMakeFiles/llama.dir/napi_llama.cpp.o	f1ae77e0770b7bed
-683	706	1789489331547706931	/home/stanislav/work/vera/vera-probe-dynamic/entry/build/default/intermediates/cmake/default/obj/arm64-v8a/libllama.so	975e05868915fb66
-2	24	1789489552185106993	/home/stanislav/work/vera/vera-probe-dynamic/entry/build/default/intermediates/cmake/default/obj/arm64-v8a/libllama.so	975e05868915fb66

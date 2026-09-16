@@ -2,13 +2,16 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=${KIT_ROOT:-/home/mbolshov/ArkTS_Agent_Kit}
+. "$SCRIPT_DIR/tool-paths.sh"
+HVIGOR=$(vera_kit_bin arkui-hvigor)
+# Signing needs the device UDID, which comes from hdc.
+HDC_PATH=$(vera_hdc_dir 2>/dev/null) && export PATH="$HDC_PATH:$PATH"
 UDID=${UDID:-}
 HAP_OUT_DIR="${HAP_OUT_DIR:-/tmp/vera-probe-dyn-hap}"
 HAP_NAME="vera-probe-dyn-unsigned.hap"
 
 echo "=== Build HAP (arkui-hvigor) ==="
-HVIGOR_OUTPUT=$("$KIT_ROOT/tools/arkui-hvigor" --directory /tmp/ --json "$SCRIPT_DIR" 2>/dev/null || true)
+HVIGOR_OUTPUT=$("$HVIGOR" --directory /tmp/ --json "$SCRIPT_DIR" 2>/dev/null || true)
 STATUS=$(echo "$HVIGOR_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','?'))" 2>/dev/null || echo "?")
 DIAGS=$(echo "$HVIGOR_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('summary',{}).get('diagnostic_count',0))" 2>/dev/null || echo "?")
 
@@ -54,7 +57,7 @@ echo "  UDID: $UDID"
 # arkui-sign writes its output to the CURRENT directory, not next to its
 # input, so run it from the output directory or the HAP lands in your repo.
 ( cd "$HAP_OUT_DIR" && rm -f vera-probe-dyn-signed.hap \
-  && "$KIT_ROOT/tools/arkui-sign" --mode debug --udid "$UDID" "$HAP_OUT_DIR/$HAP_NAME" )
+  && "$(vera_kit_bin arkui-sign)" --mode debug --udid "$UDID" "$HAP_OUT_DIR/$HAP_NAME" )
 
 echo
 echo "=== Done ==="

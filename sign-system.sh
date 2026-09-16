@@ -24,7 +24,8 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
-HAPSIGNER=${HAPSIGNER:-/home/stanislav/agent-kit-sdk/hapsigner}
+. "$SCRIPT_DIR/tool-paths.sh"
+HAPSIGNER=$(vera_hapsigner)
 DIST="$HAPSIGNER/dist"
 HAP_OUT_DIR="${HAP_OUT_DIR:-/tmp/vera-probe-dyn-hap}"
 UNSIGNED="$HAP_OUT_DIR/vera-probe-dyn-unsigned.hap"

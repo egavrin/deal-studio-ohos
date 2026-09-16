@@ -20,12 +20,14 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onCreate')
     this.extractApiKey(want)
+    this.extractServerUrl(want)
     this.extractProjectId(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onNewWant')
     this.extractApiKey(want)
+    this.extractServerUrl(want)
     this.extractProjectId(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
@@ -51,6 +53,22 @@ export default class EntryAbility extends UIAbility {
     settings.init(this.context.filesDir)
     settings.setApiKey(text)
     hilog.info(DOMAIN, 'VERA', 'DeepSeek API key updated from launch parameter')
+  }
+
+  /**
+   * Where vera-server lives, given the same way as the key:
+   *     --ps veraServer http://host:port
+   */
+  private extractServerUrl(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let url = params['veraServer']
+    if (url === null || url === undefined || typeof url !== 'string') { return }
+    let text = (url as string).trim()
+    if (text.length === 0) { return }
+    settings.init(this.context.filesDir)
+    settings.setServerUrl(text)
+    hilog.info(DOMAIN, 'VERA', 'vera-server address updated from launch parameter')
   }
 
   private extractProjectId(want: Want): void {

@@ -13,7 +13,8 @@
 # Tap the field yourself (or pass -t) before running: uitest types wherever the
 # focus already is.
 set -uo pipefail
-export PATH="${HDC_DIR:-/home/stanislav/Desktop/hdc}:$PATH"
+. "$(cd -- "$(dirname -- "$0")" && pwd)/tool-paths.sh"
+export PATH="$(vera_hdc_dir):$PATH"
 
 TAP_X=""; TAP_Y=""
 if [ "${1:-}" = "-t" ]; then TAP_X="$2"; TAP_Y="$3"; shift 3; fi

@@ -37,6 +37,16 @@ export class SettingsStore {
   private apiKey: string = ''
   private model: string = DEFAULT_DEEPSEEK_MODEL
   private baseUrl: string = DEFAULT_DEEPSEEK_BASE_URL
+  /**
+   * Where vera-server lives, for the Server generation mode.
+   *
+   * There is no default. It used to be one person's machine written into the
+   * source -- a bare address that meant nothing to anyone else and had no
+   * business in a shared repository. Supply it the way the key is supplied and
+   * it is remembered; leave it out and Server mode simply says it is not
+   * configured.
+   */
+  private serverUrl: string = ''
   private loaded: boolean = false
 
   init(filesDir: string): void {
@@ -57,6 +67,7 @@ export class SettingsStore {
         this.apiKey = (obj['apiKey'] as string) || ''
         this.model = (obj['model'] as string) || DEFAULT_DEEPSEEK_MODEL
         this.baseUrl = (obj['baseUrl'] as string) || DEFAULT_DEEPSEEK_BASE_URL
+        this.serverUrl = (obj['serverUrl'] as string) || ''
       } catch (_e) {}
     }
     this.loaded = true
@@ -68,6 +79,7 @@ export class SettingsStore {
     obj['apiKey'] = this.apiKey
     obj['model'] = this.model
     obj['baseUrl'] = this.baseUrl
+    obj['serverUrl'] = this.serverUrl
     try { writeText(this.path(), JSON.stringify(obj)) } catch (_e) {}
   }
 
@@ -77,6 +89,19 @@ export class SettingsStore {
   }
 
   hasApiKey(): boolean { return this.getApiKey().length > 0 }
+
+  getServerUrl(): string {
+    if (!this.loaded) { this.load() }
+    return this.serverUrl
+  }
+
+  hasServerUrl(): boolean { return this.getServerUrl().length > 0 }
+
+  setServerUrl(url: string): void {
+    if (!this.loaded) { this.load() }
+    this.serverUrl = url
+    this.save()
+  }
 
   setApiKey(key: string): void {
     this.apiKey = key.trim()
