@@ -10,8 +10,12 @@ import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
 import { deepseek } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
+import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { describeIntentsForPrompt } from '../vera/VeraIntentCatalog'
+import { selectDomains, selectTargets, Selection, TargetChoice, everything } from '../vera/JevSelector'
+import { loadRegistry, describeTargetsForPrompt, registrySize } from '../vera/VeraIntentRegistry'
+import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { describeCalendarForPrompt } from '../vera/VeraCalendarCatalog'
 
 const MAX_RETRIES: number = 3
@@ -206,6 +210,10 @@ struct GeneratePage {
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
   private systemPrompt: string = ''
+  /** The skill with every catalogue but the intents spliced in. */
+  private promptTemplate: string = ''
+  /** What the selection step decided, shown while generating. */
+  @State selectionNote: string = ''
   private grammar: string = ''
   private previousSource: string = ''
   private genStartTime: number = 0
@@ -247,11 +255,33 @@ struct GeneratePage {
       // so the prompt cannot describe a component the compiler rejects or the
       // renderer cannot draw, nor an intent the compiler will not accept and
       // the host will not send.
+      // Loaded here as well as in EntryAbility: this page can be reached in a
+      // process that started somewhere else, and a prompt built without the
+      // file would offer fewer intents than the device actually has.
+      consent.init(getContext(this).filesDir)
+      let extra = loadCatalogFile(getContext(this).filesDir)
+      if (extra.problems.length > 0) {
+        console.warn('VERA-CATALOG rejected ' + extra.rejected.toString() + ' rows: ' +
+          extra.problems.join('; '))
+      }
       let skill = await loadRawfileText(mgr, 'vera-skill.txt')
-      this.systemPrompt = skill
+      // The UI and calendar catalogues are the same for every request, so they
+      // are spliced in once. The intent catalogue is not: which rows a request
+      // needs depends on what the person asked for, and that is decided per
+      // generation, in startGenerate below. {{INTENT_CATALOG}} therefore stays
+      // in the template until then.
+      this.promptTemplate = skill
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
-        .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt())
         .replace('{{CALENDAR_CATALOG}}', describeCalendarForPrompt())
+      // The phone's own list of intents, read once. It is what makes
+      // intent.call usable: without an address the model would have to invent
+      // one, and an invented address fails silently.
+      loadRegistry().then((count: number) => {
+        console.info('VERA-REGISTRY ' + count.toString() + ' intents available to intent.call')
+      })
+      this.systemPrompt = this.promptTemplate
+        .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt())
+        .replace('{{DEVICE_INTENTS}}', '  (the list is read from the phone when you generate)')
       this.grammar = await loadRawfileText(mgr, 'vera.gbnf')
       this.status = 'Resources loaded'
     } catch (e) {
@@ -392,8 +422,50 @@ struct GeneratePage {
     this.startRun(this.prompt.trim())
     this.genStartTime = Date.now()
     this.lastRequest = this.prompt.trim()
-    this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
-    this.runAttempt(this.prompt.trim(), '')
+    this.status = 'Choosing which intents this needs...'
+    this.applySelection(this.prompt.trim()).then(() => {
+      this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')... ' + this.selectionNote
+      this.runAttempt(this.prompt.trim(), '')
+    })
+  }
+
+  /**
+   * Picks the intent rows this request needs and splices them into the prompt.
+   *
+   * Runs once per generation rather than once per attempt: the request does not
+   * change between retries, and a retry is already the slow path.
+   *
+   * The chosen domains go into the status line because a selection that dropped
+   * something is otherwise invisible -- the app would simply come back without
+   * the feature, a minute later, with nothing to point at.
+   */
+  private async applySelection(userPrompt: string): Promise<void> {
+    if (this.promptTemplate.length === 0) { return }
+    let selection: Selection = everything('all intents')
+    try {
+      selection = await selectDomains(userPrompt, settings.getSelectorKey())
+    } catch (_e) {
+      // selectDomains does not throw, but a generation must not depend on that.
+      selection = everything('all intents (selector failed)')
+    }
+    // Two questions, two jobs. The domains decide which catalogue rows are
+    // described, and they are good at that: a row belongs to one part of the
+    // phone and says so. The addresses are picked intent by intent, because a
+    // domain cannot tell a torch from a camera and the registry has no words
+    // to match on beyond the intent's own name.
+    let picked: TargetChoice = new TargetChoice([], 'no pick')
+    try {
+      picked = await selectTargets(userPrompt, settings.getSelectorKey())
+    } catch (_e) {
+    }
+    let registry = describeTargetsForPrompt(picked.targets, userPrompt)
+    this.systemPrompt = this.promptTemplate
+      .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt(selection.domains))
+      .replace('{{DEVICE_INTENTS}}', registry.length > 0
+        ? registry
+        : '  (none found on this phone -- use the checked list above)')
+    this.selectionNote = selection.note + ' | ' + picked.note +
+      (registry.length > 0 ? ' | ' + registry.length.toString() + ' chars of addresses' : '')
   }
 
   private async doServerGenerate(): Promise<void> {

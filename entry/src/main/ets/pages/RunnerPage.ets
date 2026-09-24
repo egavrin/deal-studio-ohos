@@ -1,6 +1,7 @@
 import router from '@ohos.router'
 import { VeraPreview } from '../components/VeraPreview'
 import { store } from '../vera/ProjectStore'
+import { consent } from '../vera/VeraConsentStore'
 
 @Entry
 @Component
@@ -22,6 +23,7 @@ struct RunnerPage {
     if (projectId.length > 0 && versionId.length > 0) {
       this.persistKey = projectId + '/' + versionId
       store.init(getContext(this).filesDir)
+      consent.init(getContext(this).filesDir)
     }
   }
 

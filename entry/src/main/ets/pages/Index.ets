@@ -1,5 +1,6 @@
 import router from '@ohos.router'
 import { Project, store } from '../vera/ProjectStore'
+import { consent } from '../vera/VeraConsentStore'
 import { refreshForms } from '../vera/FormUpdater'
 
 const ICONS: string[] = ['📱', '🎮', '📊', '🧮', '🎯', '📝', '🔧', '🎨', '🌍', '⚡']
@@ -18,6 +19,7 @@ struct Index {
 
   aboutToAppear(): void {
     store.init(getContext(this).filesDir)
+    consent.init(getContext(this).filesDir)
     this.reload()
   }
 

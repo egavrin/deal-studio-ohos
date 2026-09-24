@@ -334,10 +334,16 @@ export class HostEffect {
   kind: string
   /** Which function of that host: the intent's row name, or addEvent/clearEvents. */
   fn: string
-  /** The intent's row; null for any other kind. */
+  /** The intent's row; null for a raw call and for any other kind. */
   spec: IntentSpec | null
   values: Map<string, string>
   resultHandler: string
+  /** intent.call only: bundle/module/ability/IntentName, as the program wrote it. */
+  rawTarget: string = ''
+  /** intent.call only: the parameter names, in the order the program wrote them. */
+  rawParams: string = ''
+  /** intent.call only: 'foreground' or 'background'. */
+  rawMode: string = ''
   constructor(id: number, kind: string, fn: string, spec: IntentSpec | null,
       values: Map<string, string>, resultHandler: string) {
     this.id = id; this.kind = kind; this.fn = fn; this.spec = spec
@@ -688,6 +694,7 @@ export class UiHostEnvironment extends HostEnvironment {
    * that is how an optional parameter is spelled.
    */
   private queueIntent(name: string, args: RuntimeValue[]): RuntimeValue {
+    if (name === 'call') { return this.queueRawIntent(args) }
     let spec = intentByName(name)
     if (spec === null) {
       throw new RuntimeTrap('R0015', `unknown std/intent function: ${name}`)
@@ -714,6 +721,58 @@ export class UiHostEnvironment extends HostEnvironment {
     let id = this.nextEffectId
     this.nextEffectId = id + 1
     this.pendingEffects.push(new HostEffect(id, 'intent', name, spec!, values, asString(args[1])))
+    return new VeraIntValue(id)
+  }
+
+  /**
+   * An intent the catalogue never heard of: the program names the target and
+   * writes the platform's own parameters.
+   *
+   * Nothing is translated on the way out, because there is nothing to translate
+   * it against. The payload is passed on as the program wrote it, and what
+   * comes back is whatever the target said. The person confirms the call before
+   * it runs -- that check lives in the renderer, where a dialog can be drawn
+   * that the program cannot touch.
+   */
+  private queueRawIntent(args: RuntimeValue[]): RuntimeValue {
+    if (!this.effectsAllowed) {
+      throw new RuntimeTrap('R0026',
+        'intent.call may only be called from a handler, not from view')
+    }
+    let target = asString(args[0]).trim()
+    if (target.split('/').length !== 4) {
+      throw new RuntimeTrap('R0027',
+        'intent.call target must be "bundle/module/ability/IntentName"; got "' + target + '"')
+    }
+    let mode = asString(args[2])
+    if (mode !== 'foreground' && mode !== 'background') {
+      throw new RuntimeTrap('R0027',
+        'intent.call mode must be "foreground" or "background"; got "' + mode + '"')
+    }
+    // Name, value, name, value. Built here rather than trusted as JSON,
+    // because a program has no way to escape a string and would eventually
+    // write a payload that does not parse -- which is exactly what the first
+    // program to use this did.
+    let pairs = asArray(args[1]).elements
+    if (pairs.length % 2 !== 0) {
+      throw new RuntimeTrap('R0027',
+        'intent.call parameters are name and value in pairs; got ' + pairs.length.toString() + ' items')
+    }
+    let values = new Map<string, string>()
+    let order: string[] = []
+    for (let i = 0; i + 1 < pairs.length; i = i + 2) {
+      let key = asString(pairs[i]).trim()
+      if (key.length === 0) { continue }
+      values.set(key, asString(pairs[i + 1]))
+      order.push(key)
+    }
+    let id = this.nextEffectId
+    this.nextEffectId = id + 1
+    let effect = new HostEffect(id, 'intent', 'call', null, values, asString(args[3]))
+    effect.rawTarget = target
+    effect.rawParams = order.join(' ')
+    effect.rawMode = mode
+    this.pendingEffects.push(effect)
     return new VeraIntValue(id)
   }
 

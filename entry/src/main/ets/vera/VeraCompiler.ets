@@ -1219,6 +1219,32 @@ function buildStdIntentModule(): ModuleInterface {
     classes.push(new ExternalClass(spec.paramsClass, paramsType))
     fns.push(new ExternalFunction(spec.name, [paramsType, STRING], INT, false))
   }
+  // The way out of the catalogue, for an intent nobody has written a row for.
+  //
+  // Every row above is a promise: the parameters were read out of a contract
+  // and the call was watched working on a phone. This one promises nothing. The
+  // program names the target and writes the platform's own parameter keys, and
+  // the compiler can check neither -- the phone has 810 intents and 734 of them
+  // declare no parameters at all, so there is nothing to check against.
+  //
+  // It exists because the alternative is worse: a catalogue that will never
+  // cover the phone, and a program that cannot even try. The cost is paid at
+  // the other end -- the person confirms every one of these before it runs,
+  // with the target and the payload in front of them, because nothing else in
+  // this system knows whether the call is a volume change or a payment.
+  //
+  // Parameters are pairs rather than JSON, and that is not a style choice: the
+  // first program written against a JSON string built one by concatenation, put
+  // a line break in it, and the payload never parsed. The language has no way
+  // to escape a string, so asking a program for JSON is asking it to be wrong
+  // eventually. Pairs it writes correctly by construction, and the host builds
+  // the object -- including a dotted key like "dstLocation.latitude", which
+  // nests exactly as a catalogue row's platformName does.
+  //
+  //   intent.call("com.huawei.hmos.settings/phone_settings/DefaultIntentBackgroundUiAbility/GetSettingSwitch",
+  //               ["itemName", "bluetooth"], "background", "onAnswer")
+  fns.push(new ExternalFunction('call',
+    [STRING, new VeraArrayType(STRING), STRING, STRING], INT, false))
   return new ModuleInterface('std/intent', fns, classes)
 }
 
@@ -1856,6 +1882,10 @@ class Analyzer {
     let params: IntentParam[] = []
     const intentPrefix = 'external:std/intent:'
     const calendarPrefix = 'external:std/calendar:'
+    if (callee.identity === intentPrefix + 'call') {
+      this.checkRawIntentArguments(expr)
+      return
+    }
     if (callee.identity.startsWith(intentPrefix)) {
       let name = callee.identity.substring(intentPrefix.length)
       let spec = intentByName(name)
@@ -1900,6 +1930,67 @@ class Analyzer {
     if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
       this.addError('E2106', label + ' answers with a string, so "' +
         handlerName + '" must take (state, value: string)', arg.span)
+    }
+  }
+
+  /**
+   * What little can be checked about intent.call.
+   *
+   * Not the parameters -- that is the whole point of the escape hatch, and the
+   * phone has no contract to check them against. But the shape of the target,
+   * the mode and the payload are checkable when they are written out, and each
+   * of them is a mistake the model makes and the platform answers with silence:
+   * a target with a missing segment goes nowhere, a mode that is not one of the
+   * two is ignored, and a payload that is not an object never reaches the
+   * target as parameters at all.
+   *
+   * A computed argument is left alone, as everywhere else here.
+   */
+  private checkRawIntentArguments(expr: CallExpression): void {
+    if (expr.argumentsList.length > 0 && expr.argumentsList[0] instanceof StringExpression) {
+      let arg = expr.argumentsList[0]
+      let target = (arg as StringExpression).value
+      let parts = target.split('/')
+      let empty = false
+      for (let part of parts) { if (part.trim().length === 0) { empty = true } }
+      if (parts.length !== 4 || empty) {
+        this.addError('E2109', 'intent.call target must be ' +
+          '"bundle/module/ability/IntentName", four parts, none empty; got "' + target + '"', arg.span)
+      }
+    }
+    if (expr.argumentsList.length > 1 && expr.argumentsList[1] instanceof ArrayExpression) {
+      let arg = expr.argumentsList[1]
+      let items = (arg as ArrayExpression).elements
+      if (items.length % 2 !== 0) {
+        this.addError('E2109', 'intent.call parameters are name and value in pairs, so the ' +
+          'array must have an even number of items; got ' + items.length.toString(), arg.span)
+      }
+      for (let i = 0; i + 1 < items.length; i = i + 2) {
+        if (!(items[i] instanceof StringExpression)) { continue }
+        if ((items[i] as StringExpression).value.trim().length === 0) {
+          this.addError('E2109', 'intent.call parameter names cannot be empty', items[i].span)
+        }
+      }
+    }
+    if (expr.argumentsList.length > 2 && expr.argumentsList[2] instanceof StringExpression) {
+      let arg = expr.argumentsList[2]
+      let mode = (arg as StringExpression).value
+      if (mode !== 'foreground' && mode !== 'background') {
+        this.addError('E2109', 'intent.call mode must be "foreground" or "background"; got "' +
+          mode + '"', arg.span)
+      }
+    }
+    if (expr.argumentsList.length < 4 || !(expr.argumentsList[3] instanceof StringExpression)) return
+    let arg = expr.argumentsList[3]
+    let handlerName = (arg as StringExpression).value
+    let fn = this.model.functions.get(handlerName)
+    if (fn === undefined) {
+      this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
+      return
+    }
+    if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
+      this.addError('E2106', 'intent.call answers with a string, so "' + handlerName +
+        '" must take (state, value: string)', arg.span)
     }
   }
 

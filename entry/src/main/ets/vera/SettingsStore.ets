@@ -47,6 +47,14 @@ export class SettingsStore {
    * configured.
    */
   private serverUrl: string = ''
+  /**
+   * The TypeSafe key, for the step that picks which intents a request needs.
+   *
+   * Supplied like the others -- `--ps typesafeKey ...` -- and optional in a way
+   * the DeepSeek key is not: without it the whole intent catalogue goes into
+   * the prompt, which is what happened before there was a selection step.
+   */
+  private selectorKey: string = ''
   private loaded: boolean = false
 
   init(filesDir: string): void {
@@ -68,6 +76,7 @@ export class SettingsStore {
         this.model = (obj['model'] as string) || DEFAULT_DEEPSEEK_MODEL
         this.baseUrl = (obj['baseUrl'] as string) || DEFAULT_DEEPSEEK_BASE_URL
         this.serverUrl = (obj['serverUrl'] as string) || ''
+        this.selectorKey = (obj['selectorKey'] as string) || ''
       } catch (_e) {}
     }
     this.loaded = true
@@ -80,6 +89,7 @@ export class SettingsStore {
     obj['model'] = this.model
     obj['baseUrl'] = this.baseUrl
     obj['serverUrl'] = this.serverUrl
+    obj['selectorKey'] = this.selectorKey
     try { writeText(this.path(), JSON.stringify(obj)) } catch (_e) {}
   }
 
@@ -100,6 +110,19 @@ export class SettingsStore {
   setServerUrl(url: string): void {
     if (!this.loaded) { this.load() }
     this.serverUrl = url
+    this.save()
+  }
+
+  getSelectorKey(): string {
+    if (!this.loaded) { this.load() }
+    return this.selectorKey
+  }
+
+  hasSelectorKey(): boolean { return this.getSelectorKey().length > 0 }
+
+  setSelectorKey(key: string): void {
+    if (!this.loaded) { this.load() }
+    this.selectorKey = key.trim()
     this.save()
   }
 

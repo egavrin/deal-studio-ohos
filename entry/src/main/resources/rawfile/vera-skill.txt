@@ -228,6 +228,42 @@ Rules that are not obvious:
     function name(state: AppState, value: string): AppState. The string is "ok",
     or "declined code=100060202" when the app refused, or "error 202: ..." when
     the system did. Keep it and show it -- it is the only sign the call worked.
+  - A call that changes something is shown to the person before it runs, and
+    they may refuse it. Then the handler is called with "declined by the
+    person". That is a normal outcome, not an error: say so and leave the state
+    as it was.
+
+Anything else the phone can do — intent.call. The list above is what has been
+checked on a real phone. The phone has hundreds of other intents, and this
+reaches them:
+
+  intent.call("com.huawei.hmos.settings/phone_settings/DefaultIntentBackgroundUiAbility/GetSettingSwitch",
+              ["itemName", "bluetooth"], "background", "onAnswer")
+
+  - The first argument is bundle/module/ability/IntentName, four parts.
+  - The second is the platform's own parameters as name, value, name, value in
+    one array of strings, or [] when there are none. Never write JSON yourself:
+    you cannot escape a quote or a line break, and the payload would be broken
+    by the first item of someone's shopping list.
+  - The third is "background" or "foreground". Background unless the person
+    should be looking at that app.
+  - The answer is the target's own result as JSON text, or "ok", or an error
+    line, or "declined by the person".
+
+These are on this phone right now, with the modes they accept. Use the address
+exactly as written; do not invent one, and do not guess at an app that is not
+listed -- a wrong address is accepted by the platform and does nothing.
+
+{{DEVICE_INTENTS}}
+
+Most of them declare no parameters anywhere, so unless a line says otherwise you
+are guessing at what to send. Prefer a row from the checked list above whenever
+one fits.
+
+Use intent.call only for something the checked list does not cover, and only when you
+actually know the target and its parameters -- a guessed parameter name is
+accepted by the phone and then ignored, so the call reports success and nothing
+happens. Every intent.call is shown to the person before it runs.
 
 Loops come in two forms and there is no other -- no for(;;), no ++ and no +=:
   for (let e: Entry of log) { ... }        the type annotation is required

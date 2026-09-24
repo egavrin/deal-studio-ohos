@@ -42,30 +42,128 @@ const DOMAIN = 0x0000
  */
 function buildParams(spec: IntentSpec, values: Map<string, string>): Record<string, Object> {
   let params: Record<string, Object> = {}
+  // The row's own constants first: they are what makes this row a named
+  // function rather than a generic intent, and the program cannot reach them.
+  // Written before the program's values so the two never fight over a key;
+  // a row that needs a key to be writable declares it as a parameter instead.
+  spec.fixed.forEach((value: string, key: string) => { writeParam(params, key, value) })
   for (let p of spec.params) {
     let raw = values.get(p.name)
-    if (raw === undefined) { continue }
-    let text = raw as string
-    if (text.length === 0) { continue }
+    let text = raw === undefined ? '' : raw as string
+    // An empty field means "omit" -- unless the row has something sensible to
+    // say in its place, which is how a parameter that is optional to the
+    // program but mandatory to the target is spelled.
+    if (text.length === 0) {
+      if (p.defaultValue.length === 0) { continue }
+      text = p.defaultValue
+    }
     let mapped = p.valueMap.get(text)
     let out: string = mapped !== undefined ? mapped as string : text
     let value: Object = p.kind === 'int' ? Number.parseInt(out, 10) as Object : out as Object
-    let dot = p.platformName.indexOf('.')
-    if (dot < 0) {
-      params[p.platformName] = value
-      continue
-    }
-    // One level is all the catalogue ever asks for, so this does not recurse.
-    let group = p.platformName.substring(0, dot)
-    let leaf = p.platformName.substring(dot + 1)
-    let nested = params[group] as Record<string, Object> | undefined
-    if (nested === undefined) {
-      nested = {} as Record<string, Object>
-      params[group] = nested as Object
-    }
-    nested![leaf] = value
+    writeParam(params, p.platformName, value)
   }
   return params
+}
+
+/**
+ * One key of the payload, where a dotted name means one level of nesting.
+ *
+ * Shared by the row's constants and the program's values, so both reach an
+ * object parameter the same way -- a row may well fix dstLocation.locationSystem
+ * while the program writes the coordinates.
+ */
+function writeParam(params: Record<string, Object>, platformName: string, value: Object): void {
+  let dot = platformName.indexOf('.')
+  if (dot < 0) {
+    params[platformName] = value
+    return
+  }
+  // One level is all the catalogue ever asks for, so this does not recurse.
+  let group = platformName.substring(0, dot)
+  let leaf = platformName.substring(dot + 1)
+  let nested = params[group] as Record<string, Object> | undefined
+  if (nested === undefined) {
+    nested = {} as Record<string, Object>
+    params[group] = nested as Object
+  }
+  nested![leaf] = value
+}
+
+/**
+ * What the handler is told when the call succeeded.
+ *
+ * 'ok' for a row that asks for nothing back, which is every row that exists to
+ * make something happen. A reading row names one field of the answer, and that
+ * field's value comes back as a string, translated out of the platform's
+ * spelling the same way the arguments were translated into it -- bluetooth
+ * answers switchFlag 0 for ON, and the program should never see that 0.
+ *
+ * A field the target did not send is not an error: settings answer with
+ * different shapes depending on what they know, and a program that asked for a
+ * reading and got 'unknown' can say so. Guessing here would be worse.
+ */
+function readAnswer(spec: IntentSpec, result: insightIntent.ExecuteResult): string {
+  if (spec.resultField.length === 0) { return 'ok' }
+  let payload = result.result
+  if (payload === undefined || payload === null) { return 'unknown' }
+  let record = payload as Record<string, Object>
+  let value = record[spec.resultField]
+  if (value === undefined || value === null) { return 'unknown' }
+  let text = typeof value === 'string' ? value as string : JSON.stringify(value)
+  let mapped = spec.resultMap.get(text)
+  return mapped !== undefined ? mapped as string : text
+}
+
+/**
+ * An intent named by the program rather than by the catalogue.
+ *
+ * Everything the catalogue does for a row -- translate names, translate values,
+ * fill constants, pick the mode, decide what comes back -- is the program's
+ * problem here, because none of it can be known for an intent nobody has
+ * written down. What this function still does is the part that is always true:
+ * it refuses a malformed target, it reports what the platform said rather than
+ * interpreting it, and it writes the whole call into the log so there is a
+ * record of what a generated program asked the phone to do.
+ *
+ * The answer is the target's own result, as JSON, because a raw caller has no
+ * row to say which field it wanted.
+ */
+export async function runRawIntent(target: string, values: Map<string, string>, mode: string): Promise<string> {
+  let parts = target.split('/')
+  if (parts.length !== 4) { return 'error: target must be bundle/module/ability/IntentName' }
+  // The program wrote names and values; the object is built here, so a line
+  // break or a quote in someone's shopping list cannot break the payload.
+  let params: Record<string, Object> = {}
+  values.forEach((value: string, key: string) => { writeParam(params, key, value as Object) })
+  let param: insightIntentDriver.ExecuteParam = {
+    bundleName: parts[0].trim(),
+    moduleName: parts[1].trim(),
+    abilityName: parts[2].trim(),
+    insightIntentName: parts[3].trim(),
+    insightIntentParam: params,
+    executeMode: mode === 'foreground'
+      ? insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND
+      : insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND
+  }
+  hilog.info(DOMAIN, 'VERA', 'VERA-INTENT-RAW ' + target + ' mode=' + mode +
+    ' params=' + JSON.stringify(params))
+  try {
+    let result: insightIntent.ExecuteResult = await insightIntentDriver.execute(param)
+    let payload = result.result === undefined || result.result === null
+      ? '' : JSON.stringify(result.result)
+    hilog.info(DOMAIN, 'VERA', 'VERA-INTENT-RAW ' + target + ' code=' +
+      result.code.toString() + ' result=' + (payload.length > 0 ? payload : '(none)'))
+    if (result.code !== 0) { return 'declined code=' + result.code.toString() }
+    // A zero is the target saying it accepted the call, and nothing more: on
+    // this phone the clock answers 0 to CreateTimer and creates no timer. The
+    // program is told 'ok' and should not claim more than that either.
+    return payload.length > 0 ? payload : 'ok'
+  } catch (e) {
+    let err = e as BusinessError
+    hilog.error(DOMAIN, 'VERA', 'VERA-INTENT-RAW ' + target + ' failed ' +
+      err.code.toString() + ': ' + err.message)
+    return 'error ' + err.code.toString() + ': ' + err.message
+  }
 }
 
 /**
@@ -119,8 +217,9 @@ export async function runIntent(spec: IntentSpec, values: Map<string, string>): 
   try {
     let result: insightIntent.ExecuteResult = await insightIntentDriver.execute(param)
     if (result.code === 0) {
-      hilog.info(DOMAIN, 'VERA', 'VERA-INTENT ' + spec.intentName + ' ok')
-      return 'ok'
+      let answer = readAnswer(spec, result)
+      hilog.info(DOMAIN, 'VERA', 'VERA-INTENT ' + spec.intentName + ' ok -> ' + answer)
+      return answer
     }
     hilog.info(DOMAIN, 'VERA', 'VERA-INTENT ' + spec.intentName + ' declined ' + result.code.toString())
     return 'declined code=' + result.code.toString()

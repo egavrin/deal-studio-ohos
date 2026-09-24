@@ -13,7 +13,7 @@
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraIntValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
-import { runIntent } from '../vera/VeraIntents'
+import { runIntent, runRawIntent } from '../vera/VeraIntents'
 import { addCalendarEvent, clearCalendarEvents } from '../vera/VeraCalendar'
 import { LengthMetrics } from '@ohos.arkui.node'
 import mediaquery from '@ohos.mediaquery'
@@ -24,6 +24,7 @@ import { ResolvedTheme, resolveTheme, containerFill, toneFill, toneEdge, toneInk
   textSize, textWeight, textInk, buttonFill, buttonInk, pathFill, densityPad,
   densityGap, spacerSize } from '../vera/VeraTheme'
 import { store } from '../vera/ProjectStore'
+import { consent } from '../vera/VeraConsentStore'
 import { LiveNode, toLive, reconcile } from './VeraLiveTree'
 
 /**
@@ -60,6 +61,15 @@ class LiveTheme {
   primary: string = ''
   dark: boolean = false
 }
+
+/**
+ * Whether a call is shown to the person before it runs.
+ *
+ * Off by request: a program that blinks the torch every two seconds cannot ask
+ * about every flash, and a demo that stops on a dialog is not a demo. On, it
+ * asks once per program and per call and remembers the answer.
+ */
+const ASK_BEFORE_CALLS: boolean = false
 
 @Component
 export struct VeraPreview {
@@ -127,6 +137,21 @@ export struct VeraPreview {
    * corrected.
    */
   @State viewportWidth: number = 0
+  /**
+   * The call waiting for the person to allow it, and the calls queued behind it.
+   *
+   * A generated program may ask the phone to do things it cannot undo, and
+   * neither the program nor the model knows which of them matter -- an intent
+   * that changes the volume and one that sends a message look alike from here.
+   * So anything that changes something is shown to the person first, and this
+   * is the one thing on the screen the program did not draw: it cannot style
+   * it, word it, or press its buttons.
+   *
+   * @State because the dialog is part of the frame; the queue is not, because
+   * nothing draws it.
+   */
+  @State pending: HostEffect | null = null
+  private heldEffects: HostEffect[] = []
   private spinTimer: number = -1
   private spinPeriod: number = 0
 
@@ -489,11 +514,143 @@ export struct VeraPreview {
     let effects: HostEffect[] = this.host!.pendingEffects
     if (effects.length === 0) { return }
     this.host!.pendingEffects = []
-    for (let effect of effects) {
+    for (let effect of effects) { this.heldEffects.push(effect) }
+    this.runQueued()
+  }
+
+  /**
+   * Works through the queue until it is empty or something needs asking.
+   *
+   * One dialog at a time, and everything behind it waits: two dialogs at once
+   * is a person clicking through whichever is on top, which is the failure this
+   * whole mechanism exists to prevent.
+   */
+  private runQueued(): void {
+    while (this.heldEffects.length > 0) {
+      if (this.pending !== null) { return }
+      let effect = this.heldEffects.shift() as HostEffect
       console.info('VERA-EFFECT id=' + effect.id.toString() + ' ' + effect.kind + '.' + effect.fn +
         ' -> ' + effect.resultHandler)
+      if (this.needsConsent(effect)) {
+        console.info('VERA-CONSENT asking for ' + this.consentTitle(effect))
+        this.pending = effect
+        return
+      }
       this.runEffect(effect)
     }
+  }
+
+  /**
+   * Whether this call is shown to the person before it runs.
+   *
+   * Reading something, opening a page or launching an app is not worth
+   * interrupting for -- the person asked for the app and can see what it did.
+   * Anything that changes something is, and an intent the catalogue never
+   * described always is: nobody has established what it does, so nobody can say
+   * it is safe. The calendar goes through Calendar Kit rather than an intent
+   * and writes to a calendar the person can inspect and the program can wipe,
+   * so it stays as it was.
+   */
+  private needsConsent(effect: HostEffect): boolean {
+    // Asking is off. Turn ASK_BEFORE_CALLS back on and every state-changing
+    // call, and every intent.call, is shown to the person again -- the sheet,
+    // the queue and the remembered grants are all still here and still work.
+    //
+    // What is lost while it is off is the only thing standing between a
+    // generated program and an intent nobody has checked: the phone accepts
+    // Pay and SendTextMessage as readily as OpenFlashlight, and the person
+    // sees neither. The log keeps the record -- VERA-INTENT and
+    // VERA-INTENT-RAW carry the target and the payload of every call.
+    if (!ASK_BEFORE_CALLS) { return false }
+    if (effect.kind !== 'intent') { return false }
+    // Already allowed, for this program and this call. The grant died with the
+    // previous version of the program: stamp() is the bytecode.
+    if (consent.has(this.stamp(), this.consentKey(effect))) { return false }
+    if (effect.spec === null) { return true }
+    let risk = effect.spec!.risk
+    return risk === 'act' || risk === 'critical'
+  }
+
+  /**
+   * What a grant is about: the address for a raw call, the row's name for a
+   * catalogue row.
+   *
+   * The row's name rather than its address, because two rows can share an
+   * address and mean opposite things -- setBluetooth and readBluetooth are both
+   * SetSettingSwitch's neighbours in the settings app -- and allowing a reading
+   * must not quietly allow a change.
+   */
+  private consentKey(effect: HostEffect): string {
+    return effect.spec === null ? effect.rawTarget : 'row:' + effect.spec!.name
+  }
+
+  /** What the dialog says this call is, in the person's words where there are any. */
+  private consentTitle(effect: HostEffect): string {
+    if (effect.spec === null) { return 'Run ' + effect.rawTarget.split('/')[3] }
+    let spec = effect.spec!
+    return spec.titleForUser.length > 0 ? spec.titleForUser : spec.summary
+  }
+
+  /** The app the call goes to, by bundle name -- the one thing that is never in doubt. */
+  private consentTarget(effect: HostEffect): string {
+    if (effect.spec === null) { return effect.rawTarget }
+    return effect.spec!.bundle + ' / ' + effect.spec!.intentName
+  }
+
+  /**
+   * Every value that will be sent, after translation, one per line.
+   *
+   * After translation because that is what the phone will receive: showing the
+   * program's own words would be showing something other than what happens.
+   */
+  private consentValues(effect: HostEffect): string {
+    if (effect.spec === null) {
+      let lines: string[] = []
+      effect.values.forEach((value: string, key: string) => { lines.push(key + ': ' + value) })
+      return lines.length > 0 ? lines.join('\n') : '(no parameters)'
+    }
+    let lines: string[] = []
+    let spec = effect.spec!
+    spec.fixed.forEach((value: string, key: string) => { lines.push(key + ': ' + value) })
+    for (let p of spec.params) {
+      let raw = effect.values.get(p.name)
+      let text = raw === undefined ? '' : raw as string
+      if (text.length === 0) { text = p.defaultValue }
+      if (text.length === 0) { continue }
+      let mapped = p.valueMap.get(text)
+      lines.push(p.platformName + ': ' + (mapped !== undefined ? mapped as string : text))
+    }
+    return lines.length > 0 ? lines.join('\n') : '(no parameters)'
+  }
+
+  /** The person allowed it: run it, then carry on with whatever was behind it. */
+  private allowPending(): void {
+    let effect = this.pending
+    this.pending = null
+    if (effect !== null) {
+      console.info('VERA-CONSENT allowed ' + this.consentTarget(effect!))
+      // Remembered, so the same program asking the same thing again is not a
+      // question the person has to answer twice.
+      consent.remember(this.stamp(), this.consentKey(effect!))
+      this.runEffect(effect!)
+    }
+    this.runQueued()
+  }
+
+  /**
+   * The person refused: the program is told so through its own handler.
+   *
+   * Told, rather than left waiting -- a program that asked to send something
+   * and hears nothing back will show the person a screen that is quietly wrong.
+   */
+  private refusePending(): void {
+    let effect = this.pending
+    this.pending = null
+    if (effect !== null) {
+      console.info('VERA-CONSENT refused ' + this.consentTarget(effect!))
+      this.dispatch(effect!.resultHandler, new VeraStringValue('declined by the person'))
+    }
+    this.runQueued()
   }
 
   /** One effect, whichever host it belongs to, answered through its handler. */
@@ -509,6 +666,8 @@ export struct VeraPreview {
         this.effectInt(effect, 'durationMinutes', 15),
         this.effectInt(effect, 'remindBefore', 0),
         this.effectText(effect, 'repeat'))
+    } else if (effect.spec === null) {
+      answer = runRawIntent(effect.rawTarget, effect.values, effect.rawMode)
     } else {
       answer = runIntent(effect.spec!, effect.values)
     }
@@ -534,6 +693,78 @@ export struct VeraPreview {
   }
 
   build() {
+    Stack() {
+      this.programFrame()
+      // Drawn over the program, by the renderer, from the row the host is about
+      // to send. The program supplies no text here and cannot dismiss it.
+      if (this.pending !== null) {
+        this.consentSheet(this.pending!)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .alignContent(Alignment.Bottom)
+  }
+
+  @Builder
+  consentSheet(effect: HostEffect) {
+    Column() {
+      Column() {
+        Text(this.consentTitle(effect))
+          .fontSize(19).fontWeight(FontWeight.Bold)
+          .fontColor(this.t().ink)
+          .width('100%')
+        Text(this.consentTarget(effect))
+          .fontSize(12).fontFamily('monospace')
+          .fontColor(this.t().inkMuted)
+          .width('100%')
+          .margin({ top: 4 })
+        Text(this.consentValues(effect))
+          .fontSize(13).fontFamily('monospace')
+          .fontColor(this.t().inkStrong)
+          .width('100%')
+          .padding(10)
+          .margin({ top: 12 })
+          .backgroundColor(this.t().surface)
+          .borderRadius(8)
+        // Said plainly, because it is the part a person cannot check for
+        // themselves: this call was written by a program, not by them.
+        Text((effect.spec === null
+          ? 'This app wrote this call itself. Nothing has checked what it does.'
+          : 'This app is asking to change something on your phone.') +
+          ' Allow it and this app stops asking for this one.')
+          .fontSize(12)
+          .fontColor(this.t().inkSoft)
+          .width('100%')
+          .margin({ top: 10 })
+        Row() {
+          Button('Not now')
+            .fontSize(15)
+            .layoutWeight(1)
+            .backgroundColor(this.t().surface)
+            .fontColor(this.t().ink)
+            .onClick(() => { this.refusePending() })
+          Button('Allow')
+            .fontSize(15)
+            .layoutWeight(1)
+            .margin({ left: 10 })
+            .backgroundColor(this.t().primary)
+            .fontColor(this.t().onPrimary)
+            .onClick(() => { this.allowPending() })
+        }
+        .width('100%')
+        .margin({ top: 16 })
+      }
+      .width('100%')
+      .padding(18)
+      .backgroundColor(this.t().background)
+      .borderRadius({ topLeft: 16, topRight: 16 })
+    }
+    .width('100%')
+  }
+
+  @Builder
+  programFrame() {
     Column() {
       if (this.error.length > 0) {
         Text(this.error)

@@ -32,10 +32,24 @@ export class IntentParam {
   valueMap: Map<string, string>
   /** One line for the prompt. */
   summary: string
+  /**
+   * Sent when the program leaves this field empty.
+   *
+   * An empty string means "omit", which is how a language with no optional
+   * record fields spells an optional parameter -- but some parameters are
+   * optional to the program and mandatory to the target. GetSettingSeekBar
+   * wants an itemName whether or not the person named a kind of volume, so the
+   * row carries the sensible one and the program may honestly write "".
+   *
+   * Empty here keeps the old behaviour: an empty field is not sent.
+   */
+  defaultValue: string
   constructor(name: string, kind: string, platformName: string, values: string[] = [],
-      valueMap: Map<string, string> = new Map<string, string>(), summary: string = '') {
+      valueMap: Map<string, string> = new Map<string, string>(), summary: string = '',
+      defaultValue: string = '') {
     this.name = name; this.kind = kind; this.platformName = platformName
     this.values = values; this.valueMap = valueMap; this.summary = summary
+    this.defaultValue = defaultValue
   }
 }
 
@@ -82,13 +96,70 @@ export class IntentSpec {
    * startAbility is public API and needs no system signature.
    */
   via: string
+  /**
+   * Platform parameters this row always sends, which the program never writes
+   * and the model never sees.
+   *
+   * The device has no "turn Bluetooth on" intent. It has one SetSettingSwitch
+   * in the settings app, and itemName says which switch: bluetooth,
+   * personal_hotspot, battery_saving_mode. Holding itemName here is what turns
+   * one generic intent into several named functions a model can choose between
+   * without inventing a platform string -- and inventing one is exactly the
+   * failure this catalogue exists to prevent, because the platform does not
+   * validate parameters and an unknown itemName fails silently.
+   *
+   * Keyed by platform name, like platformName on a parameter, so a dotted key
+   * nests the same way.
+   */
+  fixed: Map<string, string>
+  /**
+   * What calling this row does to the phone: 'read', 'navigate', 'act' or
+   * 'critical'.
+   *
+   * Recorded when the row is added, while the contract and the probe are in
+   * front of whoever adds it. Nothing enforces it yet -- the confirmation
+   * dialog is the next step -- so for now safety comes from which rows are
+   * admitted at all. A row is never given a milder class than its verb and its
+   * target suggest.
+   */
+  risk: string
+  /** One word, used to pick the rows a request needs: maps, calendar, clock... */
+  domain: string
+  /** The line a person reads in the confirmation dialog: "Turn Bluetooth on". */
+  titleForUser: string
+  /** The target's versionCode when the row was last probed; '' when unknown. */
+  verifiedVersion: string
+  /**
+   * The one field of the target's answer the program is given, by platform name.
+   *
+   * A reading intent is pointless unless its answer comes back, and the answer
+   * arrives as an object: GetSettingSeekBar replies
+   * {"itemName":"media_volume","seekBarValue":32,"targetValue":32}. The language
+   * cannot take an object apart -- there is no JSON in it and no way to add one
+   * -- so the row names the field that matters and the host hands over that
+   * value alone, as a string. Empty means the handler gets 'ok', as before.
+   */
+  resultField: string
+  /**
+   * Platform answer -> the word the program uses, the reverse of valueMap.
+   *
+   * Without it a reading row would leak the platform's own spelling back into
+   * the program: bluetooth answers switchFlag 0 for ON, and a generated program
+   * comparing against "0" would be writing platform values in all but name.
+   */
+  resultMap: Map<string, string>
   constructor(name: string, paramsClass: string, bundle: string, moduleName: string,
       ability: string, intentName: string, params: IntentParam[], summary: string,
-      tier: string, mode: string, via: string = 'intent') {
+      tier: string, mode: string, via: string = 'intent',
+      fixed: Map<string, string> = new Map<string, string>(), risk: string = '',
+      domain: string = '', titleForUser: string = '', verifiedVersion: string = '',
+      resultField: string = '', resultMap: Map<string, string> = new Map<string, string>()) {
     this.name = name; this.paramsClass = paramsClass; this.bundle = bundle
     this.moduleName = moduleName; this.ability = ability; this.intentName = intentName
     this.params = params; this.summary = summary; this.tier = tier; this.mode = mode
-    this.via = via
+    this.via = via; this.fixed = fixed; this.risk = risk; this.domain = domain
+    this.titleForUser = titleForUser; this.verifiedVersion = verifiedVersion
+    this.resultField = resultField; this.resultMap = resultMap
   }
 }
 
@@ -121,7 +192,8 @@ export const INTENT_CATALOG: IntentSpec[] = [
     'com.huawei.hmsapp.music', 'phone', 'MainAbility', 'PlayMusicList',
     [new IntentParam('scene', 'string', 'sceneType', MUSIC_SCENES,
       new Map<string, string>(), 'which moment of the day the music is for')],
-    'puts on a playlist chosen for a moment of the day', 'catalog', 'background'),
+    'puts on a playlist chosen for a moment of the day', 'catalog', 'background', 'intent',
+    new Map<string, string>(), 'act', 'music', 'Play music', ''),
 
   // Contract: the standard-intent catalogue. Parameters are all optional there,
   // so the record carries the two that need no coordinates -- a destination by
@@ -140,7 +212,8 @@ export const INTENT_CATALOG: IntentSpec[] = [
      new IntentParam('traffic', 'string', 'trafficType',
       ['Drive', 'Walk', 'Cycle', 'Bus', 'Subway'], new Map<string, string>(),
       'how to travel')],
-    'starts navigation to a named place', 'catalog', 'foreground'),
+    'starts navigation to a named place', 'catalog', 'foreground', 'intent',
+    new Map<string, string>(), 'navigate', 'maps', 'Start navigation', ''),
 
   // The same intent as startNavigate, aimed at a place instead of at "home".
   //
@@ -215,7 +288,8 @@ export const INTENT_CATALOG: IntentSpec[] = [
      new IntentParam('traffic', 'string', 'trafficType',
       ['Drive', 'Walk', 'Cycle', 'Bus', 'Subway'], new Map<string, string>(),
       'how to travel')],
-    'starts navigation between two places given by name and coordinates', 'probed', 'foreground'),
+    'starts navigation between two places given by name and coordinates', 'probed', 'foreground',
+    'intent', new Map<string, string>(), 'navigate', 'maps', 'Start navigation', ''),
 
   // Opens one section of the music app.
   //
@@ -234,7 +308,8 @@ export const INTENT_CATALOG: IntentSpec[] = [
        'daily30', 'hotSongs', 'newSongs', 'ringTone'],
       new Map<string, string>(),
       'which section: localSongs is music already on the phone')],
-    'opens a section of the music app', 'schema', 'foreground'),
+    'opens a section of the music app', 'schema', 'foreground', 'intent',
+    new Map<string, string>(), 'navigate', 'music', 'Open the music app', ''),
 
   // Opens the phone's Calendar app -- by launching it, not through an intent.
   //
@@ -245,7 +320,8 @@ export const INTENT_CATALOG: IntentSpec[] = [
   // ability directly: public API, no system signature, no contract to get wrong.
   new IntentSpec('openCalendar', 'CalendarViewParams',
     'com.huawei.hmos.calendar', 'phone', 'MainAbility', '',
-    [], 'opens the phone\'s calendar app', 'probed', 'foreground', 'launch'),
+    [], 'opens the phone\'s calendar app', 'probed', 'foreground', 'launch',
+    new Map<string, string>(), 'navigate', 'calendar', 'Open the calendar', ''),
 
   // The one target here that needs no account, which is why it exists.
   //
@@ -275,7 +351,8 @@ export const INTENT_CATALOG: IntentSpec[] = [
     'com.huawei.hmos.maps.app', 'entry', 'EntryAbility', 'ViewSearchPageLocal',
     [new IntentParam('query', 'string', 'query', [], new Map<string, string>(),
       'what to look for')],
-    'opens the map search page for a place', 'catalog', 'foreground'),
+    'opens the map search page for a place', 'catalog', 'foreground', 'intent',
+    new Map<string, string>(), 'navigate', 'maps', 'Search the map', ''),
 
   // The same standard intent, implemented by a second app -- which is the point
   // of the row, because it is the only way left to find out whether `query` is
@@ -304,7 +381,9 @@ export const INTENT_CATALOG: IntentSpec[] = [
     'com.huawei.hmsapp.music', 'phone', 'MainAbility', 'ViewSearchPageLocal',
     [new IntentParam('query', 'string', 'query', [], new Map<string, string>(),
       'what to look for')],
-    'opens the music search page for a song or artist', 'catalog', 'foreground'),
+    'opens the music search page for a song or artist', 'catalog', 'foreground', 'intent',
+    new Map<string, string>(), 'navigate', 'music', 'Search music', ''),
+
 ]
 
 /** The spec behind intent.<name>, or null when there is none. */
@@ -321,13 +400,39 @@ export function intentValuesFor(intentFunction: string, field: string): string[]
   return []
 }
 
+/** Every domain the catalogue uses, in the order the rows were written. */
+export function intentDomains(): string[] {
+  let seen: string[] = []
+  for (let spec of INTENT_CATALOG) {
+    if (spec.domain.length === 0) { continue }
+    if (seen.indexOf(spec.domain) < 0) { seen.push(spec.domain) }
+  }
+  return seen
+}
+
 /**
  * The intent section of the model's prompt, generated so it cannot drift from
  * what the compiler accepts and the host sends.
+ *
+ * With a list of domains, only those rows are described. That is how the
+ * catalogue stays affordable as it grows: a request about a day out has no use
+ * for sixty rows about phone settings, and every row costs about 185 characters
+ * of a prompt that is 20 KB before any of them.
+ *
+ * An empty list means all of them, which is also what the caller falls back to
+ * whenever the selection step cannot answer. Erring wide is deliberate: an
+ * extra row wastes prompt, a missing one silently removes a feature from the
+ * generated app, and the person cannot see which happened.
+ *
+ * A row with no domain is always described: it has not been sorted yet, and
+ * dropping it would hide it for no reason anyone could act on.
  */
-export function describeIntentsForPrompt(): string {
+export function describeIntentsForPrompt(domains: string[] = []): string {
   let lines: string[] = []
   for (let spec of INTENT_CATALOG) {
+    if (domains.length > 0 && spec.domain.length > 0 && domains.indexOf(spec.domain) < 0) {
+      continue
+    }
     let fields: string[] = []
     for (let p of spec.params) { fields.push(p.name) }
     lines.push('  intent.' + spec.name + '({ ' + fields.join(', ') + ' }, result)  -- ' + spec.summary)

@@ -5,3 +5,20 @@ oh_modules/
 /tmp/
 /entry/.cxx/
 local.properties
+
+# The device catalogue never belongs here.
+#
+# A row in it names an ability, a constant and a versionCode belonging to one
+# phone and one firmware -- the operator's material, established by reading what
+# is installed on their device. The product ships the rows that come from
+# Huawei's published specification (VeraIntentCatalog.ets) and the loader that
+# reads the rest from {filesDir}/vera/intent-catalog.json at run time.
+intent-catalog*.json
+intent-candidates*.json
+*.catalog.json
+rows.ets.txt
+
+# Anything pulled off a phone, for the same reason.
+*.hap
+*.hsp
+insight_intent*.db
