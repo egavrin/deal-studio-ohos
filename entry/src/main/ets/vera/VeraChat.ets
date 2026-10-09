@@ -18,6 +18,7 @@ import { GenerateRequest } from './LlamaEngine'
 import { compileVeraSource, CompileError } from './VeraCompiler'
 import { deepseek, extractVeraSource } from './DeepSeekEngine'
 import { settings } from './SettingsStore'
+import { AttemptStat, ReplyStats, failureVerdict } from './VeraChatStats'
 
 const APP_OPEN: string = '<<app:'
 const APP_CLOSE: string = '>>'
@@ -80,6 +81,7 @@ export class MiniApp {
   /** Empty on success; otherwise the last compiler or request error. */
   error: string = ''
   attempts: number = 0
+  stats: AttemptStat[] = []
 }
 
 /**
@@ -137,6 +139,10 @@ class PendingCall {
 class ChatStep {
   content: string = ''
   calls: PendingCall[] = []
+  inputTokens: number = 0
+  cachedTokens: number = 0
+  outputTokens: number = 0
+  firstAt: number = 0
 }
 
 function searchToolSchema(): Record<string, Object>[] {
@@ -194,7 +200,7 @@ function toolResultMessage(id: string, content: string): Record<string, Object> 
  * failure.
  */
 export async function chatReply(history: ChatTurn[], onText: (soFar: string) => void,
-    onStatus: (status: string) => void): Promise<string> {
+    onStatus: (status: string) => void, stats: ReplyStats): Promise<string> {
   let key = settings.getApiKey()
   if (key.length === 0) {
     throw new Error('No DeepSeek API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key>')
@@ -206,10 +212,16 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
   }
   let reply = ''
   let searches = 0
+  let startedAt = Date.now()
   while (true) {
     let offer = canSearch && searches < MAX_SEARCHES
     let said = reply
+    let requestedAt = Date.now()
     let step = await streamStep(messages, offer, (soFar: string): void => { onText(said + soFar) })
+    stats.inputTokens = stats.inputTokens + step.inputTokens
+    stats.cachedTokens = stats.cachedTokens + step.cachedTokens
+    stats.outputTokens = stats.outputTokens + step.outputTokens
+    if (stats.ttftMs === 0 && step.firstAt > 0) { stats.ttftMs = step.firstAt - requestedAt }
     reply = reply + step.content
     if (!offer || step.calls.length === 0) { break }
     messages.push(assistantCallsMessage(step))
@@ -217,10 +229,15 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
       searches++
       let query = queryOf(call.args)
       onStatus('Searching the web: ' + query)
+      let searchStarted = Date.now()
       messages.push(toolResultMessage(call.id, await webSearch(query)))
+      stats.searches = stats.searches + 1
+      stats.searchMs = stats.searchMs + (Date.now() - searchStarted)
     }
     onStatus('')
   }
+  // Time spent talking: the whole turn less the searches, which are counted apart.
+  stats.ms = Date.now() - startedAt - stats.searchMs
   return reply
 }
 
@@ -331,6 +348,10 @@ async function streamStep(messages: Record<string, Object>[], offerSearch: boole
   payload['model'] = settings.getModel()
   payload['messages'] = messages
   payload['stream'] = true
+  // Without this the stream carries no token counts at all.
+  let streamOptions: Record<string, Object> = {}
+  streamOptions['include_usage'] = true
+  payload['stream_options'] = streamOptions
   let thinking: Record<string, Object> = {}
   thinking['type'] = 'disabled'
   payload['thinking'] = thinking
@@ -394,8 +415,15 @@ function readLine(line: string, step: ChatStep, pending: Map<number, PendingCall
   if (data.length === 0 || data === '[DONE]') { return false }
   try {
     let obj = JSON.parse(data) as Record<string, Object>
+    let usage = obj['usage'] as Record<string, Object>
+    if (usage !== null && usage !== undefined) {
+      step.inputTokens = (usage['prompt_tokens'] as number) || 0
+      step.outputTokens = (usage['completion_tokens'] as number) || 0
+      step.cachedTokens = (usage['prompt_cache_hit_tokens'] as number) || 0
+    }
     let choices = obj['choices'] as Object[]
     if (choices === null || choices === undefined || choices.length === 0) { return false }
+    if (step.firstAt === 0) { step.firstAt = Date.now() }
     let delta = (choices[0] as Record<string, Object>)['delta'] as Record<string, Object>
     if (delta === null || delta === undefined) { return false }
     let added = false
@@ -461,23 +489,42 @@ export async function buildMiniApp(systemPrompt: string, description: string,
       request.userPrompt = description
     }
     deepseek.setThinking(attempt > 1)
+    let stat = new AttemptStat()
+    stat.attempt = attempt
     let text = ''
+    let genStart = Date.now()
     try {
       let gen = await deepseek.generate(request, (_t: string): void => {})
       text = extractVeraSource(gen.text)
+      stat.inputTokens = gen.inputTokens
+      stat.outputTokens = gen.outputTokens
     } catch (e) {
+      stat.genMs = Date.now() - genStart
+      stat.verdict = 'request failed'
+      result.stats.push(stat)
       result.error = (e as Error).message
       return result
     }
+    stat.genMs = Date.now() - genStart
+    stat.ttftMs = deepseek.lastPrefillMs()
+    stat.thinkMs = deepseek.lastThinkMs()
+    stat.cachedTokens = deepseek.lastCacheHitTokens()
     let errors = ''
+    let compileStart = Date.now()
     try {
       result.vbc2 = compileVeraSource(text).vbc2
       result.source = text
       result.error = ''
+      stat.compileMs = Date.now() - compileStart
+      stat.success = true
+      result.stats.push(stat)
       return result
     } catch (e) {
       errors = e instanceof CompileError ? e.message : (e as Error).message
     }
+    stat.compileMs = Date.now() - compileStart
+    stat.verdict = failureVerdict(errors)
+    result.stats.push(stat)
     if (deepseek.lastFinishReason() === 'length') {
       errors = 'The previous attempt was cut off at the output token limit. Return a shorter complete replacement program, not a continuation.\n' + errors
     }
