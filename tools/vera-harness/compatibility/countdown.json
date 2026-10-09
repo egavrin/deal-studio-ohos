@@ -1,0 +1,29 @@
+{
+  "baselineRevision": "df66e50276ea66ffa7f29a527e5f847491ea99ff",
+  "source": "import * as ui from \"std/ui\"\n@jsonable class AppState { remaining: int; running: boolean; }\nfunction init(): AppState { return {remaining: 90000, running: false}; }\nfunction start(state: AppState, value: int): AppState { return {remaining: state.remaining, running: true}; }\nfunction tick(state: AppState, elapsedMs: int): AppState { let left: int = state.remaining - elapsedMs; if (left < 0) { left = 0; } return {remaining: left, running: left > 0}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme(\"soft\", \"\", [ui.Section(\"content\", \"Take a quiet break\", \"A ninety-second pause\", [ui.IntText(\"metric\", state.remaining / 1000, \"\", \" seconds\", 1), ui.ActionBar(\"default\", [ui.Button(\"primary\", \"Start\", \"start\", 0, true)]), ui.Ticker(\"default\", \"clock\", 1000, state.running, \"tick\")])]); }\n",
+  "bytecode": "[\"VBC2\",[\"init\",\"start\",\"tick\",\"view\"],[[\"init\",0,0,false,[[\"push-int\",\"90000\"],[\"push-boolean\",false],[\"make-object\",\"local:AppState\",[\"remaining\",\"running\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"start\",2,2,false,[[\"load-local\",0],[\"load-field\",\"remaining\"],[\"push-boolean\",true],[\"make-object\",\"local:AppState\",[\"remaining\",\"running\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"tick\",2,3,false,[[\"load-local\",0],[\"load-field\",\"remaining\"],[\"load-local\",1],[\"binary\",\"-\",true],[\"store-local\",2],[\"load-local\",2],[\"push-int\",\"0\"],[\"binary\",\"<\",true],[\"jump-if-false\",11],[\"push-int\",\"0\"],[\"store-local\",2],[\"load-local\",2],[\"load-local\",2],[\"push-int\",\"0\"],[\"binary\",\">\",true],[\"make-object\",\"local:AppState\",[\"remaining\",\"running\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"view\",1,1,false,[[\"load-external\",\"std/ui\",\"AppTheme\"],[\"push-string\",\"soft\"],[\"push-string\",\"\"],[\"load-external\",\"std/ui\",\"Section\"],[\"push-string\",\"content\"],[\"push-string\",\"Take a quiet break\"],[\"push-string\",\"A ninety-second pause\"],[\"load-external\",\"std/ui\",\"IntText\"],[\"push-string\",\"metric\"],[\"load-local\",0],[\"load-field\",\"remaining\"],[\"push-int\",\"1000\"],[\"binary\",\"/\",true],[\"push-string\",\"\"],[\"push-string\",\" seconds\"],[\"push-int\",\"1\"],[\"call\",5,false],[\"load-external\",\"std/ui\",\"ActionBar\"],[\"push-string\",\"default\"],[\"load-external\",\"std/ui\",\"Button\"],[\"push-string\",\"primary\"],[\"push-string\",\"Start\"],[\"push-string\",\"start\"],[\"push-int\",\"0\"],[\"push-boolean\",true],[\"call\",5,false],[\"make-array\",1],[\"call\",2,false],[\"load-external\",\"std/ui\",\"Ticker\"],[\"push-string\",\"default\"],[\"push-string\",\"clock\"],[\"push-int\",\"1000\"],[\"load-local\",0],[\"load-field\",\"running\"],[\"push-string\",\"tick\"],[\"call\",5,false],[\"make-array\",3],[\"call\",4,false],[\"make-array\",1],[\"call\",3,false],[\"return\"],[\"push-null\"],[\"return\"]]]]]",
+  "saved": [
+    "o",
+    "local:AppState",
+    [
+      [
+        "remaining",
+        [
+          "i",
+          90000
+        ]
+      ],
+      [
+        "running",
+        [
+          "b",
+          true
+        ]
+      ]
+    ]
+  ],
+  "handler": "start",
+  "value": 0,
+  "field": "running",
+  "expected": true
+}

@@ -1,0 +1,5 @@
+import * as ui from "std/ui"
+@jsonable class AppState { saved: boolean; }
+function init(): AppState { return {saved: false}; }
+function save(state: AppState, value: int): AppState { return {saved: true}; }
+function view(state: AppState): ui.View { return ui.AppTheme("editorial", "", [ui.Hero("plain", "FIELD NOTES", "The art of noticing ordinary things", "A short reading break", []), ui.Section("content", "Small details, better days", "", [ui.Text("body", "A familiar walk can feel new when you slow down. Notice the shape of a leaf, the sound of a doorway, and the light on a wall. Give one small detail your full attention."), ui.ActionBar("default", [ui.Button("primary", "Save this reading", "save", 0, true)]), ui.When(state.saved, ui.Text("body", "Saved for later"))])]); }

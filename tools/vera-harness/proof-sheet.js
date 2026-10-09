@@ -1,280 +1,271 @@
 #!/usr/bin/env node
 /**
- * A rough SVG approximation of what VeraPreview.ets would draw.
- *
- * This is NOT VeraPreview.ets running headless -- that file is @Component/
- * ArkUI and cannot execute outside ArkUI. This is a small, honest
- * approximation: boxes sized from estimated text width (not real ArkUI text
- * metrics), real colors pulled from VeraTheme's resolved theme, and
- * left-to-right wrapping at an assumed viewport width for the handful of
- * node kinds that wrap in the real renderer. No animation, no exact
- * padding/radius pixel values, no device color profile.
- *
- * It exists so a layout change -- does this row wrap or run off the edge? --
- * can be judged by eye in a few seconds, instead of waiting on a signed,
- * installed build. For anything the approximation can't speak to (exact
- * ArkUI measurement, real device color, animation), CLAUDE.md's on-device
- * path is still the one to use.
- *
- * Usage:
- *   node run.js some.vera | node proof-sheet.js > out.svg
- *   node proof-sheet.js --select-wrap=false < tree.json > before.svg
+ * Approximate SVG proof from the real decoded tree and resolved ETS theme.
+ * Text width uses a character estimate, not ArkUI or font measurement.
+ * Geometry uses theme tokens. This cannot verify device layout or animation.
  */
 'use strict'
+const {loadVera} = require('./source-loader')
+const T = loadVera('VeraTheme')
 
-const { resolveTheme } = require('./out/VeraTheme')
-
-const VIEWPORT_WIDTH = 360
-const PADDING = 12
-
-// Kinds the real renderer wraps onto new lines rather than overflowing.
-// 'select' is listed here because this is what it SHOULD do (Flex wrap) --
-// see the --select-wrap flag below for reproducing the pre-fix behaviour.
-const WRAP_KINDS = new Set(['row', 'actionbar', 'grid', 'metricgroup', 'kvgroup', 'select'])
-
-function readStdin() {
-  const chunks = []
-  process.stdin.on('data', (c) => chunks.push(c))
-  return new Promise((resolve) => {
-    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
-  })
+function esc(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
-
-function estimateTextWidth(text, fontSize) {
-  return Math.max(1, text.length) * fontSize * 0.56
+function empty() { return {svg: '', width: 0, height: 0} }
+function move(box, x, y) { return `<g transform="translate(${x},${y})">${box.svg}</g>` }
+function rect(width, height, fill, radius = 0, stroke = 'none') {
+  return `<rect width="${width}" height="${height}" rx="${radius}" fill="${fill}" stroke="${stroke}"/>`
 }
-
-function esc(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-/**
- * Lay out one node's children left-to-right, wrapping at `maxWidth`, and
- * return { svg, width, height } for the whole row of lines.
- */
-function layoutWrappingRow(children, maxWidth, gap, selectWrap) {
-  const lineHeight = 28
-  let x = 0, y = 0, lineH = 0
-  const placed = []
-  for (const child of children) {
-    const box = layoutNode(child, maxWidth, selectWrap)
-    const wraps = selectWrap !== false
-    if (wraps && x > 0 && x + box.width > maxWidth) {
-      x = 0
-      y += lineH + gap
-      lineH = 0
-    }
-    placed.push({ box, x, y })
-    x += box.width + gap
-    lineH = Math.max(lineH, box.height)
-  }
-  const totalHeight = y + lineH
-  const totalWidth = selectWrap === false
-    ? placed.reduce((w, p) => Math.max(w, p.x + p.box.width), 0)
-    : maxWidth
-  let svg = ''
-  for (const p of placed) {
-    svg += `<g transform="translate(${p.x},${p.y})">${p.box.svg}</g>`
-  }
-  return { svg, width: totalWidth, height: Math.max(totalHeight, lineHeight) }
-}
-
-function layoutColumn(children, maxWidth, selectWrap) {
-  let y = 0
-  let svg = ''
-  for (const child of children) {
-    const box = layoutNode(child, maxWidth, selectWrap)
-    svg += `<g transform="translate(0,${y})">${box.svg}</g>`
-    y += box.height + 6
-  }
-  return { svg, width: maxWidth, height: y }
-}
-
-function colorFor(theme, tone, fallback) {
-  const map = {
-    success: theme.success, warning: theme.warning, danger: theme.danger,
-    accent: theme.primary, muted: theme.inkMuted
-  }
-  return map[tone] || fallback
-}
-
-function layoutNode(node, maxWidth, selectWrap) {
-  const theme = global.__theme
-  if (!node) return { svg: '', width: 0, height: 0 }
-
-  if (node.kind === 'apptheme' || node.kind === 'column' || node.kind === 'card' ||
-      node.kind === 'section' || node.kind === 'listgroup' || node.kind === 'scroll' ||
-      node.kind === 'header' || node.kind === 'timeline') {
-    const inner = layoutColumn(node.children, maxWidth - 2 * PADDING, selectWrap)
-    const fill = node.kind === 'card' || node.kind === 'listgroup' ? theme.surface : 'none'
-    const label = node.text ? `<text x="4" y="14" font-size="13" fill="${theme.ink}">${esc(node.text)}</text>` : ''
-    const label2 = node.label ? `<text x="4" y="${node.text ? 30 : 14}" font-size="11" fill="${theme.inkMuted}">${esc(node.label)}</text>` : ''
-    const yOff = (node.text ? 18 : 0) + (node.label ? 16 : 0)
-    const h = inner.height + yOff + 2 * PADDING
-    const rect = fill !== 'none' ? `<rect width="${maxWidth}" height="${h}" fill="${fill}" rx="8"/>` : ''
-    return {
-      svg: `${rect}${label}${label2}<g transform="translate(${PADDING},${PADDING + yOff})">${inner.svg}</g>`,
-      width: maxWidth, height: h
-    }
-  }
-
-  if (WRAP_KINDS.has(node.kind)) {
-    const wrap = node.kind === 'select' ? selectWrap : true
-    const items = node.kind === 'select'
-      ? node.options.map((opt, i) => ({ kind: 'button', style: i === node.eventValue ? 'primary' : 'secondary', text: opt, children: [] }))
-      : node.children
-    const inner = layoutWrappingRow(items, maxWidth, 8, wrap)
-    const labelH = node.label ? 16 : 0
-    const label = node.label ? `<text x="0" y="12" font-size="11" fill="${theme.inkMuted}">${esc(node.label)}</text>` : ''
-    return {
-      svg: `${label}<g transform="translate(0,${labelH})">${inner.svg}</g>`,
-      width: inner.width, height: inner.height + labelH
-    }
-  }
-
-  if (node.kind === 'button' || node.kind === 'iconbutton') {
-    const fill = node.style === 'primary' ? theme.primary
-      : node.style === 'danger' ? theme.danger
-      : node.style === 'success' ? theme.success
-      : theme.secondaryFill
-    const ink = node.style === 'primary' || node.style === 'danger' || node.style === 'success'
-      ? theme.onPrimary : theme.secondaryInk
-    const w = estimateTextWidth(node.text || ' ', 14) + 24
-    return {
-      svg: `<rect width="${w}" height="36" rx="18" fill="${fill}"/>` +
-        `<text x="${w / 2}" y="23" font-size="14" text-anchor="middle" fill="${ink}">${esc(node.text)}</text>`,
-      width: w, height: 36
-    }
-  }
-
-  if (node.kind === 'text' || node.kind === 'inttext' || node.kind === 'clocktext') {
-    const size = { display: 30, title: 24, heading: 18, metric: 32, caption: 12 }[node.style] || 15
-    const ink = colorFor(theme, node.style, theme.ink)
-    const w = estimateTextWidth(node.text || '0', size)
-    return {
-      svg: `<text x="0" y="${size}" font-size="${size}" fill="${ink}">${esc(node.text || node.intValue)}</text>`,
-      width: Math.min(w, maxWidth), height: size + 8
-    }
-  }
-
-  if (node.kind === 'spacer') {
-    const h = { small: 8, large: 32 }[node.style] || 18
-    return { svg: '', width: 1, height: node.style === 'none' ? 0 : h }
-  }
-
-  if (node.kind === 'divider') {
-    return { svg: `<line x1="0" y1="0" x2="${maxWidth}" y2="0" stroke="${theme.line}"/>`, width: maxWidth, height: 1 }
-  }
-
-  if (node.kind === 'sparkline') {
-    const w = maxWidth, h = 72
-    const max = Math.max(node.maximum || 100, ...(node.series || [0]))
-    const series = node.series || []
-    const n = series.length
-    const color = colorFor(theme, node.style, theme.primary)
-    if (node.bars) {
-      const spacing = n > 1 ? w / (n - 1) : w
-      const barWidth = Math.min(spacing * 0.6, w * 0.2)
-      const rects = series.map((v, i) => {
-        const cx = n > 1 ? (i / (n - 1)) * w : w / 2
-        const py = h - (Math.min(v, max) / max) * h
-        return `<rect x="${(cx - barWidth / 2).toFixed(1)}" y="${py.toFixed(1)}" ` +
-          `width="${barWidth.toFixed(1)}" height="${(h - py).toFixed(1)}" fill="${color}"/>`
-      }).join('')
-      return { svg: rects, width: w, height: h }
-    }
-    const pts = series.map((v, i) => {
-      const px = n > 1 ? (i / (n - 1)) * w : w / 2
-      const py = h - (Math.min(v, max) / max) * h
-      return `${px.toFixed(1)},${py.toFixed(1)}`
-    }).join(' ')
-    return {
-      svg: `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/>`,
-      width: w, height: h
-    }
-  }
-
-  if (node.kind === 'slider') {
-    const w = maxWidth, h = 20, trackY = 9, trackH = 4
-    const frac = Math.max(0, Math.min(1, ((node.eventValue - node.minimum) /
-      Math.max(1, (node.maximum - node.minimum)))))
-    const color = colorFor(theme, node.style, theme.primary)
-    const labelH = node.label ? 16 : 0
-    const label = node.label
-      ? `<text x="0" y="12" font-size="11" fill="${theme.inkMuted}">${esc(node.label)}</text>` : ''
-    return {
-      svg: `${label}<g transform="translate(0,${labelH})">` +
-        `<rect y="${trackY}" width="${w}" height="${trackH}" rx="2" fill="${theme.secondaryFill}"/>` +
-        `<rect y="${trackY}" width="${(w * frac).toFixed(1)}" height="${trackH}" rx="2" fill="${color}"/>` +
-        `<circle cx="${(w * frac).toFixed(1)}" cy="${trackY + trackH / 2}" r="7" fill="${color}"/>` +
-        `</g>`,
-      width: w, height: h + labelH
-    }
-  }
-
-  if (node.kind === 'table') {
-    const headers = node.options || []
-    const cols = Math.max(1, node.columns || headers.length || 1)
-    const colW = maxWidth / cols
-    let y = 0
-    let svg = ''
-    let bgs = ''
-    let text = ''
-    if (headers.length > 0) {
-      text += headers.map((hText, i) =>
-        `<text x="${(i * colW + 4).toFixed(1)}" y="12" font-size="11" font-weight="bold" ` +
-        `fill="${theme.inkMuted}">${esc(hText)}</text>`).join('')
-      y += 22
-    }
-    for (const row of node.children || []) {
-      const cells = row.options || []
-      const rowFill = colorFor(theme, row.style, null)
-      if (rowFill) {
-        bgs += `<rect y="${y}" width="${maxWidth}" height="22" fill="${rowFill}" opacity="0.25"/>`
+function estimate(text, size) { return Array.from(String(text)).reduce((w, c) => w + size * (/\s/.test(c) ? 0.3 : /[ilI.,:!]/.test(c) ? 0.3 : /[MW@]/.test(c) ? 0.85 : c.codePointAt(0) > 255 ? 1 : 0.56), 0) }
+function wrapText(text, size, width) {
+  const lines = []
+  for (const paragraph of String(text).split('\n')) {
+    let line = ''
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      if (line && estimate(line + ' ' + word, size) > width) { lines.push(line); line = '' }
+      if (estimate(word, size) <= width) { line += (line ? ' ' : '') + word; continue }
+      for (const char of Array.from(word)) {
+        if (line && estimate(line + char, size) > width) { lines.push(line); line = '' }
+        line += char
       }
-      text += cells.map((c, i) =>
-        `<text x="${(i * colW + 4).toFixed(1)}" y="${y + 14}" font-size="13" ` +
-        `fill="${theme.ink}">${esc(c)}</text>`).join('')
-      y += 22
     }
-    return {
-      // Paint order: outer frame, then row tints, then text on top.
-      svg: `<rect width="${maxWidth}" height="${y}" fill="none" stroke="${theme.line}" rx="6"/>${bgs}${text}`,
-      width: maxWidth, height: y
-    }
+    lines.push(line)
   }
+  return lines
+}
+function formattedInt(node) {
+  const value = node.intValue || 0
+  return (node.prefix || '') + (value < 0 ? '-' : '') +
+    String(Math.abs(value)).padStart(Math.max(1, Math.min(20, node.minimumDigits || 1)), '0') + (node.suffix || '')
+}
+function formattedTime(node) {
+  const total = Math.max(0, node.intValue || 0) % 1440
+  return (node.prefix || '') + String(Math.floor(total / 60)).padStart(2, '0') + ':' +
+    String(total % 60).padStart(2, '0') + (node.suffix || '')
+}
 
-  // Fallback: everything else as a labeled box, so a kind this script hasn't
-  // learned yet is still visible rather than silently dropped.
-  const text = node.text || node.label || node.kind
-  const w = Math.min(estimateTextWidth(text, 14) + 16, maxWidth)
-  return {
-    svg: `<rect width="${w}" height="24" fill="${theme.surface}" stroke="${theme.line}"/>` +
-      `<text x="4" y="16" font-size="12" fill="${theme.inkMuted}">${esc(node.kind)}: ${esc(text)}</text>`,
-    width: w, height: 28
+function createRenderer(theme, options) {
+  const t = theme
+  const insetParents = new Set(['hero', 'adaptivecolumns', 'section', 'card', 'column', 'scroll'])
+  function text(value, style, width, ink, extra = {}) {
+    if (value === '' || value === undefined || value === null) return empty()
+    let size = T.textSize(t, style)
+    // Pre-change theme snapshots predate the native widget size cap.
+    const semanticType = t.headingFontFamily !== undefined && t.metricFontFamily !== undefined
+    if (options.embedded && semanticType && (style === 'display' || style === 'metric')) size = Math.min(32, size)
+    const family = extra.family !== undefined ? extra.family : style === 'metric' ? (t.metricFontFamily ?? t.fontFamily) :
+      ['display', 'title', 'heading'].includes(style) ? (t.headingFontFamily ?? t.fontFamily) : t.fontFamily
+    const lines = wrapText(value, size, Math.max(1, width))
+    const leading = size * 1.3
+    const spacing = extra.eyebrow ? t.eyebrowSpacing : 0
+    const measured = Math.min(width, Math.max(...lines.map(line => estimate(line, size) + Math.max(0, line.length - 1) * spacing)))
+    return {svg: `<text font-family="${esc(family || 'sans-serif')}" font-size="${size}" font-weight="${extra.weight || T.textWeight(t, style)}" fill="${ink || T.textInk(t, style)}" letter-spacing="${spacing}">` +
+      lines.map((line, i) => `<tspan x="0" y="${size + i * leading}">${esc(line)}</tspan>`).join('') + '</text>',
+      width: measured, height: lines.length * leading}
   }
+  function stack(boxes, width, gap) {
+    const visible = boxes.filter(b => b.height > 0 || b.width > 0)
+    let svg = '', y = 0
+    visible.forEach((box, i) => { if (i) y += gap; svg += move(box, 0, y); y += box.height })
+    return {svg, width, height: y}
+  }
+  function frame(inner, width, px, top, bottom, fill = 'none', radius = 0, stroke = 'none', marginTop = 0, marginBottom = 0) {
+    const height = top + inner.height + bottom
+    return {svg: `<g transform="translate(0,${marginTop})">${rect(width, height, fill, radius, stroke)}${move(inner, px, top)}</g>`,
+      width, height: marginTop + height + marginBottom}
+  }
+  function flow(boxes, width, gap, wrap = true, align = 'default') {
+    const rows = []
+    let row = [], used = 0
+    for (const box of boxes.filter(b => b.height > 0)) {
+      if (wrap && row.length && used + gap + box.width > width) { rows.push(row); row = []; used = 0 }
+      used += (row.length ? gap : 0) + box.width; row.push(box)
+    }
+    if (row.length) rows.push(row)
+    let y = 0, svg = '', widest = width
+    rows.forEach((items, index) => {
+      if (index) y += gap
+      const used = items.reduce((sum, b) => sum + b.width, 0) + gap * (items.length - 1)
+      let x = align === 'end' ? Math.max(0, width - used) : align === 'center' ? Math.max(0, (width - used) / 2) : 0
+      const between = align === 'spread' && items.length > 1 ? Math.max(gap, (width - used + gap * (items.length - 1)) / (items.length - 1)) : gap
+      for (const box of items) { svg += move(box, x, y); widest = Math.max(widest, x + box.width); x += box.width + between }
+      y += Math.max(...items.map(b => b.height))
+    })
+    return {svg, width: widest, height: y}
+  }
+  function nodeBox(node, width, parent = '') {
+    width = Math.max(1, width)
+    if (!node || ['ticker', 'backhandler'].includes(node.kind)) return empty()
+    const children = node.children || [], kind = node.kind, style = node.style || 'default'
+    const childBoxes = (available, gap = t.gapBase) => stack(children.map(c => layout(c, available, kind)), available, gap)
+    if (kind === 'apptheme') return childBoxes(width, 0)
+    if (kind === 'hero') {
+      const accent = style === 'accent'
+      const px = accent ? t.padCard : insetParents.has(parent) ? 0 : t.padBase
+      const innerWidth = Math.max(1, width - 2 * px)
+      const inner = stack([text(node.label, 'caption', innerWidth, t.inkMuted, {eyebrow: true, weight: t.weightHeading}),
+        text(node.text, 'display', innerWidth), text(node.value, 'body', innerWidth, t.inkSoft),
+        ...children.map(c => layout(c, innerWidth, kind))], innerWidth, t.gapBase)
+      return frame(inner, width, px, accent ? t.padCard : t.padLoose, accent ? t.padCard : 0,
+        accent ? t.primaryFill : 'none', accent ? t.radiusCard : 0, 'none', 0, t.gapSection)
+    }
+    if (kind === 'adaptivecolumns') {
+      const px = insetParents.has(parent) ? 0 : t.padBase
+      const available = Math.max(1, width - 2 * px), gap = T.densityGap(t, style)
+      const minimum = node.minimum > 0 ? Math.max(160, node.minimum) : 240
+      const columns = available - gap >= minimum * 2 ? 2 : 1
+      const childWidth = (available - gap * (columns - 1)) / columns
+      let y = 0, svg = ''
+      for (let i = 0; i < children.length; i += columns) {
+        const boxes = children.slice(i, i + columns).map(c => layout(c, childWidth, kind))
+        if (i) y += gap
+        boxes.forEach((b, j) => { svg += move(b, j * (childWidth + gap), y) })
+        y += Math.max(0, ...boxes.map(b => b.height))
+      }
+      return {svg: `<g data-columns="${columns}" data-content-width="${available}" transform="translate(${px},0)">${svg}</g>`, width, height: y}
+    }
+    if (kind === 'section') {
+      const fill = {hero: t.primaryFill, summary: t.surface, warning: t.warningFill}[style] || 'none'
+      const filled = fill !== 'none', px = filled ? t.padCard : insetParents.has(parent) ? 0 : t.padBase
+      const w = Math.max(1, width - px * 2)
+      const inner = stack([text(node.text, 'heading', w, style === 'warning' ? t.warningInk : style === 'supporting' ? t.inkSoft : t.ink),
+        text(node.label, 'caption', w, t.inkMuted), ...children.map(c => layout(c, w, kind))], w, t.gapTight)
+      return frame(inner, width, px, filled ? t.padCard : 0, filled ? t.padCard : 0,
+        fill, filled ? t.radiusCard : 0, 'none', t.gapTight, t.gapSection)
+    }
+    if (['column', 'scroll', 'card', 'listgroup', 'timeline'].includes(kind)) {
+      const card = kind === 'card' || kind === 'listgroup'
+      const pad = card ? t.padCard : T.densityPad(t, style), w = Math.max(1, width - 2 * pad)
+      const inner = stack([text(node.text, 'heading', w), ...children.map(c => layout(c, w, kind))], w, ['column', 'scroll'].includes(kind) ? 0 : T.densityGap(t, style))
+      return frame(inner, width, pad, pad, pad, card ? T.toneFill(t, style, t.surface) : T.containerFill(t, style), card ? t.radiusCard : 0, card ? t.line : 'none')
+    }
+    if (kind === 'header' || kind === 'sectionheader') {
+      const pad = kind === 'header' ? t.padBase : 0, w = Math.max(1, width - 2 * pad)
+      const boxes = kind === 'header' ? [text(node.label, 'eyebrow', w), text(node.text, 'display', w), text(node.value, 'body', w, t.inkSoft)] :
+        [text(node.text, 'heading', w), text(node.label, 'caption', w, t.inkMuted), text(node.value, 'caption', w, t.inkMuted)]
+      const inner = stack(boxes, w, t.gapTight)
+      return frame(inner, width, pad, kind === 'header' ? t.padLoose : pad, pad)
+    }
+    if (['text', 'inttext', 'clocktext'].includes(kind)) {
+      const value = kind === 'inttext' ? formattedInt(node) : kind === 'clocktext' ? formattedTime(node) : node.text
+      const box = text(value, style, width, undefined, {eyebrow: style === 'eyebrow'})
+      return {...box, svg: move(box, 0, 2), height: box.height ? box.height + 4 : 0}
+    }
+    if (kind === 'button' || kind === 'iconbutton') {
+      const label = node.text || node.label || node.icon || '', pad = t.padBase
+      const w = Math.min(width, Math.max(t.controlHeight, estimate(label, t.sizeBody) + pad * 2))
+      const disabled = node.enabled === false, quiet = style === 'quiet'
+      const content = text(label, 'body', Math.max(1, w - pad * 2), disabled ? t.inkDisabled : quiet ? t.primaryInk : T.buttonInk(t, style))
+      const height = Math.max(t.controlHeight, content.height + t.padTight * 2)
+      return {svg: rect(w, height, disabled ? t.surfaceDisabled : quiet ? 'none' : T.buttonFill(t, style), style === 'secondary' ? t.radiusControl : height / 2) +
+        move(content, (w - content.width) / 2, (height - content.height) / 2), width: w, height}
+    }
+    if (['row', 'actionbar', 'select', 'grid', 'metricgroup', 'kvgroup'].includes(kind)) {
+      const items = kind === 'select' ? (node.options || []).map((label, i) => ({kind: 'button', text: label, style: i === node.eventValue ? 'primary' : 'secondary'})) : children
+      const gap = T.densityGap(t, style)
+      const columns = ['grid', 'metricgroup'].includes(kind) ? Math.max(1, node.columns || 1) : 0
+      const cellWidth = columns ? Math.max(1, (width - gap * (columns - 1)) / columns) : width
+      const boxes = items.map(c => { const b = layout(c, cellWidth, kind); return columns ? {...b, width: cellWidth} : b })
+      const inner = flow(boxes, width, gap, kind !== 'select' || options.selectWrap, style)
+      return stack([text(node.label, 'caption', width, t.inkMuted), inner], inner.width, t.gapTight)
+    }
+    if (kind === 'spacer') return {svg: '', width: 0, height: T.spacerSize(t, style)}
+    if (kind === 'divider') return {svg: `<line x1="0" x2="${width}" y1="0" y2="0" stroke="${t.line}"/>`, width, height: 1}
+    if (kind === 'table') {
+      const rows = [{options: node.options || [], header: true}, ...children]
+      let svg = '', y = 0, bodyRows = 0
+      for (const row of rows) {
+        const values = row.options || []
+        if (!values.length) continue
+        if (!row.header && bodyRows++ > 0) {
+          svg += `<line x1="${t.padListX}" x2="${width - t.padListX}" y1="${y}" y2="${y}" stroke="${t.lineSoft}" stroke-width="${t.borderWidth}"/>`
+          y += t.borderWidth
+        }
+        const cellWidth = Math.max(1, (width - t.padListX * 2) / values.length)
+        const cells = values.map(c => text(c, row.header ? 'caption' : 'body', cellWidth,
+          row.header ? t.inkMuted : t.ink, {weight: row.header ? t.weightHeading : t.weightBody}))
+        const top = row.header ? t.gapBase : t.padListY
+        const bottom = row.header ? t.gapTight : t.padListY
+        const contentHeight = Math.max(...cells.map(c => c.height)), height = contentHeight + top + bottom
+        const fill = row.header ? t.surfaceRaised : T.toneFill(t, row.style, t.surfaceRaised)
+        svg += `<g transform="translate(0,${y})">${rect(width, height, fill)}${cells.map((c, i) => move(c, t.padListX + i * cellWidth, top + (contentHeight - c.height) / 2)).join('')}</g>`
+        y += height
+      }
+      return {svg: svg + rect(width, y, 'none', t.radiusCard, t.line), width, height: y}
+    }
+    if (kind === 'intfield') {
+      const control = t.controlHeight, gap = t.gapBase
+      const valueWidth = Math.max(1, width - 2 * (control + gap))
+      const value = text(formattedInt(node), 'heading', valueWidth, t.ink,
+        {family: t.metricFontFamily ?? t.fontFamily, weight: t.weightHeading})
+      const height = Math.max(control, value.height)
+      function stepButton(label, x, fill, ink, enabled) {
+        const caption = text(label, 'body', control, ink)
+        return `<g opacity="${enabled ? 1 : 0.4}" transform="translate(${x},${(height - control) / 2})">${rect(control, control, fill, control / 2)}${move(caption, (control - caption.width) / 2, (control - caption.height) / 2)}</g>`
+      }
+      const svg = stepButton('-', 0, t.secondaryFill, t.secondaryInk, node.enabled !== false && node.intValue > node.minimum) +
+        move(value, control + gap + (valueWidth - value.width) / 2, (height - value.height) / 2) +
+        stepButton('+', width - control, t.primary, t.onPrimary, node.enabled !== false && node.intValue < node.maximum)
+      const inner = stack([text(node.label, 'caption', width, t.inkSoft), {svg, width, height}], width, t.gapTight)
+      return frame(inner, width, 0, t.gapTight, t.gapTight)
+    }
+    if (kind === 'timefield' || kind === 'textfield') {
+      const label = text(node.label, 'caption', width, t.inkMuted)
+      const value = kind === 'timefield' ? formattedTime(node) : node.value || node.text || ''
+      const content = text(value, 'body', Math.max(1, width - t.padBase * 2))
+      const height = Math.max(t.controlHeight, content.height + t.padTight * 2)
+      return stack([label, {svg: rect(width, height, t.surfaceRaised, t.radiusControl, t.lineStrong) + move(content, t.padBase, (height - content.height) / 2), width, height}], width, t.gapTight)
+    }
+    if (kind === 'sparkline') {
+      const height = 260, series = node.series || [], maximum = Math.max(1, node.maximum || 0)
+      const color = T.toneEdge(t, style, t.primary), plotWidth = width
+      let svg = ''
+      if (node.bars) {
+        const gap = 6, bar = Math.max(0, (plotWidth - gap * Math.max(0, series.length - 1)) / Math.max(1, series.length))
+        svg = series.map((value, i) => { const h = Math.max(0, Math.min(1, value / maximum)) * height; return `<rect x="${i * (bar + gap)}" y="${height - h}" width="${bar}" height="${h}" fill="${color}"/>` }).join('')
+      } else {
+        const points = series.map((value, i) => `${(series.length > 1 ? i / (series.length - 1) : 0.5) * plotWidth},${height - Math.max(0, Math.min(1, value / maximum)) * height}`).join(' ')
+        svg = `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2"/>`
+      }
+      return stack([text(node.label, 'body', width, t.inkSoft), {svg, width, height}], width, 4)
+    }
+    if (kind === 'slider' || kind === 'progress') {
+      const frac = Math.max(0, Math.min(1, (node.eventValue - (node.minimum || 0)) / Math.max(1, (node.maximum || 100) - (node.minimum || 0))))
+      const color = T.toneEdge(t, style, t.primary), x = 7 + Math.max(0, width - 14) * frac
+      return stack([text(node.label, 'caption', width, t.inkMuted), {svg: `<rect x="7" y="8" width="${Math.max(0, width - 14)}" height="4" rx="2" fill="${t.secondaryFill}"/><rect x="7" y="8" width="${Math.max(0, x - 7)}" height="4" fill="${color}"/>` + (kind === 'slider' ? `<circle cx="${x}" cy="10" r="7" fill="${color}"/>` : ''), width, height: 20}], width, t.gapTight)
+    }
+    if (kind === 'stat' || kind === 'intstat') {
+      return stack([text(node.label, 'caption', width, t.inkMuted), text(kind === 'intstat' ? formattedInt(node) : node.text, 'metric', width, T.toneInk(t, style, t.ink)), text(node.value, 'caption', width, t.inkSoft)], width, t.gapTight)
+    }
+    if (kind === 'badge') {
+      const content = text(node.text, 'caption', Math.max(1, width - t.padTight * 2), T.toneInk(t, style, t.ink))
+      return frame(content, Math.min(width, content.width + t.padTight * 2), t.padTight, t.gapTight, t.gapTight, T.toneFill(t, style, t.secondaryFill), t.radiusSmall)
+    }
+    // Unsupported kinds remain explicit in the proof. This is not device output.
+    const content = text(`${kind}: ${node.text || node.label || ''}`, 'body', Math.max(1, width - 2 * t.padTight), t.inkMuted)
+    return frame(content, width, t.padTight, t.padTight, t.padTight, t.surface, t.radiusSmall, t.line)
+  }
+  function layout(node, width, parent = '') {
+    const box = nodeBox(node, width, parent)
+    return {...box, svg: box.svg ? `<g data-kind="${esc(node.kind)}">${box.svg}</g>` : ''}
+  }
+  return layout
 }
 
 async function main() {
-  const args = process.argv.slice(2)
-  const selectWrapArg = args.find((a) => a.startsWith('--select-wrap='))
-  const selectWrap = selectWrapArg ? selectWrapArg.split('=')[1] !== 'false' : true
-  const presetArg = args.find((a) => a.startsWith('--preset='))
-  const preset = presetArg ? presetArg.split('=')[1] : 'clean'
-
-  const input = await readStdin()
-  const tree = JSON.parse(input)
-  const theme = resolveTheme(preset, '', false)
-  global.__theme = theme
-
-  const box = layoutNode(tree, VIEWPORT_WIDTH, selectWrap)
-  const width = VIEWPORT_WIDTH
-  const height = box.height + 2 * PADDING
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<rect width="${width}" height="${height}" fill="${theme.background}"/>` +
-    `<g transform="translate(0,${PADDING})">${box.svg}</g>` +
-    `</svg>`
-  process.stdout.write(svg + '\n')
+  const args = Object.fromEntries(process.argv.slice(2).map(arg => { const at = arg.indexOf('='); return [arg.slice(2, at), arg.slice(at + 1)] }))
+  const width = args.width === undefined ? 360 : Number(args.width)
+  if (!Number.isFinite(width) || width <= 0) throw Error('--width must be a positive number')
+  const chunks = []
+  for await (const chunk of process.stdin) chunks.push(chunk)
+  const tree = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  const app = tree && tree.kind === 'apptheme' ? tree : null
+  // A preset override ignores the fixture seed so each matrix cell tests its preset.
+  const theme = T.resolveTheme(args.preset || (app && app.style) || 'clean', args.preset ? '' : (app && app.value) || '', args.dark === 'true')
+  const layout = createRenderer(theme, {embedded: args.embedded === 'true', selectWrap: args['select-wrap'] !== 'false'})
+  const box = layout(tree, width), height = Math.max(1, box.height)
+  const metadata = {approximate: true, preset: theme.preset, width, dark: args.dark === 'true', embedded: args.embedded === 'true', label: args.label || ''}
+  process.stdout.write(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><title>${esc(args.label || 'Approximate Vera proof')}</title><metadata>${esc(JSON.stringify(metadata))}</metadata>${rect(width, height, theme.background)}${box.svg}</svg>\n`)
 }
-
-main()
+main().catch(error => { console.error(error.stack || error); process.exitCode = 1 })

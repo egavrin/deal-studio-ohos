@@ -31,6 +31,7 @@ const CHAT_SYSTEM_PROMPT: string =
   "For a widget, include exactly one complete marker on its own line, with this shape:\n" +
   "<<app: one or two self-contained English sentences describing the widget, its controls, starting values, units, and constraints>>\n" +
   "Copy the concrete numbers and names from the conversation into the description. The widget builder receives only that description. " +
+  "Carry explicit visual preferences into the marker, with exact values, units, behavior, and verified image addresses. Keep the marker within 600 characters. " +
   "Do not refer to \"the above\" or omit details that appear elsewhere in the reply. " +
   "Place a brief complete sentence before the marker. Any text after it must also contain complete sentences. " +
   "Use no nested markers or additional markers. Do not show program code.\n" +

@@ -521,6 +521,20 @@ export class UiHostEnvironment extends HostEnvironment {
           ['value', new VeraStringValue(argString(args, 1))],
           ['children', argArray(args, 2)],
         ])
+      case 'Hero':
+        return viewNode('hero', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['text', new VeraStringValue(argString(args, 2))],
+          ['value', new VeraStringValue(argString(args, 3))],
+          ['children', argArray(args, 4)],
+        ])
+      case 'AdaptiveColumns':
+        return viewNode('adaptivecolumns', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['minimum', new VeraIntValue(argInt(args, 1))],
+          ['children', argArray(args, 2)],
+        ])
       case 'Header':
         return viewNode('header', [
           ['style', new VeraStringValue(argString(args, 0))],

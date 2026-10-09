@@ -1,0 +1,5 @@
+import * as ui from "std/ui"
+@jsonable class AppState { budget: int; }
+function init(): AppState { return {budget: 100}; }
+function setBudget(state: AppState, value: int): AppState { return {budget: value}; }
+function view(state: AppState): ui.View { return ui.AppTheme("technical", "", [ui.Hero("plain", "THIS MONTH", "Know where it goes", "Your everyday spending", [ui.IntText("metric", state.budget, "$", " budget", 1)]), ui.AdaptiveColumns("default", 240, [ui.Section("content", "Spending", "Three recent transactions", [ui.Table("default", ["Date", "Category", "Amount"], 3, [ui.TableRow("default", ["Oct 1", "Groceries", "$42"]), ui.TableRow("default", ["Oct 3", "Rent", "$1200"]), ui.TableRow("warning", ["Oct 5", "Transport", "$35"])])]), ui.Section("content", "Your limit", "Keep the essentials in view", [ui.IntField("default", "Budget in dollars", state.budget, 0, 500, "setBudget"), ui.Sparkline("accent", [42, 80, 35, 62], 100, "Weekly spending", true)])])]); }

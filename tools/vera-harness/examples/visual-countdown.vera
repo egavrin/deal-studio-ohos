@@ -1,0 +1,6 @@
+import * as ui from "std/ui"
+@jsonable class AppState { remaining: int; running: boolean; }
+function init(): AppState { return {remaining: 90000, running: false}; }
+function start(state: AppState, value: int): AppState { return {remaining: state.remaining, running: true}; }
+function tick(state: AppState, elapsedMs: int): AppState { let left: int = state.remaining - elapsedMs; if (left < 0) { left = 0; } return {remaining: left, running: left > 0}; }
+function view(state: AppState): ui.View { return ui.AppTheme("soft", "", [ui.Hero("accent", "A MOMENT FOR YOU", "Take a quiet break", "A ninety-second pause", [ui.IntText("metric", state.remaining / 1000, "", " seconds", 1), ui.ActionBar("default", [ui.Button("primary", "Start", "start", 0, true)]), ui.Ticker("default", "clock", 1000, state.running, "tick")])]); }

@@ -6,13 +6,9 @@
  * entry point) through the real VM, decodes the resulting ui.View tree with
  * the real decoder, and prints it as JSON.
  *
- * This is compiler + VM + decoder exactly as the phone runs them --
- * VeraCompiler.ts / VeraInterpreter.ts / VeraUi.ts copied unmodified from the
- * ArkTS compile cache (see README.md for how to refresh them) and run under
- * plain Node. It does NOT render anything: VeraPreview.ets is @Component/
- * ArkUI and cannot run here. proof-sheet.js (a separate script) draws an
- * approximate picture of the tree this script prints; this script is what
- * tells you the tree itself -- kinds, styles, fields, nesting -- is right.
+ * source-loader.js transpiles the current ETS sources for this process.
+ * The SDK stub supports host checks without native platform dependencies.
+ * proof-sheet.js draws an approximate SVG from the decoded tree.
  *
  * Usage:
  *   node run.js <path-to.vera> [entryFunction=view] [stateJson]
@@ -25,9 +21,10 @@
 const fs = require('fs')
 const path = require('path')
 
-const { compileVeraSource, CompileError } = require('./out/VeraCompiler')
-const { VirtualMachine, deserializeVbc2, decodeRuntimeValue } = require('./out/VeraInterpreter')
-const { UiHostEnvironment, decodeVeraUi } = require('./out/VeraUi')
+const { loadVera } = require('./source-loader')
+const { compileVeraSource, CompileError } = loadVera('VeraCompiler')
+const { VirtualMachine, deserializeVbc2, decodeRuntimeValue } = loadVera('VeraInterpreter')
+const { UiHostEnvironment, decodeVeraUi } = loadVera('VeraUi')
 
 function main() {
   const [sourcePath, entryArg, stateArg] = process.argv.slice(2)

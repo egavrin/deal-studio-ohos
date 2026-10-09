@@ -1,0 +1,22 @@
+{
+  "baselineRevision": "df66e50276ea66ffa7f29a527e5f847491ea99ff",
+  "source": "import * as ui from \"std/ui\"\n@jsonable class AppState { saved: boolean; }\nfunction init(): AppState { return {saved: false}; }\nfunction save(state: AppState, value: int): AppState { return {saved: true}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme(\"editorial\", \"\", [ui.Section(\"content\", \"The art of noticing ordinary things\", \"A short reading break\", []), ui.Section(\"content\", \"Small details, better days\", \"\", [ui.Text(\"body\", \"A familiar walk can feel new when you slow down. Notice the shape of a leaf, the sound of a doorway, and the light on a wall. Give one small detail your full attention.\"), ui.ActionBar(\"default\", [ui.Button(\"primary\", \"Save this reading\", \"save\", 0, true)]), ui.When(state.saved, ui.Text(\"body\", \"Saved for later\"))])]); }\n",
+  "bytecode": "[\"VBC2\",[\"init\",\"save\",\"view\"],[[\"init\",0,0,false,[[\"push-boolean\",false],[\"make-object\",\"local:AppState\",[\"saved\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"save\",2,2,false,[[\"push-boolean\",true],[\"make-object\",\"local:AppState\",[\"saved\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"view\",1,1,false,[[\"load-external\",\"std/ui\",\"AppTheme\"],[\"push-string\",\"editorial\"],[\"push-string\",\"\"],[\"load-external\",\"std/ui\",\"Section\"],[\"push-string\",\"content\"],[\"push-string\",\"The art of noticing ordinary things\"],[\"push-string\",\"A short reading break\"],[\"make-array\",0],[\"call\",4,false],[\"load-external\",\"std/ui\",\"Section\"],[\"push-string\",\"content\"],[\"push-string\",\"Small details, better days\"],[\"push-string\",\"\"],[\"load-external\",\"std/ui\",\"Text\"],[\"push-string\",\"body\"],[\"push-string\",\"A familiar walk can feel new when you slow down. Notice the shape of a leaf, the sound of a doorway, and the light on a wall. Give one small detail your full attention.\"],[\"call\",2,false],[\"load-external\",\"std/ui\",\"ActionBar\"],[\"push-string\",\"default\"],[\"load-external\",\"std/ui\",\"Button\"],[\"push-string\",\"primary\"],[\"push-string\",\"Save this reading\"],[\"push-string\",\"save\"],[\"push-int\",\"0\"],[\"push-boolean\",true],[\"call\",5,false],[\"make-array\",1],[\"call\",2,false],[\"load-external\",\"std/ui\",\"When\"],[\"load-local\",0],[\"load-field\",\"saved\"],[\"load-external\",\"std/ui\",\"Text\"],[\"push-string\",\"body\"],[\"push-string\",\"Saved for later\"],[\"call\",2,false],[\"call\",2,false],[\"make-array\",3],[\"call\",4,false],[\"make-array\",2],[\"call\",3,false],[\"return\"],[\"push-null\"],[\"return\"]]]]]",
+  "saved": [
+    "o",
+    "local:AppState",
+    [
+      [
+        "saved",
+        [
+          "b",
+          true
+        ]
+      ]
+    ]
+  ],
+  "handler": "save",
+  "value": 0,
+  "field": "saved",
+  "expected": true
+}

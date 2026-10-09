@@ -1,0 +1,22 @@
+{
+  "baselineRevision": "df66e50276ea66ffa7f29a527e5f847491ea99ff",
+  "source": "import * as ui from \"std/ui\"\n@jsonable class AppState { days: int; }\nfunction init(): AppState { return {days: 3}; }\nfunction complete(state: AppState, value: int): AppState { return {days: state.days + 1}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme(\"playful\", \"\", [ui.Section(\"content\", \"A little better each day\", \"One small step counts\", [ui.IntText(\"metric\", state.days, \"\", \" days\", 1)]), ui.Section(\"content\", \"Today is yours\", \"\", [ui.Text(\"body\", \"Take a short walk and notice something new.\"), ui.ActionBar(\"default\", [ui.Button(\"primary\", \"I did it\", \"complete\", 0, true)])])]); }\n",
+  "bytecode": "[\"VBC2\",[\"init\",\"complete\",\"view\"],[[\"init\",0,0,false,[[\"push-int\",\"3\"],[\"make-object\",\"local:AppState\",[\"days\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"complete\",2,2,false,[[\"load-local\",0],[\"load-field\",\"days\"],[\"push-int\",\"1\"],[\"binary\",\"+\",true],[\"make-object\",\"local:AppState\",[\"days\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"view\",1,1,false,[[\"load-external\",\"std/ui\",\"AppTheme\"],[\"push-string\",\"playful\"],[\"push-string\",\"\"],[\"load-external\",\"std/ui\",\"Section\"],[\"push-string\",\"content\"],[\"push-string\",\"A little better each day\"],[\"push-string\",\"One small step counts\"],[\"load-external\",\"std/ui\",\"IntText\"],[\"push-string\",\"metric\"],[\"load-local\",0],[\"load-field\",\"days\"],[\"push-string\",\"\"],[\"push-string\",\" days\"],[\"push-int\",\"1\"],[\"call\",5,false],[\"make-array\",1],[\"call\",4,false],[\"load-external\",\"std/ui\",\"Section\"],[\"push-string\",\"content\"],[\"push-string\",\"Today is yours\"],[\"push-string\",\"\"],[\"load-external\",\"std/ui\",\"Text\"],[\"push-string\",\"body\"],[\"push-string\",\"Take a short walk and notice something new.\"],[\"call\",2,false],[\"load-external\",\"std/ui\",\"ActionBar\"],[\"push-string\",\"default\"],[\"load-external\",\"std/ui\",\"Button\"],[\"push-string\",\"primary\"],[\"push-string\",\"I did it\"],[\"push-string\",\"complete\"],[\"push-int\",\"0\"],[\"push-boolean\",true],[\"call\",5,false],[\"make-array\",1],[\"call\",2,false],[\"make-array\",2],[\"call\",4,false],[\"make-array\",2],[\"call\",3,false],[\"return\"],[\"push-null\"],[\"return\"]]]]]",
+  "saved": [
+    "o",
+    "local:AppState",
+    [
+      [
+        "days",
+        [
+          "i",
+          4
+        ]
+      ]
+    ]
+  ],
+  "handler": "complete",
+  "value": 0,
+  "field": "days",
+  "expected": 4
+}

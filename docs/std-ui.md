@@ -6,7 +6,7 @@ Generated from `entry/src/main/ets/vera/VeraUiCatalog.ets` -- the same table tha
 module interface, the validator's rules and the catalogue section of the model's prompt, so nothing here can
 drift from what the phone runs. Anything not in this file is not in the language: the compiler rejects it.
 
-51 components, 38 of them with a style set, 9 that hand a value back to a handler, 16 icons, 8 composition rules.
+53 components, 52 of them with a style set, 9 that hand a value back to a handler, 16 icons, 8 composition rules.
 
 A program picks a component and one style name from a closed set. It cannot set a colour, a padding or a
 size: those come from `VeraTheme.ets` and the renderer.
@@ -44,6 +44,8 @@ size: those come from `VeraTheme.ets` and the renderer.
 | `ui.Select` | Input | Choose one option |
 | `ui.Ticker` | Input | Draws nothing |
 | `ui.AppTheme` | Composition | The whole app in one look |
+| `ui.Hero` | Composition | A focal area with an optional eyebrow, display title, supporting text, and child content |
+| `ui.AdaptiveColumns` | Composition | Ordered content in one or two columns according to available width |
 | `ui.Header` | Composition | The app's own title block: eyebrow above, title, supporting line below |
 | `ui.Section` | Composition | One part of the screen, with a role: hero summary content supporting warning |
 | `ui.SectionHeader` | Composition | A heading inside a section: title, subtitle, and a count on the right |
@@ -81,7 +83,7 @@ Six types appear in the component signatures, and every one of them is checked a
 | type | what it is |
 |---|---|
 | `View` | what every `ui.*` call returns. A program can pass it and store it in an array, and nothing else: there is no way to read a view back, change it or ask it anything. |
-| `View[]` | the children of a container, written as an array literal or built with the array functions. 14 properties take one. |
+| `View[]` | the children of a container, written as an array literal or built with the array functions. 16 properties take one. |
 | `string` | text. Also the type of a `style`, an `icon` and an `action`, each with its own rule below. |
 | `int` | a whole number. Sizes, counts, minutes, slider values and the `value` a tap carries are all ints. |
 | `boolean` | `enabled`, `checked`, `running`. |
@@ -319,13 +321,35 @@ The whole app in one look; primary is a "#rrggbb" seed or "" for the preset's ow
 
 > Wrap everything view returns in exactly one of these. The preset is the app's character, so choose it for the app you were asked for: clean for restrained and neutral, soft for calm and friendly, expressive for bold and atmospheric, editorial for content that leads, technical for dense precise numbers, playful for energetic. Do not pick clean just because an example uses it.
 
+### `ui.Hero(style: string, eyebrow: string, title: string, supporting: string, children: View[]): View`
+
+A focal area with an optional eyebrow, display title, supporting text, and related content.
+
+**Styles:** `plain` `accent`
+
+Use `plain` for an open focal area or `accent` for a theme accent surface.
+Empty strings omit text. Children can hold a result, visual, or action.
+Do not add a redundant Header above Hero. Chat widgets omit Hero.
+
+### `ui.AdaptiveColumns(style: string, minimumWidth: int, children: View[]): View`
+
+Ordered content in one or two equal columns, aligned at the top.
+
+**Styles:** `default` `compact` `spacious`
+
+The renderer measures the container's available width and subtracts the theme gap before it calculates column widths.
+It uses one column before measurement and when two columns do not fit.
+A nonpositive `minimumWidth` uses 240 vp. A smaller positive value is clamped to 160 vp.
+The measurement stays in the live renderer tree and does not enter program or saved state.
+Chat widgets omit AdaptiveColumns.
+
 ### `ui.Header(style: string, title: string, eyebrow: string, supporting: string, [icon: string]): View`
 
 The app's own title block: eyebrow above, title, supporting line below.
 
 **Styles:** `default` `center`
 
-> Open the screen with one of these instead of a bare ui.Text. Use it once. Leave eyebrow or supporting as "" when there is nothing to say.
+> Use when the title should lead the screen. A result, visual, or collection can lead instead. Leave eyebrow or supporting as "" when there is nothing to say.
 
 ### `ui.Section(style: string, title: string, subtitle: string, children: View[]): View`
 

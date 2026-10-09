@@ -1,0 +1,22 @@
+{
+  "baselineRevision": "df66e50276ea66ffa7f29a527e5f847491ea99ff",
+  "source": "import * as ui from \"std/ui\"\n@jsonable class AppState { budget: int; }\nfunction init(): AppState { return {budget: 100}; }\nfunction setBudget(state: AppState, value: int): AppState { return {budget: value}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme(\"technical\", \"\", [ui.Section(\"content\", \"Know where it goes\", \"Your everyday spending\", [ui.IntText(\"metric\", state.budget, \"$\", \" budget\", 1)]), ui.Column(\"default\", [ui.Section(\"content\", \"Spending\", \"Three recent transactions\", [ui.Table(\"default\", [\"Date\", \"Category\", \"Amount\"], 3, [ui.TableRow(\"default\", [\"Oct 1\", \"Groceries\", \"$42\"]), ui.TableRow(\"default\", [\"Oct 3\", \"Rent\", \"$1200\"]), ui.TableRow(\"warning\", [\"Oct 5\", \"Transport\", \"$35\"])])]), ui.Section(\"content\", \"Your limit\", \"Keep the essentials in view\", [ui.IntField(\"default\", \"Budget in dollars\", state.budget, 0, 500, \"setBudget\"), ui.Sparkline(\"accent\", [42, 80, 35, 62], 100, \"Weekly spending\", true)])])]); }\n",
+  "bytecode": "[\"VBC2\",[\"init\",\"setBudget\",\"view\"],[[\"init\",0,0,false,[[\"push-int\",\"100\"],[\"make-object\",\"local:AppState\",[\"budget\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"setBudget\",2,2,false,[[\"load-local\",1],[\"make-object\",\"local:AppState\",[\"budget\"]],[\"return\"],[\"push-null\"],[\"return\"]]],[\"view\",1,1,false,[[\"load-external\",\"std/ui\",\"AppTheme\"],[\"push-string\",\"technical\"],[\"push-string\",\"\"],[\"load-external\",\"std/ui\",\"Section\"],[\"push-string\",\"content\"],[\"push-string\",\"Know where it goes\"],[\"push-string\",\"Your everyday spending\"],[\"load-external\",\"std/ui\",\"IntText\"],[\"push-string\",\"metric\"],[\"load-local\",0],[\"load-field\",\"budget\"],[\"push-string\",\"$\"],[\"push-string\",\" budget\"],[\"push-int\",\"1\"],[\"call\",5,false],[\"make-array\",1],[\"call\",4,false],[\"load-external\",\"std/ui\",\"Column\"],[\"push-string\",\"default\"],[\"load-external\",\"std/ui\",\"Section\"],[\"push-string\",\"content\"],[\"push-string\",\"Spending\"],[\"push-string\",\"Three recent transactions\"],[\"load-external\",\"std/ui\",\"Table\"],[\"push-string\",\"default\"],[\"push-string\",\"Date\"],[\"push-string\",\"Category\"],[\"push-string\",\"Amount\"],[\"make-array\",3],[\"push-int\",\"3\"],[\"load-external\",\"std/ui\",\"TableRow\"],[\"push-string\",\"default\"],[\"push-string\",\"Oct 1\"],[\"push-string\",\"Groceries\"],[\"push-string\",\"$42\"],[\"make-array\",3],[\"call\",2,false],[\"load-external\",\"std/ui\",\"TableRow\"],[\"push-string\",\"default\"],[\"push-string\",\"Oct 3\"],[\"push-string\",\"Rent\"],[\"push-string\",\"$1200\"],[\"make-array\",3],[\"call\",2,false],[\"load-external\",\"std/ui\",\"TableRow\"],[\"push-string\",\"warning\"],[\"push-string\",\"Oct 5\"],[\"push-string\",\"Transport\"],[\"push-string\",\"$35\"],[\"make-array\",3],[\"call\",2,false],[\"make-array\",3],[\"call\",4,false],[\"make-array\",1],[\"call\",4,false],[\"load-external\",\"std/ui\",\"Section\"],[\"push-string\",\"content\"],[\"push-string\",\"Your limit\"],[\"push-string\",\"Keep the essentials in view\"],[\"load-external\",\"std/ui\",\"IntField\"],[\"push-string\",\"default\"],[\"push-string\",\"Budget in dollars\"],[\"load-local\",0],[\"load-field\",\"budget\"],[\"push-int\",\"0\"],[\"push-int\",\"500\"],[\"push-string\",\"setBudget\"],[\"call\",6,false],[\"load-external\",\"std/ui\",\"Sparkline\"],[\"push-string\",\"accent\"],[\"push-int\",\"42\"],[\"push-int\",\"80\"],[\"push-int\",\"35\"],[\"push-int\",\"62\"],[\"make-array\",4],[\"push-int\",\"100\"],[\"push-string\",\"Weekly spending\"],[\"push-boolean\",true],[\"call\",5,false],[\"make-array\",2],[\"call\",4,false],[\"make-array\",2],[\"call\",2,false],[\"make-array\",2],[\"call\",3,false],[\"return\"],[\"push-null\"],[\"return\"]]]]]",
+  "saved": [
+    "o",
+    "local:AppState",
+    [
+      [
+        "budget",
+        [
+          "i",
+          140
+        ]
+      ]
+    ]
+  ],
+  "handler": "setBudget",
+  "value": 140,
+  "field": "budget",
+  "expected": 140
+}
