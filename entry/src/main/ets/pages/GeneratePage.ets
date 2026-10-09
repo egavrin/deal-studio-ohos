@@ -7,7 +7,7 @@ import { store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
-import { deepseek } from '../vera/DeepSeekEngine'
+import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
@@ -697,14 +697,9 @@ struct GeneratePage {
    */
   private callModel(request: GenerateRequest, onToken: (token: string) => void): Promise<GenerateResult> {
     if (this.mode === MODE_DEEPSEEK) {
-      // deepseek-flash thinks by default, and the reasoning comes out of the
-      // same token budget as the program: an 8K cap was being spent thinking
-      // and the program arrived truncated. A first attempt does not need it --
-      // the output format is fixed and the programs are short. A retry has
-      // compiler diagnostics to work through, so it gets both.
-      let retry = this.attempt > 1
-      deepseek.setThinking(retry)
-      request.maxTokens = retry ? 32768 : 8192
+      // Initial generation, refinement, and retries share reasoning and output settings.
+      deepseek.setThinking(true)
+      request.maxTokens = DEEPSEEK_GENERATION_MAX_TOKENS
       return deepseek.generate(request, onToken)
     }
     return Promise.resolve(engine.generate(request, onToken))
@@ -777,7 +772,7 @@ struct GeneratePage {
     if (this.mode === MODE_DEEPSEEK) {
       metrics.cacheHitTokens = deepseek.lastCacheHitTokens()
       metrics.finishReason = deepseek.lastFinishReason()
-      metrics.thinking = this.attempt > 1
+      metrics.thinking = true
       // Prefill from the engine rather than the token callback: the callback
       // only fires on visible content, so with reasoning on it would report
       // the thinking time as waiting.

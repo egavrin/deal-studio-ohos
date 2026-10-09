@@ -16,7 +16,7 @@ import http from '@ohos.net.http'
 import util from '@ohos.util'
 import { GenerateRequest } from './LlamaEngine'
 import { compileVeraSource, CompileError } from './VeraCompiler'
-import { deepseek, extractVeraSource } from './DeepSeekEngine'
+import { deepseek, extractVeraSource, DEEPSEEK_GENERATION_MAX_TOKENS } from './DeepSeekEngine'
 import { settings } from './SettingsStore'
 import { AttemptStat, ReplyStats, failureVerdict } from './VeraChatStats'
 
@@ -477,7 +477,7 @@ export async function buildMiniApp(systemPrompt: string, description: string,
     request.systemPrompt = systemPrompt
     request.uiTool = false
     request.temperature = 0.2
-    request.maxTokens = attempt > 1 ? 32768 : 8192
+    request.maxTokens = DEEPSEEK_GENERATION_MAX_TOKENS
     if (feedback.length > 0) {
       request.previousSource = failedSource
       request.userPrompt = description +
@@ -488,7 +488,8 @@ export async function buildMiniApp(systemPrompt: string, description: string,
     } else {
       request.userPrompt = description
     }
-    deepseek.setThinking(attempt > 1)
+    // Widget generation uses reasoning on every attempt, including the first.
+    deepseek.setThinking(true)
     let stat = new AttemptStat()
     stat.attempt = attempt
     let text = ''
