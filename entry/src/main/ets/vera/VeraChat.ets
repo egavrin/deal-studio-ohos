@@ -38,7 +38,9 @@ const CHAT_SYSTEM_PROMPT: string =
   "Carry explicit visual preferences into the marker, with exact values, units, behavior, and verified image addresses. Keep the marker within 600 characters. " +
   "Do not refer to \"the above\" or omit details that appear elsewhere in the reply. " +
   "Place a brief complete sentence before the marker. Any text after it must also contain complete sentences. " +
-  "Use no nested markers or additional markers. Do not show program code.\n" +
+  "Use no nested markers or additional markers. Do not show program code. Keep the description under 1000 characters.\n" +
+  "To change a widget already shown in this chat, start the description with update: and describe the whole widget as it " +
+  "should be after the change, keeping what the person did not ask to change.\n" +
   "For a phone action, offer a button that requests the action and shows its returned result. " +
   "Support depends on discovered capabilities, available adapters, permissions, and device behavior. " +
   "Do not promise universal support or claim that this chat reply executed an action. " +
@@ -59,8 +61,15 @@ const MAX_SEARCHES = 2
 const SEARCH_RESULTS = 4
 const SEARCH_CHARS = 400
 const EXA_URL = 'https://api.exa.ai/search'
-/** A widget line longer than this is cut: it is built from the line alone, and the line may carry web text. */
-const MAX_WIDGET_LINE = 600
+/**
+ * A widget line longer than this is cut, and the cut is recorded and shown in
+ * the stats rather than made silently. The limit exists because the line can
+ * carry text from a web search into the builder; it is set well above what a
+ * self-contained description needs, and the chat prompt asks for less.
+ */
+const MAX_WIDGET_LINE = 1500
+/** A widget line that starts with this asks to change the chat's last widget rather than build a new one. */
+const UPDATE_PREFIX = 'update:'
 
 export class ChatTurn {
   role: string = 'user'
@@ -78,6 +87,10 @@ export class ParsedReply {
   appDescription: string = ''
   /** The line has started but not finished: the widget is still being described. */
   describing: boolean = false
+  /** The line's length before it was cut; 0 when it was not cut. */
+  cutFrom: number = 0
+  /** The line asked to change the last widget (it started with "update:"). */
+  update: boolean = false
 }
 
 export class MiniApp {
@@ -107,8 +120,16 @@ export function parseReply(raw: string): ParsedReply {
     out.describing = true
     return out
   }
-  out.appDescription = raw.substring(open + APP_OPEN.length, close).split('\n').join(' ').trim()
-  if (out.appDescription.length > MAX_WIDGET_LINE) { out.appDescription = out.appDescription.substring(0, MAX_WIDGET_LINE) }
+  let line = raw.substring(open + APP_OPEN.length, close).split('\n').join(' ').trim()
+  if (line.toLowerCase().startsWith(UPDATE_PREFIX)) {
+    out.update = true
+    line = line.substring(UPDATE_PREFIX.length).trim()
+  }
+  if (line.length > MAX_WIDGET_LINE) {
+    out.cutFrom = line.length
+    line = line.substring(0, MAX_WIDGET_LINE)
+  }
+  out.appDescription = line
   let rest = raw.substring(close + APP_CLOSE.length)
   // At most one widget per reply: a second line is dropped, not shown.
   let again = rest.indexOf(APP_OPEN)
@@ -470,7 +491,7 @@ function readLine(line: string, step: ChatStep, pending: Map<number, PendingCall
  * the UI catalogue already spliced in. Calls must not overlap: the engine is a
  * singleton with one generation in flight.
  */
-export async function buildMiniApp(systemPrompt: string, description: string,
+export async function buildMiniApp(systemPrompt: string, description: string, personRequest: string, baseSource: string,
     onStatus: (status: string) => void): Promise<MiniApp> {
   let result = new MiniApp()
   let failedSource = ''
@@ -483,15 +504,27 @@ export async function buildMiniApp(systemPrompt: string, description: string,
     request.uiTool = false
     request.temperature = 0.2
     request.maxTokens = DEEPSEEK_GENERATION_MAX_TOKENS
+    // The description is the brief. What the person actually wrote goes with it
+    // so a detail the description dropped is not lost for good; the builder is
+    // told the description wins where the two differ.
+    let brief = description
+    if (personRequest.length > 0) {
+      brief = brief + '\n\nWhat the person wrote, for reference only; where it differs, the description above wins: ' + personRequest
+    }
     if (feedback.length > 0) {
       request.previousSource = failedSource
-      request.userPrompt = description +
+      request.userPrompt = brief +
         '\n\nThe program above is your previous attempt and it failed to compile:\n' + feedback +
         '\n\nRepair the failed source against these diagnostics. Preserve requested behavior and compatible state field names and types. ' +
         'Return the complete replacement program as source only, not a patch or continuation. ' +
         'If output was truncated, shorten optional content while preserving required behavior.'
+    } else if (baseSource.length > 0) {
+      // A change to a widget already in the chat: its program goes in as the
+      // previous source, and the engine asks for a complete replacement.
+      request.previousSource = baseSource
+      request.userPrompt = brief
     } else {
-      request.userPrompt = description
+      request.userPrompt = brief
     }
     // Widget generation uses reasoning on every attempt, including the first.
     deepseek.setThinking(true)

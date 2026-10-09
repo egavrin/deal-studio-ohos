@@ -21,14 +21,19 @@ import { loadSdkIndex } from './VeraSdkIndex'
 import { ensureSdkEmbeddings, sdkEmbeddingsReady } from './VeraSdkEmbeddingCache'
 import { embedModelExists, loadEmbeddingModel } from './VeraEmbeddings'
 
-export function loadDiscovery(filesDir: string, mgr: resourceManager.ResourceManager): void {
-  loadIntentSummaries(mgr).then(() => loadRegistry()).then((count: number) => {
+/**
+ * Resolves once the intent pool (summaries and registry) and the SDK index are
+ * loaded -- what a search needs to find anything. The embeddings keep loading
+ * after that; until they are ready the searches use tokens.
+ */
+export function loadDiscovery(filesDir: string, mgr: resourceManager.ResourceManager): Promise<void> {
+  let intents = loadIntentSummaries(mgr).then(() => loadRegistry()).then((count: number) => {
     console.info('VERA-REGISTRY ' + count.toString() + ' intents available to find_intent_function')
     ensureIntentEmbeddings(filesDir, mgr).then(() => {
       console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
     })
   })
-  loadSdkIndex(mgr).then((count: number) => {
+  let sdk = loadSdkIndex(mgr).then((count: number) => {
     console.info('VERA-SDK ' + count.toString() + ' sdk functions available to search')
     ensureSdkEmbeddings(filesDir, mgr).then(() => {
       console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
@@ -41,4 +46,5 @@ export function loadDiscovery(filesDir: string, mgr: resourceManager.ResourceMan
       ensureIntentEmbeddings(filesDir, mgr)
     })
   }
+  return Promise.all([intents, sdk]).then((): void => {})
 }
