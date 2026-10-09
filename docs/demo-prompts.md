@@ -190,6 +190,19 @@ fixed-height (420 vp) card under the message. Widget builds are queued, one at a
   the address, hours and a Directions button. The image address must be one the
   search returned; the one in the run above was checked against Exa's own
   results. Without the key there is no search and no photo.
+- **Saved chats and stats.** The Chat button opens the list of saved chats (newest
+  first, with message count, widgets and estimated cost; swipe a row to delete
+  it) and a New chat button. A chat is saved as it goes, including each widget's
+  program and its own state (`{filesDir}/vera/chats`, and `chat-<id>/` for widget
+  state), so reopening it, even after the app was stopped, shows the same
+  conversation and the same widgets. A widget that was still being built when
+  the chat was closed comes back marked as not finished. The **Stats** switch on
+  the chat screen shows the numbers the Generate screen's metrics pane shows,
+  for the whole chat at the top and under each reply: time, estimated cost, LLM
+  wall time against on-device compile time, input / cached / fresh / output
+  tokens, web searches, and for each widget build attempt its wait, think,
+  write, compile and speed. Cost uses DeepSeek's published rates and is an
+  estimate.
 - A failed build shows the error under the reply instead of leaving a spinner;
   this was seen when the phone lost Wi-Fi mid-build. The conversation continues.
 - The conversation is not saved, and neither is a widget's state: leaving the

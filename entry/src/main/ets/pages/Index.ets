@@ -134,7 +134,7 @@ struct Index {
     .menus([{
       value: 'Chat',
       icon: 'resources/base/media/startIcon.png',
-      action: () => { router.pushUrl({ url: 'pages/ChatPage' }) }
+      action: () => { router.pushUrl({ url: 'pages/ChatListPage' }) }
     }, {
       value: '',
       icon: 'resources/base/media/startIcon.png',
@@ -143,7 +143,7 @@ struct Index {
     .toolbarConfiguration([{
       value: 'Chat',
       status: ToolbarItemStatus.NORMAL,
-      action: () => { router.pushUrl({ url: 'pages/ChatPage' }) }
+      action: () => { router.pushUrl({ url: 'pages/ChatListPage' }) }
     }, {
       value: 'New Project',
       status: ToolbarItemStatus.NORMAL,
