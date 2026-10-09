@@ -1,0 +1,139 @@
+{
+  "revision": "ad415206f6ef79dfb09ade45fdd4388381acb2b0",
+  "harness_sha256": "81e89e0b76fd15db14916e8d6f3b012d9c3e948dcdee76b9f5a2c4fc7b1e10c1",
+  "command": "VERA_TYPESCRIPT_PATH=\"/Users/egavrin/.codex/worktrees/porting-guide-main/arkestr/.dexter-local/porting-baseline/nominal-edges-root-acceptance/54/published-e2e/.dexter-local/tests/coverage-controls/run-UvDYkQ/project/node_modules/typescript/lib/typescript.js\" node /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/chat-handoff-check.js /Users/egavrin/Documents/deal-studio-ohos /tmp/vera-chat-handoff-rebase.json",
+  "inputs": "Deterministic SSE chunks, searches, in-memory filesystem, current .ets controllers and real compiler/VM/UI decoder.",
+  "expected": "All checks PASS",
+  "observed": "PASS",
+  "source_sha256": {
+    "entry/src/main/ets/vera/VeraChat.ets": "1675edbfb3af7b752c12dc6c1dd480236a15d1cb4de614fa10a897316f3f15da",
+    "entry/src/main/ets/vera/VeraWidgetContext.ets": "526f16765e28b0269f5cccb693f492880eccf1f0d0b813ae4369a62067e5a135",
+    "entry/src/main/ets/pages/ChatPage.ets": "e311841d3807e825d48b599643ebccff4ae5415a85f337cca9477b3eb0e41414",
+    "entry/src/main/ets/vera/ChatStore.ets": "bce4f4ca372aa1a84914e9ceed81be414f1e814357943195bcdc731d811895b1"
+  },
+  "checks": [
+    {
+      "name": "Structured marker stream boundaries and exact strings",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Legacy marker and required fields never truncate",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Context keeps 12 latest whole turns and exact required values",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Complete streamed create, compiler, VM, handlers, render, and storage",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Revision selects stable ID and starts fresh init while old widget stays intact",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Legacy recreation persists new source with visible notice",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Invalid targets and malformed completed markers send no build",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Search results from current turn reach builder with exact verified address",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Stream completion and queue retain send-start snapshots",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Fast send waits for skill and capabilities before build",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Compiler repairs keep exact failed source, diagnostics, context, and settings",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Failed revision preserves old source and state and queue recovers",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Old saved chats load with empty optional defaults",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Tool continuation retains complete context and uniform generation settings",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Intent discovery delivers embedding and unavailable-embedding candidates",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Legacy markers retain every ordered item and surrounding prose in one widget",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Structured markers stay strict when mixed with legacy groups",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Legacy update selects latest send-start eligible widget and preserves stored diagnostics",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Five-argument generation retains request, source, retries, and uniform settings",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    },
+    {
+      "name": "Main data-widget guidance remains in chat requests",
+      "status": "PASS",
+      "expected": "All workflow assertions pass",
+      "observed": "All workflow assertions passed"
+    }
+  ],
+  "limits": [
+    "Native ArkUI and network transport are mocked. This does not replace an ArkTS build or device validation."
+  ]
+}

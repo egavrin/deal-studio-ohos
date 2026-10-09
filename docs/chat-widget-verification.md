@@ -10,7 +10,7 @@ Fixture failures were defined before the corresponding production edits. The pre
 
 The renderer workflow compiles the counter fixture, records its initial value, changes it through a handler, saves the state, and reloads it. Snapshot values match the rendered state. Runtime snapshots provide reference data only. A revision does not receive the earlier widget's state-storage key.
 
-## Evidence
+## Original acceptance evidence
 
 Tested production and harness revision: `3a5affbac68c05ec4bcc991862b88ba21c14eb4e`.
 Base revision: `b0a575d5aa98bee40368c3072be2ef531787dd6f`, which includes merged PR #14.
@@ -45,6 +45,25 @@ export VERA_TYPESCRIPT_PATH=/Users/egavrin/.codex/worktrees/porting-guide-main/a
 ```
 
 No package installation was necessary. The archived visual report is gzip-compressed JSON with its original command and revision.
+
+## Acceptance after rebase onto main
+
+Tested production and harness revision: `ad415206f6ef79dfb09ade45fdd4388381acb2b0`.
+Base revision: `e05bee19ff8ce6c8fe2523ae66d8753731151b58`, which includes merged PR #15.
+The following evidence commit changes documentation and saved reports only.
+
+| Workflow | Result | Report |
+| --- | --- | --- |
+| Chat handoff and revisions | 20/20 PASS | [handoff.json](chat-widget-evidence/rebase/handoff.json) |
+| Prompts and generation | 23/23 PASS | [prompts.json](chat-widget-evidence/rebase/prompts.json) |
+| Capability and renderer lifecycle | 8/8 PASS | [capabilities.json](chat-widget-evidence/rebase/capabilities.json) |
+| Visual compatibility | 93/93 PASS | [visual.json.gz](chat-widget-evidence/rebase/visual.json.gz) |
+
+The rebase preserves main's table, chart, display-only data, and multiple-item prompt guidance. Legacy plain-text markers combine their ordered items into one widget. Legacy `update:` selects the latest eligible widget captured at send start. Structured handoffs retain explicit targets and reject duplicate or mixed markers. Oversized requests fail without truncation; historical `cutFrom` and `update` fields still load and save.
+
+The added fixtures exercise legacy grouped markers, surrounding prose, oversized groups, structured/legacy rejection, send-start legacy revision selection, saved metadata, main's five-argument `buildMiniApp` call, exact compiler repair feedback, and preserved data-widget guidance. Direct discovery and both screens share one index load and one background model download. Both screens retain main's build-support note.
+
+All four repeatable commands above passed against this revision. Each report stores its exact command and source hashes. Logs are saved beside the reports. `git diff --check origin/main` passed. Native verification remains unavailable under the limits above.
 
 ## Limits
 
