@@ -39,6 +39,8 @@ const CHAT_SYSTEM_PROMPT: string =
   "Do not refer to \"the above\" or omit details that appear elsewhere in the reply. " +
   "Place a brief complete sentence before the marker. Any text after it must also contain complete sentences. " +
   "Use no nested markers or additional markers. Do not show program code. Keep the description under 1000 characters.\n" +
+  "When the request needs several similar controls -- a button per stop, a row per item -- put all of them in that one widget " +
+  "and list every one in its description. Never write one marker per item: only the first would be built.\n" +
   "To change a widget already shown in this chat, start the description with update: and describe the whole widget as it " +
   "should be after the change, keeping what the person did not ask to change.\n" +
   "For a phone action, offer a button that requests the action and shows its returned result. " +
@@ -115,26 +117,45 @@ export function parseReply(raw: string): ParsedReply {
     return out
   }
   out.before = raw.substring(0, open).trim()
-  let close = raw.indexOf(APP_CLOSE, open)
-  if (close < 0) {
-    out.describing = true
-    return out
+  // A reply holds one widget, but the model sometimes writes one line per item
+  // (a navigation button per stop). Every complete line is kept and combined
+  // into one description, so no item is silently dropped; the text between
+  // them goes after the widget.
+  let lines: string[] = []
+  let afterParts: string[] = []
+  let at = open
+  while (at >= 0) {
+    let close = raw.indexOf(APP_CLOSE, at)
+    if (close < 0) {
+      out.describing = true
+      break
+    }
+    lines.push(raw.substring(at + APP_OPEN.length, close).split('\n').join(' ').trim())
+    let next = raw.indexOf(APP_OPEN, close + APP_CLOSE.length)
+    let between = next < 0 ? raw.substring(close + APP_CLOSE.length) : raw.substring(close + APP_CLOSE.length, next)
+    if (next < 0) { between = withoutPartialMarker(between) }
+    if (between.trim().length > 0) { afterParts.push(between.trim()) }
+    at = next
   }
-  let line = raw.substring(open + APP_OPEN.length, close).split('\n').join(' ').trim()
-  if (line.toLowerCase().startsWith(UPDATE_PREFIX)) {
-    out.update = true
-    line = line.substring(UPDATE_PREFIX.length).trim()
+  out.after = afterParts.join('\n')
+  if (lines.length === 0) { return out }
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].toLowerCase().startsWith(UPDATE_PREFIX)) {
+      out.update = true
+      lines[i] = lines[i].substring(UPDATE_PREFIX.length).trim()
+    }
+  }
+  let line = lines[0]
+  if (lines.length > 1) {
+    let parts: string[] = []
+    for (let i = 0; i < lines.length; i++) { parts.push('(' + (i + 1).toString() + ') ' + lines[i]) }
+    line = 'One widget holding all of these parts, in this order: ' + parts.join(' ')
   }
   if (line.length > MAX_WIDGET_LINE) {
     out.cutFrom = line.length
     line = line.substring(0, MAX_WIDGET_LINE)
   }
   out.appDescription = line
-  let rest = raw.substring(close + APP_CLOSE.length)
-  // At most one widget per reply: a second line is dropped, not shown.
-  let again = rest.indexOf(APP_OPEN)
-  if (again >= 0) { rest = rest.substring(0, again) }
-  out.after = rest.trim()
   return out
 }
 

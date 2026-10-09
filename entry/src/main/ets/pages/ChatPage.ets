@@ -472,14 +472,18 @@ struct ChatPage {
     return turns
   }
 
-  /** Copies what has streamed so far into the message; starts the widget the moment its line is closed. */
-  private apply(msg: ChatMessage, parsed: ParsedReply): void {
+  /**
+   * Copies what has streamed so far into the message. The widget is built once
+   * the reply has finished (`final`): a later line in the same reply may still
+   * add to its description, and building early would drop it.
+   */
+  private apply(msg: ChatMessage, parsed: ParsedReply, final: boolean = false): void {
     msg.before = parsed.before
     msg.after = parsed.after
-    if (msg.appState === APP_NONE && parsed.describing) {
+    if (msg.appState === APP_NONE && (parsed.describing || parsed.appDescription.length > 0)) {
       msg.appState = APP_DESCRIBING
     }
-    if (parsed.appDescription.length > 0 && msg.appDescription.length === 0) {
+    if (final && parsed.appDescription.length > 0 && msg.appDescription.length === 0) {
       msg.appDescription = parsed.appDescription
       msg.cutFrom = parsed.cutFrom
       msg.update = parsed.update
@@ -520,7 +524,7 @@ struct ChatPage {
         this.status = status.length > 0 ? status : 'Thinking...'
       }, stats)
       console.info('VERA-CHAT reply: ' + raw)
-      this.apply(reply, parseReply(raw))
+      this.apply(reply, parseReply(raw), true)
     } catch (e) {
       this.status = (e as Error).message
       // A reply that never started is not worth an empty row.
