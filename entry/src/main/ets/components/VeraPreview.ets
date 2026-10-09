@@ -22,7 +22,7 @@ import { catalogKinds } from '../vera/VeraUiCatalog'
 import { iconPath, ICON_STROKE, ICON_VIEWPORT, ICON_ORIGIN } from '../vera/VeraIcons'
 import { ResolvedTheme, resolveTheme, containerFill, toneFill, toneEdge, toneInk,
   textSize, textWeight, textInk, buttonFill, buttonInk, pathFill, densityPad,
-  densityGap, spacerSize } from '../vera/VeraTheme'
+  densityGap, spacerSize, readableInk } from '../vera/VeraTheme'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { LiveNode, toLive, reconcile } from './VeraLiveTree'
@@ -191,7 +191,7 @@ export struct VeraPreview {
   private static RENDERED: string[] = ['column', 'scroll', 'row', 'card', 'text',
     'button', 'cell', 'spacer', 'path', 'image', 'field', 'toggle', 'checkbox',
     'slider', 'select', 'divider', 'progress', 'ticker', 'grid', 'listitem', 'canvas',
-    'apptheme', 'header', 'section', 'sectionheader', 'listgroup', 'banner',
+    'apptheme', 'hero', 'adaptivecolumns', 'header', 'section', 'sectionheader', 'listgroup', 'banner',
     'emptystate', 'stat', 'metricgroup',
     'inttext', 'intstat', 'intfield', 'timefield', 'intlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
@@ -486,8 +486,8 @@ export struct VeraPreview {
    *
    * A program that does not use ui.AppTheme -- which is every program written
    * before it existed, and both benchmark artifacts -- resolves to 'clean',
-   * whose values are the ones the renderer used when they were hardcoded. So
-   * those programs draw exactly what they always drew.
+   * so existing projects receive the refreshed typography and palette too.
+   * Their source, bytecode, handlers and saved state keep the same contracts.
    */
   private reconcileTheme(root: VeraUiNode | null): void {
     let preset = 'clean'
@@ -949,18 +949,35 @@ export struct VeraPreview {
     return d
   }
 
-  /**
-   * The typeface, or undefined to leave the system's alone.
-   *
-   * Passed on every piece of text rather than only on the headings: a screen
-   * where the title is serif and the list rows are not does not read as a
-   * choice, it reads as a mistake. undefined rather than a default family name
-   * so the five presets that do not ask for a typeface get exactly the
-   * rendering they had before there was such a thing as asking.
-   */
-  private textFamily(): string | undefined {
-    let f = this.t().fontFamily
+  /** Semantic roles use system fonts unless the theme names a generic family. */
+  private textFamily(style: string = 'body'): string | undefined {
+    let t = this.t()
+    let f = style === 'metric' ? t.metricFontFamily :
+      (style === 'display' || style === 'title' || style === 'heading') ? t.headingFontFamily : t.fontFamily
     return f.length > 0 ? f : undefined
+  }
+
+  private renderTextSize(style: string): number {
+    let size = textSize(this.t(), style)
+    return this.embedded && (style === 'display' || style === 'metric') ? Math.min(32, size) : size
+  }
+
+  /** Each group measures its own available width, including inside another group. */
+  private adaptiveColumnsCount(node: LiveNode): number {
+    let minimum = node.minimum <= 0 ? 240 : Math.max(160, node.minimum)
+    let gap = densityGap(this.t(), node.style)
+    return node.layoutWidth > 0 && node.layoutWidth - gap >= minimum * 2 ? 2 : 1
+  }
+
+  private adaptiveChildWidth(node: LiveNode): number | string {
+    if (this.adaptiveColumnsCount(node) === 1) { return '100%' }
+    return (node.layoutWidth - densityGap(this.t(), node.style)) / 2
+  }
+
+  /** An enclosing composition already supplies its horizontal inset. */
+  private compositionOwnsInset(parentKind: string): boolean {
+    return parentKind === 'hero' || parentKind === 'adaptivecolumns' || parentKind === 'section' ||
+      parentKind === 'card' || parentKind === 'column' || parentKind === 'scroll'
   }
 
   /** Minutes since midnight as HH:MM, which is what TimeField holds. */
@@ -1220,6 +1237,7 @@ export struct VeraPreview {
         this.renderChildren(node)
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
       .backgroundColor(this.t().background)
     } else if (node.kind === 'scroll') {
       // Rendered as a plain Column until now, so a program asking for a
@@ -1293,8 +1311,8 @@ export struct VeraPreview {
       .borderRadius(this.t().radiusCard)
     } else if (node.kind === 'text') {
       Text(node.text)
-        .fontSize(textSize(this.t(), node.style))
-        .fontFamily(this.textFamily())
+        .fontSize(this.renderTextSize(node.style))
+        .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))
         .fontColor(textInk(this.t(), node.style))
         .letterSpacing(node.style === 'eyebrow' ? this.t().eyebrowSpacing : 0)
@@ -1306,6 +1324,75 @@ export struct VeraPreview {
         .constraintSize({ maxWidth: '100%' })
         .flexShrink(1)
         .padding({ top: 2, bottom: 2 })
+    } else if (node.kind === 'hero') {
+      Column({ space: this.t().gapBase }) {
+        if (node.label.length > 0) {
+          Text(node.label)
+            .fontSize(this.t().sizeCaption)
+            .fontFamily(this.textFamily())
+            .fontWeight(this.t().weightHeading)
+            .fontColor(this.t().inkMuted)
+            .letterSpacing(this.t().eyebrowSpacing)
+            .width('100%')
+        }
+        if (node.text.length > 0) {
+          Text(node.text)
+            .fontSize(this.renderTextSize('display'))
+            .fontFamily(this.textFamily('display'))
+            .fontWeight(this.t().weightDisplay)
+            .fontColor(this.t().ink)
+            .width('100%')
+        }
+        if (node.value.length > 0) {
+          Text(node.value)
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft)
+            .width('100%')
+        }
+        this.renderChildren(node)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({
+        left: node.style === 'accent' ? this.t().padCard :
+          this.compositionOwnsInset(parentKind) ? 0 : this.t().padBase,
+        right: node.style === 'accent' ? this.t().padCard :
+          this.compositionOwnsInset(parentKind) ? 0 : this.t().padBase,
+        top: node.style === 'accent' ? this.t().padCard : this.t().padLoose,
+        bottom: node.style === 'accent' ? this.t().padCard : 0
+      })
+      .backgroundColor(node.style === 'accent' ? this.t().primaryFill : '#00000000')
+      .borderRadius(node.style === 'accent' ? this.t().radiusCard : 0)
+      .margin({ bottom: this.t().gapSection })
+    } else if (node.kind === 'adaptivecolumns') {
+      Column() {
+        Flex({
+          wrap: FlexWrap.Wrap,
+          justifyContent: FlexAlign.Start,
+          alignItems: ItemAlign.Start,
+          space: { main: LengthMetrics.vp(densityGap(this.t(), node.style)),
+                   cross: LengthMetrics.vp(densityGap(this.t(), node.style)) }
+        }) {
+          ForEach(node.children, (child: LiveNode) => {
+            Column() {
+              this.renderNode(child, 'adaptivecolumns')
+            }
+            .width(this.adaptiveChildWidth(node))
+            .alignItems(HorizontalAlign.Start)
+          }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+        }
+        .width('100%')
+        .onAreaChange((_old: Area, now: Area) => {
+          let width = now.width as number
+          if (width >= 0 && Math.abs(width - node.layoutWidth) >= 1) { node.layoutWidth = width }
+        })
+      }
+      .width('100%')
+      .padding({
+        left: this.compositionOwnsInset(parentKind) ? 0 : this.t().padBase,
+        right: this.compositionOwnsInset(parentKind) ? 0 : this.t().padBase
+      })
     } else if (node.kind === 'header') {
       // The app's own title block. A generated program used to open with a bare
       // ui.Text and nothing to distinguish it from the first line of content.
@@ -1325,8 +1412,8 @@ export struct VeraPreview {
             this.drawIcon(node.icon, this.t().sizeTitle, this.t().primaryInk)
           }
           Text(node.text)
-            .fontSize(this.t().sizeDisplay)
-            .fontFamily(this.textFamily())
+            .fontSize(this.renderTextSize('display'))
+            .fontFamily(this.textFamily('display'))
             .fontWeight(this.t().weightDisplay)
             .fontColor(this.t().ink)
             .layoutWeight(1)
@@ -1351,8 +1438,8 @@ export struct VeraPreview {
       Column({ space: this.t().gapTight }) {
         if (node.text.length > 0) {
           Text(node.text)
-            .fontSize(this.t().sizeHeading)
-            .fontFamily(this.textFamily())
+            .fontSize(this.renderTextSize('heading'))
+            .fontFamily(this.textFamily('heading'))
             .fontWeight(this.t().weightHeading)
             .fontColor(node.style === 'warning' ? this.t().warningInk :
               node.style === 'supporting' ? this.t().inkSoft : this.t().ink)
@@ -1370,7 +1457,8 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .padding({
-        left: this.sectionPadX(node.style), right: this.sectionPadX(node.style),
+        left: !this.sectionFills(node.style) && this.compositionOwnsInset(parentKind) ? 0 : this.sectionPadX(node.style),
+        right: !this.sectionFills(node.style) && this.compositionOwnsInset(parentKind) ? 0 : this.sectionPadX(node.style),
         top: this.sectionPadY(node.style), bottom: this.sectionPadY(node.style)
       })
       .backgroundColor(this.sectionFill(node.style))
@@ -1382,10 +1470,10 @@ export struct VeraPreview {
       Column({ space: 2 }) {
         Row() {
           Text(node.text)
-            .fontSize(this.t().sizeHeading)
-            .fontFamily(this.textFamily())
+            .fontSize(this.renderTextSize('heading'))
+            .fontFamily(this.textFamily('heading'))
             .fontWeight(this.t().weightHeading)
-            .fontColor(node.style === 'accent' ? this.t().primary :
+            .fontColor(node.style === 'accent' ? this.t().primaryInk :
               node.style === 'muted' ? this.t().inkMuted : this.t().ink)
             .layoutWeight(1)
           if (node.value.length > 0) {
@@ -1482,11 +1570,11 @@ export struct VeraPreview {
         if (node.value.length > 0) {
           Button(node.value)
             .height(this.t().chipHeight)
-            .fontSize(this.t().sizeCaption + 1)
+            .fontSize(this.t().sizeBody)
             .fontFamily(this.textFamily())
             .type(ButtonType.Capsule)
             .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
-            .fontColor(this.t().onPrimary)
+            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().primary)))
             .onClick(() => {
               if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
             })
@@ -1510,8 +1598,8 @@ export struct VeraPreview {
           this.drawIcon(node.icon, this.t().sizeDisplay, this.t().inkMuted)
         }
         Text(node.text)
-          .fontSize(this.t().sizeHeading)
-          .fontFamily(this.textFamily())
+          .fontSize(this.renderTextSize('heading'))
+          .fontFamily(this.textFamily('heading'))
           .fontWeight(this.t().weightHeading)
           .fontColor(node.style === 'muted' ? this.t().inkMuted : this.t().ink)
           .textAlign(TextAlign.Center)
@@ -1561,8 +1649,8 @@ export struct VeraPreview {
         .width('100%')
         .alignItems(VerticalAlign.Center)
         Text(node.text)
-          .fontSize(this.t().sizeMetric)
-          .fontFamily(this.textFamily())
+          .fontSize(this.renderTextSize('metric'))
+          .fontFamily(this.textFamily('metric'))
           .fontWeight(this.t().weightMetric)
           .fontColor(toneInk(this.t(), node.style, this.t().ink))
           .width('100%')
@@ -1599,8 +1687,8 @@ export struct VeraPreview {
     } else if (node.kind === 'inttext') {
       // ui.Text's twin for a number the program holds as a number.
       Text(this.formatInt(node))
-        .fontSize(textSize(this.t(), node.style))
-        .fontFamily(this.textFamily())
+        .fontSize(this.renderTextSize(node.style))
+        .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))
         .fontColor(textInk(this.t(), node.style))
         .width(parentKind === 'row' ? undefined : '100%')
@@ -1609,8 +1697,8 @@ export struct VeraPreview {
         .padding({ top: 2, bottom: 2 })
     } else if (node.kind === 'clocktext') {
       Text(node.prefix + this.formatMinutes(node.intValue) + node.suffix)
-        .fontSize(textSize(this.t(), node.style))
-        .fontFamily(this.textFamily())
+        .fontSize(this.renderTextSize(node.style))
+        .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))
         .fontColor(textInk(this.t(), node.style))
         .width(parentKind === 'row' ? undefined : '100%')
@@ -1635,8 +1723,8 @@ export struct VeraPreview {
         .width('100%')
         .alignItems(VerticalAlign.Center)
         Text(this.formatInt(node))
-          .fontSize(this.t().sizeMetric)
-          .fontFamily(this.textFamily())
+          .fontSize(this.renderTextSize('metric'))
+          .fontFamily(this.textFamily('metric'))
           .fontWeight(this.t().weightMetric)
           .fontColor(toneInk(this.t(), node.style, this.t().ink))
           .width('100%')
@@ -1656,10 +1744,12 @@ export struct VeraPreview {
       // and there is no way to turn typed text into one.
       Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
         }
         Row({ space: this.t().gapBase }) {
           Button('-')
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
             .width(this.t().controlHeight)
             .height(this.t().controlHeight)
             .type(ButtonType.Circle)
@@ -1672,13 +1762,15 @@ export struct VeraPreview {
               if (next >= node.minimum) { this.handleAction(node.action, next) }
             })
           Text(this.formatInt(node))
-            .fontSize(this.t().sizeHeading)
-            .fontFamily(this.textFamily())
+            .fontSize(this.renderTextSize('heading'))
+            .fontFamily(this.textFamily('metric'))
             .fontWeight(this.t().weightHeading)
             .fontColor(this.t().ink)
             .textAlign(TextAlign.Center)
             .layoutWeight(1)
           Button('+')
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
             .width(this.t().controlHeight)
             .height(this.t().controlHeight)
             .type(ButtonType.Circle)
@@ -1698,7 +1790,8 @@ export struct VeraPreview {
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'timefield') {
       Row({ space: this.t().gapBase }) {
-        Text(node.label).fontSize(this.t().sizeBody).layoutWeight(1)
+        Text(node.label).fontSize(this.t().sizeBody).fontFamily(this.textFamily()).layoutWeight(1)
+            .fontColor(this.t().ink)
         Button(this.formatMinutes(node.intValue))
           .height(this.t().chipHeight)
           .fontSize(this.t().sizeBody)
@@ -1732,9 +1825,10 @@ export struct VeraPreview {
             toneInk(this.t(), node.style, this.t().inkSoft))
         }
         Column({ space: 2 }) {
-          Text(node.text).fontSize(this.t().sizeBody + 1).width('100%')
+          Text(node.text).fontSize(this.t().sizeBody + 1).fontFamily(this.textFamily()).width('100%')
+            .fontColor(this.t().ink)
           if (node.label.length > 0) {
-            Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkMuted).width('100%')
+            Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkMuted).width('100%')
           }
         }
         .layoutWeight(1)
@@ -2070,7 +2164,7 @@ export struct VeraPreview {
           .height(this.t().sizeHeading)
           .color(toneInk(this.t(), node.style, this.t().primary))
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft)
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft)
         }
       }
       .alignItems(VerticalAlign.Center)
@@ -2083,16 +2177,16 @@ export struct VeraPreview {
         Text(node.text)
           .fontSize(this.t().sizeBody)
           .fontFamily(this.textFamily())
-          .fontColor(toneInk(this.t(), node.style, this.t().onPrimary))
+          .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
           .layoutWeight(1)
         if (node.value.length > 0) {
           Button(node.value)
             .height(this.t().chipHeight)
-            .fontSize(this.t().sizeCaption + 1)
+            .fontSize(this.t().sizeBody)
             .fontFamily(this.textFamily())
             .type(ButtonType.Capsule)
             .backgroundColor('#00000000')
-            .fontColor(toneInk(this.t(), node.style, this.t().onPrimary))
+            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
             .onClick(() => {
               if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
             })
@@ -2121,7 +2215,7 @@ export struct VeraPreview {
     } else if (node.kind === 'cell') {
       Column() {
         // Two steps below the title size: a board glyph, not a heading.
-        Text(node.text).fontSize(this.t().sizeTitle - 2).fontWeight(FontWeight.Bold)
+        Text(node.text).fontSize(this.t().sizeTitle - 2).fontFamily(this.textFamily()).fontWeight(FontWeight.Bold)
           .fontColor(node.enabled ? this.t().inkStrong : this.t().inkDisabled)
       }
       .layoutWeight(parentKind === 'grid' ? 0 : 1)
@@ -2151,12 +2245,17 @@ export struct VeraPreview {
     } else if (node.kind === 'field') {
       Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
         }
         // Commits on submit rather than on every keystroke. The tree no longer
         // rebuilds under the caret, but echoing each character back through the
         // VM and into .text() still fights whoever is typing.
         TextInput({ placeholder: node.label, text: node.value })
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .fontColor(this.t().ink)
+          .placeholderColor(this.t().inkMuted)
+          .backgroundColor(this.t().surface)
           .height(node.style === 'multiline' ? this.t().controlHeight * 2 : this.t().controlHeight)
           .width('100%')
           .enabled(node.enabled)
@@ -2166,14 +2265,15 @@ export struct VeraPreview {
             if (node.action.length > 0) { this.handleStringAction(node.action, v) }
           })
         if (this.textFieldIssue(node).length > 0) {
-          Text(this.textFieldIssue(node)).fontSize(this.t().sizeCaption).fontColor(this.t().danger)
+          Text(this.textFieldIssue(node)).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().dangerInk)
         }
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'toggle' || node.kind === 'checkbox') {
       Row({ space: this.t().gapBase + 2 }) {
-        Text(node.label).fontSize(this.t().sizeBody).layoutWeight(1)
+        Text(node.label).fontSize(this.t().sizeBody).fontFamily(this.textFamily()).layoutWeight(1)
+            .fontColor(this.t().ink)
         if (node.kind === 'toggle') {
           Toggle({ type: ToggleType.Switch, isOn: node.checked })
             .enabled(node.enabled)
@@ -2196,8 +2296,8 @@ export struct VeraPreview {
     } else if (node.kind === 'slider') {
       Column({ space: 2 }) {
         Row() {
-          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).layoutWeight(1)
-          Text(node.eventValue.toString()).fontSize(this.t().sizeCaption).fontColor(this.t().inkStrong)
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).layoutWeight(1)
+          Text(node.eventValue.toString()).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkStrong)
         }.width('100%')
         Slider({
           value: node.eventValue,
@@ -2224,7 +2324,7 @@ export struct VeraPreview {
     } else if (node.kind === 'select') {
       Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
         }
         // A single trigger showing the current choice, with the rest of the
         // options in a system overlay menu rather than always on screen. The
@@ -2280,15 +2380,16 @@ export struct VeraPreview {
             toneInk(this.t(), node.style, this.t().inkSoft))
         }
         Column({ space: 2 }) {
-          Text(node.text).fontSize(this.t().sizeBody + 1).width('100%')
+          Text(node.text).fontSize(this.t().sizeBody + 1).fontFamily(this.textFamily()).width('100%')
+            .fontColor(this.t().ink)
           if (node.label.length > 0) {
-            Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkMuted).width('100%')
+            Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkMuted).width('100%')
           }
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
         if (node.value.length > 0) {
-          Text(node.value).fontSize(this.t().sizeBody - 1).fontColor(this.t().inkSoft)
+          Text(node.value).fontSize(this.t().sizeBody - 1).fontFamily(this.textFamily()).fontColor(this.t().inkSoft)
         }
       }
       .width('100%')
@@ -2326,7 +2427,7 @@ export struct VeraPreview {
     } else if (node.kind === 'progress') {
       Column({ space: 3 }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
         }
         Progress({
           value: node.eventValue,

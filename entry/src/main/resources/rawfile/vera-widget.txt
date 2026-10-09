@@ -7,6 +7,8 @@ Widget state is transient. Do not promise that values survive a chat reload or a
 
 Build one compact interaction that serves the supplied description:
 - Use exactly one ui.AppTheme and at most two ui.Section children.
+- Do not use full-screen ui.Hero or ui.AdaptiveColumns inside the chat bubble.
+- Preserve explicit visual preferences within a compact, focused interaction.
 - Omit ui.Header and title blocks. The assistant sentence supplies the title.
 - Keep the widget within about 25 nodes and four visible list rows, without scrolling.
 - Put the result first and its controls directly below it.

@@ -1,0 +1,5 @@
+import * as ui from "std/ui"
+@jsonable class AppState { count: int; }
+function init(): AppState { return {count: 7}; }
+function change(state: AppState, value: int): AppState { return {count: state.count + value}; }
+function view(state: AppState): ui.View { return ui.AppTheme("clean", "", [ui.Hero("plain", "EVERYDAY TOOL", "Count what matters", "One tap at a time", [ui.IntText("metric", state.count, "", "", 1), ui.ActionBar("default", [ui.Button("secondary", "Subtract", "change", -1, true), ui.Button("primary", "Add", "change", 1, true)])])]); }

@@ -1,92 +1,98 @@
 # vera-harness
 
-Runs the real `std/ui` compiler, VM and decoder under plain Node — no device,
-no build, no install. See `CLAUDE.md`'s "Checking things without a device"
-for why this exists: chasing a layout bug through minute-long on-device
-generations does not converge.
+The harness runs the current VERA-L compiler, VM, UI host, and decoder under Node.
+It requires no device, native build, or installation.
+`source-loader.js` transpiles `entry/src/main/ets` directly in each process.
+It uses the existing `src/VeraSdkIndex.ts` stub to avoid native SDK dependencies.
+The harness does not read the historical `out` JavaScript copies.
 
-## What it is
+Use an available TypeScript installation with Node module resolution.
+Alternatively, set `VERA_TYPESCRIPT_PATH` to the TypeScript module entry file before these commands.
+No dependency installation is required when that module is available.
 
-`src/*.ts` are `VeraCompiler.ets` / `VeraInterpreter.ets` / `VeraUiCatalog.ets`
-/ `VeraIcons.ets` / `VeraTheme.ets` / `VeraUi.ets`, copied **unmodified** from
-the ArkTS compile cache — not hand-ported. `VeraSdkIndex.ts` is the one
-hand-written stub: `VeraCompiler.ets` imports it only to check SDK target
-names, which `std/ui` programs never do, so a two-line stand-in is enough and
-avoids pulling in `LlamaEngine`/`VeraIntentRegistry` and their native/OS
-dependencies.
-
-`VeraPreview.ets` is **not** copied here and cannot be: it is
-`@Component`/ArkUI and only runs on device or in the ArkTS preview. That is
-what `proof-sheet.js` is for — a separate, deliberately approximate renderer
-that draws the decoded tree as SVG so a layout change is still something you
-can look at.
-
-## Refreshing `src/*.ts` after a change
-
-Edit the real `.ets` files under `entry/src/main/ets/vera/` as usual, then:
+Run these commands from the repository root:
 
 ```bash
-cd /home/stanislav/work/vera/vera-probe-dynamic
-source ./tool-paths.sh
-"$(vera_kit_bin arkui-hvigor)" --directory /tmp/ --json "$(pwd)"   # compile only, no sign/install
-
-CACHE=entry/build/default/cache/default/default@CompileArkTS/esmodule/release/entry/src/main/ets/vera
-for f in VeraInterpreter VeraUiCatalog VeraIcons VeraTheme VeraUi VeraCompiler; do
-  sed -E 's#"@normalized:N&&&entry/src/main/ets/vera/([A-Za-z0-9_]+)&"#"./\1"#g' \
-    "$CACHE/$f.ts" > tools/vera-harness/src/$f.ts
-done
-
-cd tools/vera-harness && /usr/bin/tsc -p tsconfig.json   # -> out/*.js
+node tools/vera-harness/run.js tools/vera-harness/examples/visual-counter.vera > /tmp/vera-counter.json
+node tools/vera-harness/proof-sheet.js --width=360 --preset=clean --label=counter < /tmp/vera-counter.json > /tmp/vera-counter.svg
 ```
 
-Only resync the files that actually changed if you want to save a few
-seconds; resyncing all six is always correct.
-
-## Running it
+The optional arguments for `run.js` are the entry function and serialized state:
 
 ```bash
-node run.js <path-to.vera> [entryFunction=view] [stateJson]
+node tools/vera-harness/run.js path/to/program.vera view '["o","AppState",[["count",["i",7]]]]'
 ```
 
-With no `stateJson` and `entryFunction=view` (the default), `init()` runs
-first and its result becomes the state argument — the common case. Prints the
-decoded `VeraUiNode` tree as JSON. A compile error prints its diagnostics
-(code, line, column, message) and exits 1 rather than throwing.
+Without supplied state, `run.js` calls `init()` before `view()`.
+The state argument uses the VM tagged-tuple format, not a plain JSON object.
+Compiler failures print diagnostics and exit with status 1.
 
-`stateJson` is the VM's own tagged-tuple save format (`["s", "x"]`,
-`["o", "AppState", [["field", value]]]`, ...), not plain JSON — in practice
-it's simpler to write a throwaway `.vera` file whose `init()` returns the
-state you want to test, the way `examples/backhandler-detail.vera` does.
+`proof-sheet.js` accepts these options:
 
-For the SVG proof sheet:
+| Option | Behavior |
+| --- | --- |
+| `--width=320`, `--width=360`, `--width=600` | Set the approximate viewport width. Other positive widths also work. |
+| `--preset=clean` | Override the fixture theme and seed. Supports all six presets. |
+| `--dark=true` | Resolve the dark palette. |
+| `--embedded=true` | Cap display and metric sizes at 32 for widget proofs. |
+| `--label=counter` | Set the SVG title and metadata label. |
+| `--select-wrap=false` | Reproduce the previous unwrapped Select layout. |
+
+Without `--preset`, the proof uses the root `AppTheme` preset and seed.
+The proof uses actual resolved colors, semantic type sizes, generic font families, spacing, and radii.
+It supports Hero and ordered adaptive columns with the native inset and gap rules.
+It wraps text at its full type size, including inside narrow containers and table cells.
+It formats integer prefixes and suffixes and hides Ticker nodes.
+`When` is already resolved by the real UI host before the proof receives the tree.
+Unsupported kinds appear as labeled boxes.
+
+Text width is an estimate from character counts and rough character classes.
+The proof does not use ArkUI measurement or actual font metrics.
+Generic fonts can differ between hosts and devices.
+Native buttons have a fixed control height.
+The proof increases button height when an estimated label wraps, so the complete label remains visible.
+This height difference is a proof approximation.
+These SVGs help inspect hierarchy, wrapping, grouping, and approximate shape.
+They do not verify exact device layout, animation, keyboard behavior, or full accessibility conformance.
+No live model generates the proof fixtures.
+
+For a repeatable theme and width comparison:
 
 ```bash
-node run.js x.vera | node proof-sheet.js [--select-wrap=false] [--preset=clean] > out.svg
-convert out.svg out.png   # ImageMagick, for looking at it with the Read tool
+node tools/vera-harness/run.js tools/vera-harness/examples/visual-expense.vera > /tmp/vera-expense.json
+node tools/vera-harness/proof-sheet.js --width=320 --preset=technical < /tmp/vera-expense.json > /tmp/vera-expense-320.svg
+node tools/vera-harness/proof-sheet.js --width=600 --preset=technical --dark=true < /tmp/vera-expense.json > /tmp/vera-expense-600-dark.svg
+node tools/vera-harness/proof-sheet.js --width=360 --preset=editorial --embedded=true < /tmp/vera-counter.json > /tmp/vera-widget.svg
+node tools/vera-harness/visual-check.js /tmp/vera-visual-verification.json
 ```
 
-`proof-sheet.js` is approximate on purpose: estimated text width, no real
-ArkUI text metrics, no animation. It is for catching wrap/overflow/shape bugs
-by eye, not for pixel-matching the device.
+For baseline proofs, set `VERA_SOURCE_ROOT` to a saved pre-change `entry/src/main/ets` directory.
+The loader then reads that snapshot instead of current sources.
+Use a compatible baseline fixture or a previously saved decoded tree.
+When semantic family fields are absent, the proof retains the previous all-role `fontFamily` and uncapped embedded type sizes.
+Each new process loads its selected sources again, so a previous build cannot supply stale output.
 
-## What this can't verify, ever, without a device
+`examples/*.vera` also contain focused Select, feedback, Sparkline, TextField, and BackHandler workflows.
+`compatibility/*.json` stores pre-change bytecode and saved state for the five visual workflows.
+`visual-check.js` records the tested revision, command, decoded trees, and expected-versus-observed checks in JSON.
+Native validation still requires the toolchain described in `CLAUDE.md`.
 
-Exact ArkUI measurement and text wrapping, animation playback (`ui.Spinner`'s
-spin, `ui.Path`'s rotation), the on-screen keyboard a `TextField`'s
-`keyboardType` actually offers, real dark-mode device colors, and the system
-back gesture (`ui.BackHandler`). Each of those needs `build-hap.sh` →
-`sign-system.sh` → `hdc install` and a look at the real screen.
+The prompt workflow harness executes application request and repair methods with mocked HTTP responses:
 
-## Fixtures
+```bash
+node tools/vera-harness/prompt-check.js . /tmp/vera-prompt-verification.json
+```
 
-`examples/*.vera` are small test programs, one concern each (`select-demo`
-for the overflow fix, `feedback-demo` for Skeleton/Spinner/Snackbar,
-`sparkline-demo`, `textfield-demo`/`textfield-old` for validation and the
-old-bytecode trailing-optional fallback, `backhandler-demo`/
-`backhandler-detail` for the two states of the back-handler tree). `proofs/`
-holds the generated `.svg`/`.png` pairs for the ones worth a picture.
+For the full labeled proof matrix, use an available `sharp` module and a baseline source snapshot:
 
-`validation-check.js` mirrors `VeraPreview.ets`'s `textFieldIssue()` logic
-exactly and runs it against a table of cases — written once, used identically
-on the host and in the real render branch, so the validation rules are
-confirmed before they ever touch ArkUI.
+```bash
+VISUAL_BASELINE_DIR=$(mktemp -d)
+git archive df66e50276ea66ffa7f29a527e5f847491ea99ff entry/src/main/ets | tar -x -C "$VISUAL_BASELINE_DIR"
+node tools/vera-harness/visual-proofs.js /tmp/vera-visual-proofs "$VISUAL_BASELINE_DIR/entry/src/main/ets"
+```
+
+Set `NODE_PATH` when an existing `sharp` installation requires an explicit module path.
+The matrix includes 96 SVG/PNG proofs, decoded trees, source hashes, and 16 labeled contact sheets.
+The baseline uses saved pre-change bytecode for full-screen fixtures and the original theme source.
+The candidate uses current fixture sources. Compact counter widgets use the same source in both phases.
+The matrix changes composition and rendering together, so it does not isolate their individual effects.

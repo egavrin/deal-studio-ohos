@@ -1,0 +1,5 @@
+import * as ui from "std/ui"
+@jsonable class AppState { days: int; }
+function init(): AppState { return {days: 3}; }
+function complete(state: AppState, value: int): AppState { return {days: state.days + 1}; }
+function view(state: AppState): ui.View { return ui.AppTheme("playful", "", [ui.Hero("accent", "LITTLE WINS", "A little better each day", "One small step counts", [ui.IntText("metric", state.days, "", " days", 1)]), ui.Section("content", "Today is yours", "", [ui.Text("body", "Take a short walk and notice something new."), ui.ActionBar("default", [ui.Button("primary", "I did it", "complete", 0, true)])])]); }

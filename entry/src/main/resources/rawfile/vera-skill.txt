@@ -34,8 +34,10 @@ Add history only when the request needs history. Widget mode can override this p
 
 When refining an existing program, return the complete replacement program.
 Apply the requested change and preserve unrelated behavior.
+Preserve the existing visual direction unless the user requests a redesign.
 Preserve compatible state field names and types so saved state remains usable.
 When diagnostics accompany failed source, repair that source against those diagnostics.
+Preserve the visual direction during repair. Change design only when the diagnosed error requires it.
 If output was truncated, return a shorter complete program, not a continuation.
 Keep required behavior and remove optional decoration or repetition first.
 
@@ -65,14 +67,25 @@ VISUAL COMPOSITION
 Use only components, signatures, styles, and icons from the supplied catalogue
 or an available UI discovery tool. Do not invent constructors or arguments.
 Wrap the tree in exactly one ui.AppTheme.
-Choose clean, soft, expressive, editorial, technical, or playful to match the request.
+Before writing source, choose the theme, focal element, hierarchy, density, and grouping.
+Make these decisions within this call. Output source only, without a design plan.
+Treat these associations as preferences: clean for utilities, soft for routines,
+expressive for creative tools, editorial for reading, technical for dense data,
+and playful for games. Explicit visual direction takes precedence.
 For a full-screen app:
-- Start with one ui.Header and group related content in ui.Section.
+- Lead with a title, result, visual, or collection that serves the request.
+- Give the screen a clear focal area and a readable hierarchy.
+- Use ui.Hero when an eyebrow, title, supporting text, and related content need one focal area.
+- Use ui.AdaptiveColumns for independent groups that can share a wide container.
+- Use cards, icons, accents, or a centered layout when they support the content.
+  None of these is required for every screen.
+- Choose density and grouping for the task. Keep body text readable and controls usable.
+- Use ui.Section to group related content.
 - Use theme spacing instead of extra ui.Spacer nodes.
 - Use ui.MetricGroup when several requested results need comparison.
 - Use ui.ListGroup for related rows and ui.ListItem for an individual row.
 - Use ui.Card with ui.SectionHeader and ui.KeyValueGroup for an item with several facts.
-- Use ui.SectionHeader for a heading within a section. Do not nest cards.
+- Use ui.SectionHeader for a heading within a section. Prefer clear grouping over repeated surface frames.
 - Show a useful empty state when a requested collection is empty.
   Do not assume every collection must start empty.
 - Group related buttons in ui.ActionBar with one primary action.

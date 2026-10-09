@@ -23,6 +23,8 @@ import { VeraUiNode } from '../vera/VeraUi'
 
 @ObservedV2
 export class LiveNode {
+  // Renderer measurement is live state, never program or saved state.
+  @Trace layoutWidth: number = 0
   @Trace kind: string = ''
   @Trace style: string = ''
   @Trace text: string = ''
@@ -132,7 +134,10 @@ export function toLive(node: VeraUiNode): LiveNode {
  * show a journal -- then disagrees with its own state on every row.
  */
 export function reconcile(live: LiveNode, next: VeraUiNode): void {
-  if (live.kind !== next.kind) { live.kind = next.kind }
+  if (live.kind !== next.kind) {
+    live.kind = next.kind
+    live.layoutWidth = 0
+  }
   if (live.style !== next.style) { live.style = next.style }
   if (live.text !== next.text) { live.text = next.text }
   if (live.source !== next.source) { live.source = next.source }

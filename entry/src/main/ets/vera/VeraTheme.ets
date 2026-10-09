@@ -1,60 +1,30 @@
-/**
- * The one description of how a style name becomes a colour, a size or a gap.
- *
- * Until now every one of those was a hex literal inside a ternary in
- * VeraPreview.renderNode -- '#F3F6FA' appeared in four branches, '#007DFF' in
- * three, and the type scale existed only as the numbers 24/18/15/12/32 written
- * out wherever a Text was drawn. Two generated apps could not look different
- * from one another, because there was nothing to vary.
- *
- * A program now names a *preset* and that one word settles the whole screen:
- * palette, radii, rhythm and type together. That is deliberate. The axes are
- * not offered separately, because a model picking eight knobs independently
- * picks eight knobs that disagree; picking one character does not.
- *
- * Like VeraUiCatalog this module is pure data. It imports nothing -- not the
- * compiler, not ArkUI -- so weights are plain numbers (400/500/700, which
- * .fontWeight() accepts) rather than the FontWeight enum, and the renderer is
- * the only place that knows about ArkUI at all.
+/** Shared palette, typography, and geometry for generated interfaces.
+ * Presets define a coherent visual direction. Renderers consume these values.
+ * This module has no compiler or platform dependencies.
  */
 
 /** The six presets, in the order the prompt lists them. */
 export const PRESET_NAMES: string[] = [
   'clean', 'soft', 'expressive', 'editorial', 'technical', 'playful']
 
-/**
- * Every value the renderer can ask for, flat.
- *
- * The defaults are the values the renderer used before this module existed, to
- * the digit. That is what makes 'clean' -- and a program with no ui.AppTheme at
- * all, which resolves to 'clean' -- render exactly as it did, so this refactor
- * cannot be a visual regression and the benchmark artifacts are undisturbed.
- */
+/** Resolved semantic colors, type roles, and layout dimensions. */
 export class ResolvedTheme {
   preset: string = 'clean'
 
   // --- palette -------------------------------------------------------------
-  primary: string = '#007DFF'
+  primary: string = '#2563EB'
   onPrimary: string = '#FFFFFF'
   /** The primary's container: what an 'accent' surface is filled with. */
   primaryFill: string = '#EBF0FF'
-  /**
-   * The primary as *text or a rule*, rather than as a filled control.
-   *
-   * The two cannot be one colour after dark and each stay readable. A filled
-   * button wants a primary deep enough that white sits on it; accent text and
-   * an accent rail want one light enough to be seen against a near-black
-   * surface. By day a single colour does both, which is why success and warning
-   * have carried this same pair from the start and primary did not.
-   */
-  primaryInk: string = '#007DFF'
+  /** Accent text has separate contrast requirements from filled controls. */
+  primaryInk: string = '#2563EB'
   secondaryFill: string = '#E0E0E0'
   secondaryInk: string = '#333333'
 
   /** Behind the whole program. */
-  background: string = '#FFFFFF'
+  background: string = '#F8FAFC'
   /** A grouped area: card, surface column, image placeholder. */
-  surface: string = '#F3F6FA'
+  surface: string = '#FFFFFF'
   /** A row or cell sitting on top of a surface. */
   surfaceRaised: string = '#FFFFFF'
   surfaceDisabled: string = '#F5F5F5'
@@ -84,12 +54,12 @@ export class ResolvedTheme {
   pathMuted: string = '#B0BEC5'
 
   // --- type scale ----------------------------------------------------------
-  sizeDisplay: number = 30
+  sizeDisplay: number = 32
   sizeTitle: number = 24
-  sizeHeading: number = 18
-  sizeBody: number = 15
-  sizeCaption: number = 12
-  sizeMetric: number = 32
+  sizeHeading: number = 20
+  sizeBody: number = 16
+  sizeCaption: number = 13
+  sizeMetric: number = 40
   sizeEyebrow: number = 11
   weightDisplay: number = 700
   weightTitle: number = 700
@@ -98,17 +68,13 @@ export class ResolvedTheme {
   weightMetric: number = 700
   /** Applied to eyebrows only; 0 leaves the text alone. */
   eyebrowSpacing: number = 1
-  /**
-   * The typeface, where a preset wants one of its own.
-   *
-   * Empty means the system font, which is what five of the six use. Only the
-   * two presets whose whole character is the typeface ask for another, and they
-   * ask by generic family name so the device picks whatever it actually has.
-   */
+  /** Body text always uses the system font. Generic families need no download. */
   fontFamily: string = ''
+  headingFontFamily: string = ''
+  metricFontFamily: string = ''
 
   // --- geometry ------------------------------------------------------------
-  radiusCard: number = 14
+  radiusCard: number = 16
   radiusControl: number = 10
   radiusSmall: number = 8
   borderWidth: number = 1
@@ -116,7 +82,7 @@ export class ResolvedTheme {
   padTight: number = 6
   padBase: number = 10
   padLoose: number = 16
-  padCard: number = 14
+  padCard: number = 16
   padRow: number = 6
   padGrid: number = 4
   padListX: number = 14
@@ -126,7 +92,7 @@ export class ResolvedTheme {
   gapBase: number = 8
   gapLoose: number = 12
   /** How far one Section stands off the next. */
-  gapSection: number = 14
+  gapSection: number = 24
 
   spacerSmall: number = 8
   spacerBase: number = 18
@@ -147,10 +113,6 @@ export function makeTheme(preset: string): ResolvedTheme {
     // Warm neutrals, big radii, hardly any line work: the corners do the
     // separating that borders do elsewhere.
     t.preset = 'soft'
-    t.primary = '#4C6EF5'
-    t.primaryFill = '#E7EAFD'
-    t.background = '#FBF9F7'
-    t.surface = '#F4F0EC'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#EAE4DD'
     t.secondaryInk = '#4A4340'
@@ -164,27 +126,20 @@ export function makeTheme(preset: string): ResolvedTheme {
     t.successFill = '#E4F5E6'
     t.warningFill = '#FBF0DC'
     t.dangerFill = '#FBE7E4'
-    t.radiusCard = 20
     t.radiusControl = 16
     t.radiusSmall = 12
     t.padTight = 10
     t.padBase = 14
     t.padLoose = 20
-    t.padCard = 18
     t.padListX = 16
     t.padListY = 14
     t.gapBase = 10
     t.gapLoose = 16
-    t.gapSection = 18
     t.weightHeading = 600
   } else if (preset === 'expressive') {
     // Saturated, tinted throughout, and heavy at the top of the scale. The
     // background is not white, which is most of why it reads as another app.
     t.preset = 'expressive'
-    t.primary = '#6D28D9'
-    t.primaryFill = '#EDE4FD'
-    t.background = '#F6F2FC'
-    t.surface = '#EDE6F8'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#E2D8F2'
     t.secondaryInk = '#3B2A5C'
@@ -205,25 +160,14 @@ export function makeTheme(preset: string): ResolvedTheme {
     t.dangerInk = '#B91C1C'
     t.dangerFill = '#FBE0E0'
     t.pathDefault = '#3B2A5C'
-    t.sizeDisplay = 36
-    t.sizeTitle = 28
-    t.sizeMetric = 38
     t.weightHeading = 700
     t.weightBody = 500
-    t.radiusCard = 18
     t.radiusControl = 14
-    t.padCard = 16
-    t.gapSection = 18
   } else if (preset === 'editorial') {
-    // Hierarchy carried by size and rule rather than by fill: surfaces are the
-    // same colour as the page, and a hairline does the dividing.
+    // Editorial headings use a generic serif family and restrained borders.
     t.preset = 'editorial'
-    t.fontFamily = 'serif'
-    t.primary = '#1A1A1A'
+    t.headingFontFamily = 'serif'
     t.onPrimary = '#FFFFFF'
-    t.primaryFill = '#F0EEE9'
-    t.background = '#FDFCF9'
-    t.surface = '#FDFCF9'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#EDEAE3'
     t.secondaryInk = '#1A1A1A'
@@ -241,30 +185,17 @@ export function makeTheme(preset: string): ResolvedTheme {
     t.dangerInk = '#9B2226'
     t.dangerFill = '#F6E9E7'
     t.pathDefault = '#1A1A1A'
-    t.sizeDisplay = 38
-    t.sizeTitle = 30
-    t.sizeHeading = 20
-    t.sizeBody = 16
-    t.sizeMetric = 34
     t.weightTitle = 700
     t.weightHeading = 600
     t.weightMetric = 500
     t.eyebrowSpacing = 2
-    t.radiusCard = 4
     t.radiusControl = 4
     t.radiusSmall = 2
     t.padLoose = 20
-    t.padCard = 16
-    t.gapSection = 22
   } else if (preset === 'technical') {
-    // Dense and outlined. Everything is a little smaller and a little tighter,
-    // and the borders are visible, because this is the one for reading numbers.
+    // Technical metrics use a generic monospace family and a compact rhythm.
     t.preset = 'technical'
-    t.fontFamily = 'monospace'
-    t.primary = '#0F766E'
-    t.primaryFill = '#DCF0EE'
-    t.background = '#FFFFFF'
-    t.surface = '#F4F6F7'
+    t.metricFontFamily = 'monospace'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#E3E8EA'
     t.secondaryInk = '#1F2A2E'
@@ -285,29 +216,20 @@ export function makeTheme(preset: string): ResolvedTheme {
     t.dangerInk = '#991B1B'
     t.dangerFill = '#F7E3E3'
     t.pathDefault = '#26313A'
-    t.sizeDisplay = 24
-    t.sizeTitle = 20
-    t.sizeHeading = 16
-    t.sizeBody = 14
-    t.sizeCaption = 11
-    t.sizeMetric = 26
     t.sizeEyebrow = 10
     t.weightTitle = 600
     t.weightHeading = 600
     t.weightMetric = 600
-    t.radiusCard = 6
     t.radiusControl = 6
     t.radiusSmall = 4
     t.padTight = 4
     t.padBase = 8
     t.padLoose = 12
-    t.padCard = 10
     t.padListX = 10
     t.padListY = 8
     t.gapTight = 3
     t.gapBase = 6
     t.gapLoose = 9
-    t.gapSection = 10
     t.spacerBase = 12
     t.spacerLarge = 22
     t.controlHeight = 40
@@ -315,10 +237,6 @@ export function makeTheme(preset: string): ResolvedTheme {
   } else if (preset === 'playful') {
     // Pills, high chroma, plenty of air.
     t.preset = 'playful'
-    t.primary = '#F0426B'
-    t.primaryFill = '#FFE3EA'
-    t.background = '#FFFCF5'
-    t.surface = '#FFF1E6'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#FFE6CC'
     t.secondaryInk = '#7A3E12'
@@ -339,25 +257,45 @@ export function makeTheme(preset: string): ResolvedTheme {
     t.dangerInk = '#C2185B'
     t.dangerFill = '#FFE3EA'
     t.pathDefault = '#432A33'
-    t.sizeDisplay = 34
-    t.sizeTitle = 26
-    t.sizeMetric = 36
     t.weightHeading = 700
     t.weightBody = 500
-    t.radiusCard = 22
     t.radiusControl = 22
     t.radiusSmall = 14
     t.padTight = 8
     t.padBase = 12
     t.padLoose = 20
-    t.padCard = 18
     t.gapBase = 10
     t.gapLoose = 16
-    t.gapSection = 20
     t.spacerBase = 20
   }
-  // By day the two are the same colour; applyDark is what parts them.
+  // The approved scale keeps body text readable in every preset.
+  t.sizeTitle = 24
+  t.sizeHeading = t.preset === 'technical' ? 18 : 20
+  t.sizeBody = t.preset === 'technical' ? 15 : 16
+  t.sizeCaption = 13
+  t.surface = '#FFFFFF'
+  if (t.preset === 'soft') {
+    t.background = '#FAF7F2'; t.primary = '#6D5BD0'
+    t.sizeDisplay = 32; t.sizeMetric = 40; t.gapSection = 24; t.padCard = 20; t.radiusCard = 24
+  } else if (t.preset === 'expressive') {
+    t.background = '#F7F3FF'; t.primary = '#7C3AED'
+    t.sizeDisplay = 36; t.sizeMetric = 44; t.gapSection = 28; t.padCard = 20; t.radiusCard = 20
+  } else if (t.preset === 'editorial') {
+    t.background = '#FAFAF7'; t.primary = '#27272A'
+    t.sizeDisplay = 38; t.sizeMetric = 42; t.gapSection = 28; t.padCard = 20; t.radiusCard = 4
+  } else if (t.preset === 'technical') {
+    t.background = '#F3F7F7'; t.primary = '#0F766E'
+    t.sizeDisplay = 30; t.sizeMetric = 36; t.gapSection = 20; t.padCard = 16; t.radiusCard = 8
+  } else if (t.preset === 'playful') {
+    t.background = '#FFF7F4'; t.primary = '#BE185D'
+    t.sizeDisplay = 36; t.sizeMetric = 44; t.gapSection = 28; t.padCard = 20; t.radiusCard = 24
+  } else {
+    t.background = '#F8FAFC'; t.primary = '#2563EB'
+    t.sizeDisplay = 32; t.sizeMetric = 40; t.gapSection = 24; t.padCard = 16; t.radiusCard = 16
+  }
+  t.primaryFill = blendHex(t.primary, t.background, 0.88)
   t.primaryInk = t.primary
+  t.onPrimary = readableInk(t.primary)
   return t
 }
 
@@ -393,15 +331,56 @@ export function blendHex(a: string, b: string, t: number): string {
     twoDigits(channel(a, 5) + (channel(b, 5) - channel(a, 5)) * t)
 }
 
-/**
- * White or near-black, whichever stays legible on the given fill. Perceived
- * brightness, not the plain average -- green reads far lighter than blue at the
- * same numeric value, and a plain average puts white text on a yellow button.
- */
+/** Convert an sRGB channel to linear light for text contrast. */
+function linearChannel(value: number): number {
+  let c = value / 255
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+}
+
+function relativeLuminance(hex: string): number {
+  return 0.2126 * linearChannel(channel(hex, 1)) +
+    0.7152 * linearChannel(channel(hex, 3)) + 0.0722 * linearChannel(channel(hex, 5))
+}
+
+export function contrastRatio(a: string, b: string): number {
+  let x = relativeLuminance(a)
+  let y = relativeLuminance(b)
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+
+/** Choose the foreground with the greater calculated contrast on this fill. */
 export function readableInk(fill: string): string {
   if (!isHexColor(fill)) { return '#FFFFFF' }
-  let lum = (channel(fill, 1) * 299 + channel(fill, 3) * 587 + channel(fill, 5) * 114) / 1000
-  return lum > 150 ? '#1A1A1A' : '#FFFFFF'
+  return contrastRatio(fill, '#000000') > contrastRatio(fill, '#FFFFFF') ? '#000000' : '#FFFFFF'
+}
+
+/** Move toward a neutral endpoint without replacing the color's hue. */
+function adjustedInk(ink: string, fills: string[], dark: boolean): string {
+  let endpoint = dark ? '#FFFFFF' : '#000000'
+  for (let step = 0; step <= 255; step++) {
+    let candidate = blendHex(ink, endpoint, step / 255)
+    let readable = true
+    for (let fill of fills) {
+      if (contrastRatio(candidate, fill) < 4.5) { readable = false; break }
+    }
+    if (readable) { return candidate }
+  }
+  return endpoint
+}
+
+function resolveTextContrast(t: ResolvedTheme, dark: boolean): void {
+  let fills: string[] = [t.background, t.surface, t.surfaceRaised, t.primaryFill,
+    t.secondaryFill, t.successFill, t.warningFill, t.dangerFill]
+  t.ink = adjustedInk(t.ink, fills, dark)
+  t.inkStrong = adjustedInk(t.inkStrong, fills, dark)
+  t.inkSoft = adjustedInk(t.inkSoft, fills, dark)
+  t.inkMuted = adjustedInk(t.inkMuted, fills, dark)
+  t.primaryInk = adjustedInk(t.primaryInk, fills, dark)
+  t.successInk = adjustedInk(t.successInk, fills, dark)
+  t.warningInk = adjustedInk(t.warningInk, fills, dark)
+  t.dangerInk = adjustedInk(t.dangerInk, fills, dark)
+  t.secondaryInk = adjustedInk(t.secondaryInk, fills, dark)
+  t.onPrimary = readableInk(t.primary)
 }
 
 /** How bright a colour reads, weighted the way an eye weights it. */
@@ -504,6 +483,7 @@ export function resolveTheme(preset: string, primaryHex: string, dark: boolean):
   // After the seed, so a program's own colour is carried into the dark palette
   // and lightened with it rather than being overwritten by the preset's.
   if (dark) { applyDark(t, t.preset) }
+  resolveTextContrast(t, dark)
   return t
 }
 
