@@ -7,6 +7,7 @@ import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { loadDiscovery } from '../vera/VeraDiscovery'
+import { modelSupportNote } from '../vera/VeraEmbeddings'
 import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp } from '../vera/VeraChat'
 import { AttemptStat, ReplyStats, costOf, formatUsd, formatMs, speedOf } from '../vera/VeraChatStats'
 import { chats, StoredChat, StoredMessage } from '../vera/ChatStore'
@@ -443,6 +444,8 @@ struct ChatPage {
       // Generate screen's does; the intent and SDK indexes have to be loaded
       // for that, the same way.
       await loadDiscovery(getContext(this).filesDir, mgr)
+      let note = modelSupportNote()
+      if (note.length > 0 && this.status.length === 0) { this.status = note }
     } catch (e) {
       this.status = 'Failed to load resources: ' + (e as Error).message
     }

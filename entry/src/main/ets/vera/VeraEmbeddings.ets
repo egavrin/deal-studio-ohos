@@ -30,7 +30,7 @@
 
 import fs from '@ohos.file.fs'
 import hilog from '@ohos.hilog'
-import { nativeEmbedInit, nativeEmbedBatch } from './LlamaEngine'
+import { nativeEmbedInit, nativeEmbedBatch, nativeBuildInfo } from './LlamaEngine'
 
 const DOMAIN = 0x0000
 /** Exported so VeraSdkEmbeddingCache.ets can bind its bundled cache to this
@@ -81,6 +81,19 @@ async function doLoad(filesDir: string): Promise<boolean> {
     hilog.warn(DOMAIN, 'VERA', 'VERA-EMBED native model load threw: ' + (e as Error).message)
     return false
   }
+}
+
+/**
+ * A line for a screen's status when this build cannot load a model at all,
+ * '' otherwise. A build made from a checkout without llama.cpp is a stub: it
+ * compiles, runs, and quietly answers every model load with false, so SDK and
+ * intent search fall back to keywords and local generation is unavailable.
+ * Saying so is the only way anyone notices.
+ */
+export function modelSupportNote(): string {
+  if (nativeBuildInfo() !== 'stub') { return '' }
+  hilog.warn(DOMAIN, 'VERA', 'VERA-EMBED this build has no llama.cpp: model support is off')
+  return 'This build has no llama.cpp: device search uses keywords only (see entry/src/main/cpp/CMakeLists.txt).'
 }
 
 /** Starts the one-time native load; safe to call more than once -- later calls reuse the first attempt. */

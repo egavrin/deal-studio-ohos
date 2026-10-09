@@ -17,7 +17,7 @@ import { loadRegistry } from '../vera/VeraIntentRegistry'
 import { loadIntentSummaries } from '../vera/VeraIntentIndex'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { loadSdkIndex } from '../vera/VeraSdkIndex'
-import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL } from '../vera/VeraEmbeddings'
+import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL, modelSupportNote } from '../vera/VeraEmbeddings'
 import { ensureSdkEmbeddings, sdkEmbeddingsReady } from '../vera/VeraSdkEmbeddingCache'
 import { ensureIntentEmbeddings, intentEmbeddingsReady } from '../vera/VeraIntentEmbeddingCache'
 import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchmark'
@@ -347,7 +347,11 @@ struct GeneratePage {
 
   private checkDeepSeek(): void {
     if (settings.hasApiKey()) {
-      this.status = 'DeepSeek ready (' + settings.getModel() + ', key ' + settings.maskedKey() + ')'
+      // A stub build cannot load the embedding model, so discovery falls back to
+      // keywords; that belongs next to the provider line, which is what stays up.
+      let note = modelSupportNote()
+      this.status = 'DeepSeek ready (' + settings.getModel() + ', key ' + settings.maskedKey() + ')' +
+        (note.length > 0 ? '. ' + note : '')
     } else {
       this.status = 'No API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key>'
     }
