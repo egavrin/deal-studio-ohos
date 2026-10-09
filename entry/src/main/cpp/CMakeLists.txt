@@ -40,6 +40,10 @@ if(EXISTS ${LLAMA_DIR}/CMakeLists.txt)
   # add_subdirectory, so it reaches every target ggml/llama.cpp build below
   # without editing their vendored source.
   add_compile_definitions(_GNU_SOURCE)
+  # Current ggml also calls pthread_setaffinity_np, which this libc does not
+  # have at all; ohos_compat.h maps it to sched_setaffinity for the calling
+  # thread. Forced into C sources only, so nothing else sees the shim.
+  add_compile_options($<$<COMPILE_LANGUAGE:C>:-include${CMAKE_CURRENT_SOURCE_DIR}/ohos_compat.h>)
   add_subdirectory(${LLAMA_DIR} llama_build)
 
   # NAPI wrapper -- target renamed from "llama" (it collided with llama.cpp's
