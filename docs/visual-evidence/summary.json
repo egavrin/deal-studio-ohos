@@ -1,0 +1,54 @@
+{
+  "candidateRevision": "b3acfcf456af10142eeeb4000344b071597b1382",
+  "baselineRevision": "df66e50276ea66ffa7f29a527e5f847491ea99ff",
+  "visualChecks": {
+    "passed": 93,
+    "total": 93
+  },
+  "promptChecks": {
+    "passed": 22,
+    "total": 22
+  },
+  "contrastPairs": 4896,
+  "minimumContrast": 4.500019073140123,
+  "matrixProofs": 96,
+  "edgeProofs": 6,
+  "contactSheets": 16,
+  "inspection": "All 96 matrix images inspected through 16 sheets. All six additional edge images inspected. Full-size text wraps, surfaces remain grouped, and the 600 vp expense layout has two top-aligned columns. No clipping observed in these host approximations. Some short button labels wrap in the estimated width model.",
+  "limits": [
+    "No ArkTS Agent Kit, hdc or hapsigner: native build and screenshots unavailable.",
+    "Compiler/VM/decoder run on host. SDK target index uses the existing host stub.",
+    "HTTP/model replies and UI bookkeeping are mocked in prompt workflows.",
+    "Native helper geometry and reconciliation execute with host decorator stubs, not ArkUI.",
+    "Proof text widths are estimates. Font metrics, line breaks, control heights and device behavior can differ.",
+    "No live-model baseline-versus-candidate beauty evaluation."
+  ],
+  "artifacts": {
+    "hostResults": "host-results.json.gz",
+    "proofArchive": "proofs.tar.gz",
+    "matrixManifest": "manifest.json",
+    "sheets": [
+      "sheet-baseline-light-320.png",
+      "sheet-baseline-light-360.png",
+      "sheet-baseline-light-600.png",
+      "sheet-baseline-light-320-widget.png",
+      "sheet-baseline-dark-320.png",
+      "sheet-baseline-dark-360.png",
+      "sheet-baseline-dark-600.png",
+      "sheet-baseline-dark-320-widget.png",
+      "sheet-candidate-light-320.png",
+      "sheet-candidate-light-360.png",
+      "sheet-candidate-light-600.png",
+      "sheet-candidate-light-320-widget.png",
+      "sheet-candidate-dark-320.png",
+      "sheet-candidate-dark-360.png",
+      "sheet-candidate-dark-600.png",
+      "sheet-candidate-dark-320-widget.png"
+    ]
+  },
+  "commands": {
+    "visual": "VERA_TYPESCRIPT_PATH=/Users/egavrin/.bun/install/global/node_modules/typescript/lib/typescript.js node tools/vera-harness/visual-check.js /Users/egavrin/Documents/deal-studio-ohos-visual-validation/candidate.json",
+    "prompt": "VERA_TYPESCRIPT_PATH=/Users/egavrin/.bun/install/global/node_modules/typescript/lib/typescript.js node tools/vera-harness/prompt-check.js /Users/egavrin/Documents/deal-studio-ohos /Users/egavrin/Documents/deal-studio-ohos-visual-validation/prompt.json > /Users/egavrin/Documents/deal-studio-ohos-visual-validation/prompt.log",
+    "matrix": "VERA_TYPESCRIPT_PATH=/Users/egavrin/.bun/install/global/node_modules/typescript/lib/typescript.js NODE_PATH=/Users/egavrin/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules node tools/vera-harness/visual-proofs.js /Users/egavrin/Documents/deal-studio-ohos-visual-validation/proofs /Users/egavrin/Documents/deal-studio-ohos-visual-validation/baseline-source"
+  }
+}
