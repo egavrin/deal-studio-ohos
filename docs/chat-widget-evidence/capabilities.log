@@ -1,0 +1,12 @@
+VERA-CAPABILITIES intents=0 sdk=1 discovery=keyword-until-embeddings-ready
+VERA-CAPABILITIES sdkEmbedding=true intentEmbedding=true
+VERA-CAPABILITIES intents=0 sdk=1 discovery=keyword-until-embeddings-ready
+VERA-EMBED downloading model (one-time, ~236MB)...
+VERA-CAPABILITIES intents=0 sdk=1 discovery=keyword-until-embeddings-ready
+VERA-CAPABILITIES intents=0 sdk=0 discovery=keyword-until-embeddings-ready
+VERA-CAPABILITIES sdkEmbedding=true intentEmbedding=true
+VERA-CAPABILITIES intents=0 sdk=1 discovery=keyword-until-embeddings-ready
+VERA-CAPABILITIES sdkEmbedding=true intentEmbedding=true
+VERA-CLICK action=change rev=0
+VERA-ACTION change steps=6 ms=0
+{"passed":7,"failed":0,"output":"/Users/egavrin/Documents/deal-studio-ohos/docs/chat-widget-evidence/capabilities.json"}

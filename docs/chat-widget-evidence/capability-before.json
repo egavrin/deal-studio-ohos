@@ -1,0 +1,42 @@
+{
+  "revision": "b0a575d5aa98bee40368c3072be2ef531787dd6f",
+  "command": "/opt/homebrew/Cellar/node/25.8.2/bin/node /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js /tmp/vera-capability-before.json",
+  "inputs": "mocked native registry, SDK rawfile, download, embedding boundaries; 10000ms timeout accelerated to 20ms",
+  "checks": [
+    {
+      "name": "Fresh chat and Generate share delayed initialization",
+      "status": "FAIL",
+      "observed": "Error: ENOENT: no such file or directory, open '/Users/egavrin/Documents/deal-studio-ohos/entry/src/main/ets/vera/VeraCapabilities.ets'\n    at Object.readFileSync (node:fs:436:20)\n    at Object.load (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:29:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:42:47\n    at test (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:39:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:41:8\n    at Object.<anonymous> (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:72:3)\n    at Module._compile (node:internal/modules/cjs/loader:1829:14)\n    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)\n    at Module.load (node:internal/modules/cjs/loader:1552:32)\n    at Module._load (node:internal/modules/cjs/loader:1354:12)"
+    },
+    {
+      "name": "Concurrent direct index consumers await the same read",
+      "status": "FAIL",
+      "observed": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n2 !== 0\n\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:51:25\n    at async test (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:39:49)\n    at async /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:48:2"
+    },
+    {
+      "name": "Unavailable capability boundary {\"missingModel\":true,\"downloadFails\":true}",
+      "status": "FAIL",
+      "observed": "Error: ENOENT: no such file or directory, open '/Users/egavrin/Documents/deal-studio-ohos/entry/src/main/ets/vera/VeraCapabilities.ets'\n    at Object.readFileSync (node:fs:436:20)\n    at Object.load (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:29:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:54:37\n    at test (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:39:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:53:106"
+    },
+    {
+      "name": "Unavailable capability boundary {\"modelFails\":true}",
+      "status": "FAIL",
+      "observed": "Error: ENOENT: no such file or directory, open '/Users/egavrin/Documents/deal-studio-ohos/entry/src/main/ets/vera/VeraCapabilities.ets'\n    at Object.readFileSync (node:fs:436:20)\n    at Object.load (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:29:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:54:37\n    at test (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:39:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:53:106"
+    },
+    {
+      "name": "Unavailable capability boundary {\"indexFails\":true}",
+      "status": "FAIL",
+      "observed": "Error: ENOENT: no such file or directory, open '/Users/egavrin/Documents/deal-studio-ohos/entry/src/main/ets/vera/VeraCapabilities.ets'\n    at Object.readFileSync (node:fs:436:20)\n    at Object.load (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:29:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:54:37\n    at test (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:39:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:53:106"
+    },
+    {
+      "name": "Index timeout is bounded; late indexes still prepare embeddings",
+      "status": "FAIL",
+      "observed": "Error: ENOENT: no such file or directory, open '/Users/egavrin/Documents/deal-studio-ohos/entry/src/main/ets/vera/VeraCapabilities.ets'\n    at Object.readFileSync (node:fs:436:20)\n    at Object.load (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:29:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:58:44\n    at test (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:39:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:57:8"
+    },
+    {
+      "name": "Generate and renderer use the shared contracts",
+      "status": "FAIL",
+      "observed": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert(page.includes('ensureCapabilities('))\n\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:63:4\n    at test (/Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:39:55)\n    at /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/capability-check.js:61:8"
+    }
+  ]
+}

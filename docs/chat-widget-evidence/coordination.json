@@ -1,0 +1,26 @@
+{
+  "effective_route": "sol-astra",
+  "root_model_family": "GPT-6",
+  "root_variant": "not exposed",
+  "root_reasoning": "not exposed",
+  "root_service_tier": "not exposed",
+  "companion": {
+    "skill": "claude-collab",
+    "requested_model": "opus",
+    "reported_model": "claude-opus-5-5",
+    "requested_effort": "high",
+    "observed_service_tier": "not exposed",
+    "duration_seconds": 900.219,
+    "result": "Inactivity timeout, no meaningful model progress, request stopped, no patch"
+  },
+  "native_fallback": {
+    "role": "astra_executor_high",
+    "configured_model": "gpt-6-astra",
+    "configured_reasoning": "high",
+    "observed_service_tier": "not exposed",
+    "package": "chat-widget-context-v1 handoff remainder",
+    "repairs": 0
+  },
+  "acceptance_owner": "root",
+  "benchmark_valid": false
+}

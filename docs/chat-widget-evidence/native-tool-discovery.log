@@ -1,0 +1,3 @@
+ERROR: cannot find arkui-hvigor. Set KIT_ROOT to the ArkTS Agent Kit, or put arkui-hvigor on PATH.
+ERROR: cannot find hdc. Set HDC_DIR to the directory holding it.
+ERROR: cannot find hapsigner. Set HAPSIGNER to the directory holding dist/.
