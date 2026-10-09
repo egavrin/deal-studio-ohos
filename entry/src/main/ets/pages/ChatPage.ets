@@ -5,9 +5,8 @@ import { loadRawfileText } from '../vera/LlamaEngine'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
-import { loadRegistry } from '../vera/VeraIntentRegistry'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
-import { loadSdkIndex } from '../vera/VeraSdkIndex'
+import { loadDiscovery } from '../vera/VeraDiscovery'
 import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp } from '../vera/VeraChat'
 import { AttemptStat, ReplyStats, costOf, formatUsd, formatMs, speedOf } from '../vera/VeraChatStats'
 import { chats, StoredChat, StoredMessage } from '../vera/ChatStore'
@@ -422,9 +421,9 @@ struct ChatPage {
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
         .replace('{{UI_TOOL_NOTE}}\n', '') + widget
       // The widget builder looks platform calls up mid-generation, as the
-      // Generate screen's does; both indexes have to be loaded for that.
-      loadRegistry()
-      loadSdkIndex(mgr)
+      // Generate screen's does; the intent and SDK indexes have to be loaded
+      // for that, the same way.
+      loadDiscovery(getContext(this).filesDir, mgr)
     } catch (e) {
       this.status = 'Failed to load resources: ' + (e as Error).message
     }
