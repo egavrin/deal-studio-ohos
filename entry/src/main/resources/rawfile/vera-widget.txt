@@ -22,6 +22,17 @@ Build one compact interaction that serves the supplied description:
 - Guard zero divisors and invalid ranges before calculation. Keep intermediate arithmetic within int bounds.
 - For a split, require a positive person count and explain any remainder allocation.
 
+Data display.
+- Use ui.Table for data read down as well as across, with three or more columns. Give it headers, and make its columns
+  equal the header count and the cells length of every ui.TableRow. Use a row tone (success, warning, danger) to call out one row.
+- Use ui.Sparkline for a series: a connected line for a trend over time, bars true for a few categories side by side.
+  Pass maximum as the largest value you expect. It has no axis labels or legend, so name the quantity in its label and
+  name the points in a ui.Text above it or in a table beside it.
+- Keep a series to about twelve values and a table to about seven rows. Table rows count toward the node limit.
+- Show both a chart and a table only when the description asks for both.
+- Display-only data needs no inputs. Add no editor for each value unless the description asks for editable values.
+- Compute totals, averages, and extremes from the values in view, and label what they cover.
+
 Timers use the catalogue ui.Ticker signature and an int elapsedMs handler.
 Accumulate the supplied elapsed milliseconds, not callback counts.
 For whole-second wall-clock deadlines, read time.nowSeconds() in handlers and store the result in state.
