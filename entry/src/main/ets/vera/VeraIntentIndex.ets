@@ -78,11 +78,14 @@ export class IntentEntry {
  * almost never does (displayName and keywords are empty on this phone).
  */
 let summaries: Map<string, string> = new Map<string, string>()
-let summariesLoaded = false
+let loading: Promise<number> | null = null
 
-export async function loadIntentSummaries(mgr: resourceManager.ResourceManager): Promise<number> {
-  if (summariesLoaded) { return summaries.size }
-  summariesLoaded = true
+export function loadIntentSummaries(mgr: resourceManager.ResourceManager): Promise<number> {
+  if (loading === null) { loading = loadIntentSummariesRead(mgr) }
+  return loading!
+}
+
+async function loadIntentSummariesRead(mgr: resourceManager.ResourceManager): Promise<number> {
   try {
     let text = await loadRawfileText(mgr, 'intent-summaries.json')
     let obj = JSON.parse(text) as Record<string, string>

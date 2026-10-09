@@ -83,6 +83,20 @@ The prompt workflow harness executes application request and repair methods with
 node tools/vera-harness/prompt-check.js . /tmp/vera-prompt-verification.json
 ```
 
+For capability preparation and chat handoff workflows:
+
+```bash
+node tools/vera-harness/capability-check.js /tmp/vera-capability-verification.json
+node tools/vera-harness/chat-handoff-check.js . /tmp/vera-chat-handoff-verification.json
+```
+
+The capability workflow mocks native registry reads, downloads, and embedding boundaries.
+It runs the current index loaders and shared preparation service.
+The 10-second readiness deadline runs at 20 milliseconds in this host fixture.
+The chat workflow mocks model transport and storage, then compiles and runs widget fixtures.
+Each report records the revision, exact command, inputs, and expected and observed checks.
+These checks do not replace a native ArkTS build or a live-model evaluation.
+
 For the full labeled proof matrix, use an available `sharp` module and a baseline source snapshot:
 
 ```bash

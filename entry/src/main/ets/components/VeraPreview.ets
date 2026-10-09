@@ -81,6 +81,8 @@ export struct VeraPreview {
    * thing and has to remember.
    */
   @Prop persistKey: string = ''
+  /** Read-only snapshot for a hosting chat. It does not migrate state between programs. */
+  onStateSnapshot: (encoded: string) => void = (_encoded: string): void => {}
   /**
    * Drawn inside something that scrolls, such as a chat message: the program
    * takes the height it needs and has no scrolling of its own.
@@ -255,6 +257,7 @@ export struct VeraPreview {
       this.vm = new VirtualMachine(module, this.host)
       this.currentState = this.restoreState()
       if (this.currentState === null) { this.currentState = this.vm!.execute('init') }
+      this.notifyStateSnapshot()
       this.renderView()
     } catch (e) {
       this.error = 'Init error: ' + (e as Error).message
@@ -436,6 +439,15 @@ export struct VeraPreview {
     }
   }
 
+  private notifyStateSnapshot(): void {
+    if (this.currentState === null) { return }
+    try {
+      this.onStateSnapshot(JSON.stringify(encodeRuntimeValue(this.currentState!)))
+    } catch (e) {
+      console.warn('VERA-STATE snapshot unavailable: ' + (e as Error).message)
+    }
+  }
+
   private persistState(): void {
     let keys = this.stateKeys()
     if (keys.length === 0 || this.currentState === null) { return }
@@ -541,6 +553,7 @@ export struct VeraPreview {
       if (this.host !== null) { this.host!.effectsAllowed = true }
       this.currentState = this.vm!.execute(action, [this.currentState!, payload])
       if (this.host !== null) { this.host!.effectsAllowed = false }
+      this.notifyStateSnapshot()
       console.info('VERA-ACTION ' + action + ' steps=' + this.vm!.stepsExecuted().toString() +
         ' ms=' + (Date.now() - t0).toString())
       this.renderView()

@@ -182,7 +182,7 @@ export function findSdkFunction(index: SdkEntry[], need: string, limit: number =
 
 let cache: SdkEntry[] = []
 let targets: Map<string, boolean> = new Map<string, boolean>()
-let loaded = false
+let loading: Promise<number> | null = null
 
 /**
  * Whether `target` ("Kit.Module.name") is one of the entries this index
@@ -202,9 +202,12 @@ export function isValidSdkTarget(target: string): boolean {
  * changes when the SDK version this was built from changes, and parsing
  * 16,511 entries is worth doing before, not during, a generation.
  */
-export async function loadSdkIndex(mgr: resourceManager.ResourceManager): Promise<number> {
-  if (loaded) { return cache.length }
-  loaded = true
+export function loadSdkIndex(mgr: resourceManager.ResourceManager): Promise<number> {
+  if (loading === null) { loading = loadSdkIndexRead(mgr) }
+  return loading!
+}
+
+async function loadSdkIndexRead(mgr: resourceManager.ResourceManager): Promise<number> {
   try {
     let text = await loadRawfileText(mgr, 'sdk-index.json')
     cache = parseSdkIndex(text)

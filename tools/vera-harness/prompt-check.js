@@ -144,8 +144,8 @@ run('Widget currency helper handles cents and negative amounts',()=>{
     const code=prefix+'\nclass Controller { '+['callModel','runAttempt','doRefine'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
     const compiled=ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020},reportDiagnostics:true});
     assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,'Extracted generation controller syntax');
-    const globals={UI_SELECT_FULL:selection.UI_SELECT_FULL,UI_SELECT_PROMPT:selection.UI_SELECT_PROMPT,settings,deepseek:deep.deepseek,DEEPSEEK_GENERATION_MAX_TOKENS:deep.DEEPSEEK_GENERATION_MAX_TOKENS,
-      GenerateRequest:llama.GenerateRequest,compileVeraSource:compiler.compileVeraSource,CompileError:compiler.CompileError,
+    const globals={ensureCapabilities:async()=>{},getContext:()=>({}),UI_SELECT_FULL:selection.UI_SELECT_FULL,UI_SELECT_PROMPT:selection.UI_SELECT_PROMPT,settings,deepseek:deep.deepseek,DEEPSEEK_GENERATION_MAX_TOKENS:deep.DEEPSEEK_GENERATION_MAX_TOKENS,
+      GenerateRequest:llama.GenerateRequest,GenerateResult:llama.GenerateResult,compileVeraSource:compiler.compileVeraSource,CompileError:compiler.CompileError,
       engine:{generate(request){return {text:example,inputTokens:1,outputTokens:1,request}}}};
     const mod={exports:{}};new Function('module',...Object.keys(globals),compiled.outputText)(mod,...Object.values(globals));
     const c=new mod.exports();
@@ -164,6 +164,11 @@ run('Widget currency helper handles cents and negative amounts',()=>{
     assert.equal(c.compiled,true);assert.equal(c.compiledSource,example);assert.equal(requests.length,1);assertUniform();
     assert.equal(c.attempts[0].thinking,true);assert.equal(c.attempts[0].success,true);
     return {attempts:1,thinking:requests[0].thinking.type,maxTokens:requests[0].max_tokens,metricsThinking:c.attempts[0].thinking};
+  });
+  await runAsync('Generate screen cancellation during capability wait sends no model request',async()=>{
+    reset();const c=page();const pending=c.runAttempt('A counter.','');c.cancelRequested=true;await pending;
+    assert.equal(requests.length,0);assert.equal(c.status,'Stopped');assert.equal(c.generating,false);
+    return {modelRequests:0,status:c.status};
   });
   await runAsync('Generate screen compiler retry retains exact source and diagnostics',async()=>{
     reset();const broken='function broken(';const diagnostic=compilerError(broken);responses.push(broken,example);
