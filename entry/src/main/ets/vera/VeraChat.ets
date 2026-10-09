@@ -26,7 +26,11 @@ const MAX_ATTEMPTS: number = 3
 
 const CHAT_SYSTEM_PROMPT: string =
   "You are the assistant in a phone chat. Answer briefly in plain text, without markdown.\n" +
-  "Answer directly when text is sufficient. Offer one widget when editable inputs, calculations, or controls materially help the request.\n" +
+  "Answer directly when text is sufficient. Offer one widget when editable inputs, calculations, or controls materially help the request, " +
+  "or when the answer is data that reads better laid out: several items compared across several attributes (a table), " +
+  "or a series of values over time or a few categories compared (a chart).\n" +
+  "For a data widget, name its form in the description (a table, a bar chart, a line chart) and list the values. " +
+  "Make it display-only: give no editor for each value unless the person wants to change the values.\n" +
   "If an essential detail is missing and has no safe default, ask one concise question before requesting the widget.\n" +
   "For a widget, include exactly one complete marker on its own line, with this shape:\n" +
   "<<app: one or two self-contained English sentences describing the widget, its controls, starting values, units, and constraints>>\n" +
@@ -34,7 +38,11 @@ const CHAT_SYSTEM_PROMPT: string =
   "Carry explicit visual preferences into the marker, with exact values, units, behavior, and verified image addresses. Keep the marker within 600 characters. " +
   "Do not refer to \"the above\" or omit details that appear elsewhere in the reply. " +
   "Place a brief complete sentence before the marker. Any text after it must also contain complete sentences. " +
-  "Use no nested markers or additional markers. Do not show program code.\n" +
+  "Use no nested markers or additional markers. Do not show program code. Keep the description under 1000 characters.\n" +
+  "When the request needs several similar controls -- a button per stop, a row per item -- put all of them in that one widget " +
+  "and list every one in its description. Never write one marker per item: only the first would be built.\n" +
+  "To change a widget already shown in this chat, start the description with update: and describe the whole widget as it " +
+  "should be after the change, keeping what the person did not ask to change.\n" +
   "For a phone action, offer a button that requests the action and shows its returned result. " +
   "Support depends on discovered capabilities, available adapters, permissions, and device behavior. " +
   "Do not promise universal support or claim that this chat reply executed an action. " +
@@ -55,8 +63,15 @@ const MAX_SEARCHES = 2
 const SEARCH_RESULTS = 4
 const SEARCH_CHARS = 400
 const EXA_URL = 'https://api.exa.ai/search'
-/** A widget line longer than this is cut: it is built from the line alone, and the line may carry web text. */
-const MAX_WIDGET_LINE = 600
+/**
+ * A widget line longer than this is cut, and the cut is recorded and shown in
+ * the stats rather than made silently. The limit exists because the line can
+ * carry text from a web search into the builder; it is set well above what a
+ * self-contained description needs, and the chat prompt asks for less.
+ */
+const MAX_WIDGET_LINE = 1500
+/** A widget line that starts with this asks to change the chat's last widget rather than build a new one. */
+const UPDATE_PREFIX = 'update:'
 
 export class ChatTurn {
   role: string = 'user'
@@ -74,6 +89,10 @@ export class ParsedReply {
   appDescription: string = ''
   /** The line has started but not finished: the widget is still being described. */
   describing: boolean = false
+  /** The line's length before it was cut; 0 when it was not cut. */
+  cutFrom: number = 0
+  /** The line asked to change the last widget (it started with "update:"). */
+  update: boolean = false
 }
 
 export class MiniApp {
@@ -98,18 +117,45 @@ export function parseReply(raw: string): ParsedReply {
     return out
   }
   out.before = raw.substring(0, open).trim()
-  let close = raw.indexOf(APP_CLOSE, open)
-  if (close < 0) {
-    out.describing = true
-    return out
+  // A reply holds one widget, but the model sometimes writes one line per item
+  // (a navigation button per stop). Every complete line is kept and combined
+  // into one description, so no item is silently dropped; the text between
+  // them goes after the widget.
+  let lines: string[] = []
+  let afterParts: string[] = []
+  let at = open
+  while (at >= 0) {
+    let close = raw.indexOf(APP_CLOSE, at)
+    if (close < 0) {
+      out.describing = true
+      break
+    }
+    lines.push(raw.substring(at + APP_OPEN.length, close).split('\n').join(' ').trim())
+    let next = raw.indexOf(APP_OPEN, close + APP_CLOSE.length)
+    let between = next < 0 ? raw.substring(close + APP_CLOSE.length) : raw.substring(close + APP_CLOSE.length, next)
+    if (next < 0) { between = withoutPartialMarker(between) }
+    if (between.trim().length > 0) { afterParts.push(between.trim()) }
+    at = next
   }
-  out.appDescription = raw.substring(open + APP_OPEN.length, close).split('\n').join(' ').trim()
-  if (out.appDescription.length > MAX_WIDGET_LINE) { out.appDescription = out.appDescription.substring(0, MAX_WIDGET_LINE) }
-  let rest = raw.substring(close + APP_CLOSE.length)
-  // At most one widget per reply: a second line is dropped, not shown.
-  let again = rest.indexOf(APP_OPEN)
-  if (again >= 0) { rest = rest.substring(0, again) }
-  out.after = rest.trim()
+  out.after = afterParts.join('\n')
+  if (lines.length === 0) { return out }
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].toLowerCase().startsWith(UPDATE_PREFIX)) {
+      out.update = true
+      lines[i] = lines[i].substring(UPDATE_PREFIX.length).trim()
+    }
+  }
+  let line = lines[0]
+  if (lines.length > 1) {
+    let parts: string[] = []
+    for (let i = 0; i < lines.length; i++) { parts.push('(' + (i + 1).toString() + ') ' + lines[i]) }
+    line = 'One widget holding all of these parts, in this order: ' + parts.join(' ')
+  }
+  if (line.length > MAX_WIDGET_LINE) {
+    out.cutFrom = line.length
+    line = line.substring(0, MAX_WIDGET_LINE)
+  }
+  out.appDescription = line
   return out
 }
 
@@ -466,7 +512,7 @@ function readLine(line: string, step: ChatStep, pending: Map<number, PendingCall
  * the UI catalogue already spliced in. Calls must not overlap: the engine is a
  * singleton with one generation in flight.
  */
-export async function buildMiniApp(systemPrompt: string, description: string,
+export async function buildMiniApp(systemPrompt: string, description: string, personRequest: string, baseSource: string,
     onStatus: (status: string) => void): Promise<MiniApp> {
   let result = new MiniApp()
   let failedSource = ''
@@ -479,15 +525,27 @@ export async function buildMiniApp(systemPrompt: string, description: string,
     request.uiTool = false
     request.temperature = 0.2
     request.maxTokens = DEEPSEEK_GENERATION_MAX_TOKENS
+    // The description is the brief. What the person actually wrote goes with it
+    // so a detail the description dropped is not lost for good; the builder is
+    // told the description wins where the two differ.
+    let brief = description
+    if (personRequest.length > 0) {
+      brief = brief + '\n\nWhat the person wrote, for reference only; where it differs, the description above wins: ' + personRequest
+    }
     if (feedback.length > 0) {
       request.previousSource = failedSource
-      request.userPrompt = description +
+      request.userPrompt = brief +
         '\n\nThe program above is your previous attempt and it failed to compile:\n' + feedback +
         '\n\nRepair the failed source against these diagnostics. Preserve requested behavior and compatible state field names and types. ' +
         'Return the complete replacement program as source only, not a patch or continuation. ' +
         'If output was truncated, shorten optional content while preserving required behavior.'
+    } else if (baseSource.length > 0) {
+      // A change to a widget already in the chat: its program goes in as the
+      // previous source, and the engine asks for a complete replacement.
+      request.previousSource = baseSource
+      request.userPrompt = brief
     } else {
-      request.userPrompt = description
+      request.userPrompt = brief
     }
     // Widget generation uses reasoning on every attempt, including the first.
     deepseek.setThinking(true)

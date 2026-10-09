@@ -120,6 +120,24 @@ function flatten(info: insightIntentDriver.InsightIntentInfo): RegistryEntry | n
     let ui = configured!.uiAbility!
     ability = ui.abilityName
     for (let mode of ui.executeMode) { modes.push(modeName(mode as number)) }
+  } else {
+    // An intent declared with a decorator has no configuration block; its
+    // target is in subIntentInfo instead. Only the @InsightIntentEntry kind
+    // names an ability and execute modes, which is what execute() needs here;
+    // link, page, form and function intents are reached some other way.
+    let sub = info.subIntentInfo as Object as Record<string, Object>
+    if (sub !== undefined && sub !== null) {
+      let name = sub['abilityName']
+      let declaredModes = sub['executeMode']
+      if (typeof name === 'string' && Array.isArray(declaredModes)) {
+        for (let mode of declaredModes as Object[]) {
+          let m = mode as number
+          // Foreground and background UIAbility only: an extension ability is not reachable this way.
+          if (m === 0 || m === 1) { modes.push(modeName(m)) }
+        }
+        if (modes.length > 0) { ability = name as string }
+      }
+    }
   }
   if (ability.length === 0) { return null }
   entry.target = info.bundleName + '/' + info.moduleName + '/' + ability + '/' + info.intentName

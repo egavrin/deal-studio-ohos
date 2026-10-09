@@ -59,6 +59,7 @@ interface NativeLlama {
   llamaEmbedBatch(texts: string[]): number[][]
   llamaEmbedFree(): void
   llamaScanCorpus(query: number[], corpus: Float32Array, dimension: number, count: number): Float32Array
+  llamaBuildInfo(): string
 }
 
 let native: NativeLlama | null = null
@@ -86,6 +87,15 @@ export function nativeEmbedInit(configJson: string): boolean {
 
 export function nativeEmbedBatch(texts: string[]): number[][] {
   return getNative().llamaEmbedBatch(texts)
+}
+
+/** "stub" for a build without llama.cpp, "llama.cpp <commit>" otherwise, "unknown" if the module predates the call. */
+export function nativeBuildInfo(): string {
+  try {
+    return getNative().llamaBuildInfo()
+  } catch (_e) {
+    return 'unknown'
+  }
 }
 
 export function nativeEmbedFree(): void {

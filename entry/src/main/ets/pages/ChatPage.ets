@@ -5,9 +5,9 @@ import { loadRawfileText } from '../vera/LlamaEngine'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
-import { loadRegistry } from '../vera/VeraIntentRegistry'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
-import { loadSdkIndex } from '../vera/VeraSdkIndex'
+import { loadDiscovery } from '../vera/VeraDiscovery'
+import { modelSupportNote } from '../vera/VeraEmbeddings'
 import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp } from '../vera/VeraChat'
 import { AttemptStat, ReplyStats, costOf, formatUsd, formatMs, speedOf } from '../vera/VeraChatStats'
 import { chats, StoredChat, StoredMessage } from '../vera/ChatStore'
@@ -36,6 +36,9 @@ class ChatMessage {
   appDescription: string = ''
   appState: string = APP_NONE
   vbc2: string = ''
+  source: string = ''
+  cutFrom: number = 0
+  update: boolean = false
   error: string = ''
   // What the turn cost, in the same terms the Generate screen uses.
   chatMs: number = 0
@@ -123,6 +126,11 @@ struct StatsPanel {
   @Prop tally: Tally = new Tally()
   @Prop attempts: AttemptStat[] = []
   @Prop heading: string = ''
+  /** The <<app: ...>> line this reply handed to the widget builder; empty when it built none. */
+  @Prop widgetLine: string = ''
+  /** Length of the line before it was cut; 0 when it was not. */
+  @Prop widgetCutFrom: number = 0
+  @Prop widgetUpdate: boolean = false
 
   private fresh(): number {
     let f = this.tally.input - this.tally.cached
@@ -138,6 +146,22 @@ struct StatsPanel {
     Column({ space: 8 }) {
       if (this.heading.length > 0) {
         Text(this.heading).fontSize(11).fontColor('#888888').width('100%')
+      }
+      if (this.widgetLine.length > 0) {
+        Column({ space: 4 }) {
+          Text(this.widgetUpdate ? 'Widget request (change to the previous widget)' : 'Widget request')
+            .fontSize(10).fontColor('#888888')
+          if (this.widgetCutFrom > 0) {
+            Text('Cut to ' + this.widgetLine.length.toString() + ' of ' + this.widgetCutFrom.toString() + ' characters')
+              .fontSize(10).fontColor('#C62828')
+          }
+          Text(this.widgetLine).fontSize(12).fontColor('#333333').fontFamily('monospace')
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding(10)
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
       }
       Row({ space: 8 }) {
         StatCell({ label: 'Time', value: formatMs(this.tally.ms),
@@ -270,7 +294,8 @@ struct MessageBubble {
           .constraintSize({ maxWidth: '85%' })
       }
       if (this.showStats && this.msg.role === 'assistant' && this.msg.chatInput + this.msg.attempts.length > 0) {
-        StatsPanel({ tally: tallyOf([this.msg]), attempts: this.msg.attempts, heading: 'This reply' })
+        StatsPanel({ tally: tallyOf([this.msg]), attempts: this.msg.attempts, heading: 'This reply',
+          widgetLine: this.msg.appDescription, widgetCutFrom: this.msg.cutFrom, widgetUpdate: this.msg.update })
       }
     }
     .width('100%')
@@ -295,6 +320,8 @@ struct ChatPage {
   private lastScrollAt: number = 0
   /** Widget builds run one at a time: the DeepSeek engine has a single generation in flight. */
   private buildQueue: Promise<void> = Promise.resolve()
+  /** The skill and the search indexes; a widget build waits for it, so an early one does not search an empty index. */
+  private ready: Promise<void> = Promise.resolve()
 
   aboutToAppear(): void {
     let dir = getContext(this).filesDir
@@ -308,7 +335,7 @@ struct ChatPage {
     if (params !== null && params !== undefined && (params['chatId'] || '').length > 0) {
       this.openChat(params['chatId'])
     }
-    this.loadResources()
+    this.ready = this.loadResources()
   }
 
   aboutToDisappear(): void {
@@ -341,6 +368,9 @@ struct ChatPage {
       msg.appDescription = m.appDescription
       msg.appState = m.appState
       msg.vbc2 = m.vbc2
+      msg.source = m.source
+      msg.cutFrom = m.cutFrom
+      msg.update = m.update
       msg.error = m.error
       msg.chatMs = m.chatMs
       msg.chatTtftMs = m.chatTtftMs
@@ -381,6 +411,9 @@ struct ChatPage {
       sm.appDescription = m.appDescription
       sm.appState = m.appState
       sm.vbc2 = m.vbc2
+      sm.source = m.source
+      sm.cutFrom = m.cutFrom
+      sm.update = m.update
       sm.error = m.error
       sm.chatMs = m.chatMs
       sm.chatTtftMs = m.chatTtftMs
@@ -408,9 +441,11 @@ struct ChatPage {
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
         .replace('{{UI_TOOL_NOTE}}\n', '') + widget
       // The widget builder looks platform calls up mid-generation, as the
-      // Generate screen's does; both indexes have to be loaded for that.
-      loadRegistry()
-      loadSdkIndex(mgr)
+      // Generate screen's does; the intent and SDK indexes have to be loaded
+      // for that, the same way.
+      await loadDiscovery(getContext(this).filesDir, mgr)
+      let note = modelSupportNote()
+      if (note.length > 0 && this.status.length === 0) { this.status = note }
     } catch (e) {
       this.status = 'Failed to load resources: ' + (e as Error).message
     }
@@ -440,17 +475,24 @@ struct ChatPage {
     return turns
   }
 
-  /** Copies what has streamed so far into the message; starts the widget the moment its line is closed. */
-  private apply(msg: ChatMessage, parsed: ParsedReply): void {
+  /**
+   * Copies what has streamed so far into the message. The widget is built once
+   * the reply has finished (`final`): a later line in the same reply may still
+   * add to its description, and building early would drop it.
+   */
+  private apply(msg: ChatMessage, parsed: ParsedReply, final: boolean = false): void {
     msg.before = parsed.before
     msg.after = parsed.after
-    if (msg.appState === APP_NONE && parsed.describing) {
+    if (msg.appState === APP_NONE && (parsed.describing || parsed.appDescription.length > 0)) {
       msg.appState = APP_DESCRIBING
     }
-    if (parsed.appDescription.length > 0 && msg.appDescription.length === 0) {
+    if (final && parsed.appDescription.length > 0 && msg.appDescription.length === 0) {
       msg.appDescription = parsed.appDescription
+      msg.cutFrom = parsed.cutFrom
+      msg.update = parsed.update
       msg.appState = APP_BUILDING
-      console.info('VERA-CHAT widget line: ' + msg.appDescription)
+      console.info('VERA-CHAT widget line' + (parsed.update ? ' (update)' : '') +
+        (parsed.cutFrom > 0 ? ' cut from ' + parsed.cutFrom.toString() : '') + ': ' + msg.appDescription)
       this.queueBuild(msg)
     }
     this.scrollDown()
@@ -485,7 +527,7 @@ struct ChatPage {
         this.status = status.length > 0 ? status : 'Thinking...'
       }, stats)
       console.info('VERA-CHAT reply: ' + raw)
-      this.apply(reply, parseReply(raw))
+      this.apply(reply, parseReply(raw), true)
     } catch (e) {
       this.status = (e as Error).message
       // A reply that never started is not worth an empty row.
@@ -505,13 +547,36 @@ struct ChatPage {
     this.persist()
   }
 
+  /** What the person wrote just before this reply: the request the widget answers. */
+  private requestBefore(msg: ChatMessage): string {
+    let found = ''
+    for (let m of this.messages) {
+      if (m.id === msg.id) { break }
+      if (m.role === 'user') { found = m.before }
+    }
+    return found
+  }
+
+  /** The source of the latest widget shown before this reply, for a change to it; '' when there is none. */
+  private lastSourceBefore(msg: ChatMessage): string {
+    let found = ''
+    for (let m of this.messages) {
+      if (m.id === msg.id) { break }
+      if (m.source.length > 0) { found = m.source }
+    }
+    return found
+  }
+
   private queueBuild(msg: ChatMessage): void {
     this.buildQueue = this.buildQueue.then(async (): Promise<void> => {
+      await this.ready
       let startedAt = Date.now()
-      let app: MiniApp = await buildMiniApp(this.skillPrompt, msg.appDescription, (s: string): void => {
+      let app: MiniApp = await buildMiniApp(this.skillPrompt, msg.appDescription, this.requestBefore(msg),
+        msg.update ? this.lastSourceBefore(msg) : '', (s: string): void => {
         this.status = s
       })
       msg.attempts = app.stats
+      if (app.source.length > 0) { msg.source = app.source }
       msg.widgetMs = Date.now() - startedAt
       if (app.error.length === 0 && app.vbc2.length > 0) {
         msg.vbc2 = app.vbc2

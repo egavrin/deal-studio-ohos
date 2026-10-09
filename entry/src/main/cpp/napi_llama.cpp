@@ -526,6 +526,23 @@ static napi_value LlamaFree(napi_env env, napi_callback_info info) {
     return undef;
 }
 
+// llamaBuildInfo(): string
+// "stub" when the module was built without llama.cpp, otherwise "llama.cpp "
+// and the commit it was built from -- so the app can say plainly that model
+// support is missing instead of failing every load in silence.
+static napi_value LlamaBuildInfo(napi_env env, napi_callback_info info) {
+    napi_value result;
+#ifdef LLAMA_STUB
+    const char *text = "stub";
+#elif defined(VERA_LLAMA_COMMIT)
+    const char *text = "llama.cpp " VERA_LLAMA_COMMIT;
+#else
+    const char *text = "llama.cpp";
+#endif
+    napi_create_string_utf8(env, text, NAPI_AUTO_LENGTH, &result);
+    return result;
+}
+
 // Module registration
 static napi_value Init(napi_env env, napi_value exports) {
     napi_property_descriptor desc[] = {
@@ -537,6 +554,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"llamaEmbedBatch", nullptr, LlamaEmbedBatch, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"llamaEmbedFree", nullptr, LlamaEmbedFree, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"llamaScanCorpus", nullptr, LlamaScanCorpus, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"llamaBuildInfo", nullptr, LlamaBuildInfo, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

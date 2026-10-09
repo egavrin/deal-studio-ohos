@@ -24,6 +24,14 @@ printf "%-18s %s\n" hapsigner "$(vera_hapsigner 2>&1 | tail -1)"'
 | **hdc** | everything that talks to the phone | `$HDC_DIR`, else `~/Desktop/hdc`, `~/hdc`, else `PATH` |
 | **hapsigner** | `sign-system.sh` calls `dist/hap-sign-tool.jar`; needs a JRE | `$HAPSIGNER`, else `~/agent-kit-sdk/hapsigner` |
 
+One more thing is not in this repo and is not checked by that command:
+**llama.cpp**, under `entry/src/main/cpp/llama.cpp` (git-ignored). Fetch the commit
+pinned in `entry/src/main/cpp/CMakeLists.txt` -- the exact commands are in the
+comment at its top. Without it the build still succeeds but produces a stub with
+no model support: embedding search for SDK functions and intents falls back to
+keywords, and the Generate and Chat screens say so in their status line. After
+fetching it, delete `entry/.cxx` once so CMake sees it.
+
 **If any of them prints an ERROR line, stop and ask the person working with you
 — do not guess a path and do not install anything.** Ask exactly this:
 

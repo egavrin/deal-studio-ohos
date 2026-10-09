@@ -20,6 +20,12 @@ export class StoredMessage {
   appDescription: string = ''
   appState: string = 'none'
   vbc2: string = ''
+  /** The widget's VERA-L source, so a later message can ask to change it. */
+  source: string = ''
+  /** The widget line's length before it was cut; 0 when it was not. */
+  cutFrom: number = 0
+  /** The line asked to change the previous widget. */
+  update: boolean = false
   error: string = ''
   chatMs: number = 0
   chatTtftMs: number = 0
@@ -107,6 +113,9 @@ function parseMessage(raw: Object): StoredMessage {
   m.appDescription = str(o, 'appDescription')
   m.appState = str(o, 'appState') || 'none'
   m.vbc2 = str(o, 'vbc2')
+  m.source = str(o, 'source')
+  m.cutFrom = num(o, 'cutFrom')
+  m.update = o['update'] === true
   m.error = str(o, 'error')
   m.chatMs = num(o, 'chatMs')
   m.chatTtftMs = num(o, 'chatTtftMs')
