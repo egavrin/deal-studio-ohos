@@ -1,0 +1,23 @@
+VERA-SDK 1 sdk functions available to search
+VERA-REGISTRY 0 intents available to find_intent_function
+VERA-CAPABILITIES sdkEmbedding=true intentEmbedding=true
+VERA-SDK 1 sdk functions available to search
+VERA-REGISTRY 0 intents available to find_intent_function
+VERA-EMBED downloading model (one-time, ~236MB)...
+VERA-EMBED model unavailable: download failed, code 1
+VERA-SDK 1 sdk functions available to search
+VERA-REGISTRY 0 intents available to find_intent_function
+VERA-SDK 0 sdk functions available to search
+VERA-REGISTRY 0 intents available to find_intent_function
+VERA-CAPABILITIES sdkEmbedding=true intentEmbedding=true
+VERA-CAPABILITIES index timeout; use available catalogue and keyword search
+VERA-SDK 1 sdk functions available to search
+VERA-REGISTRY 0 intents available to find_intent_function
+VERA-CAPABILITIES sdkEmbedding=true intentEmbedding=true
+VERA-SDK 1 sdk functions available to search
+VERA-REGISTRY 0 intents available to find_intent_function
+VERA-EMBED downloading model (one-time, ~236MB)...
+VERA-CAPABILITIES sdkEmbedding=true intentEmbedding=true
+VERA-CLICK action=change rev=0
+VERA-ACTION change steps=6 ms=0
+{"passed":8,"failed":0,"output":"/tmp/vera-capabilities-rebase.json"}

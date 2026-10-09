@@ -18,6 +18,7 @@ import { GenerateRequest } from './LlamaEngine'
 import { compileVeraSource, CompileError } from './VeraCompiler'
 import { deepseek, extractVeraSource, DEEPSEEK_GENERATION_MAX_TOKENS } from './DeepSeekEngine'
 import { settings } from './SettingsStore'
+import { WidgetBuildContext, widgetContextPrompt } from './VeraWidgetContext'
 import { AttemptStat, ReplyStats, failureVerdict } from './VeraChatStats'
 
 const APP_OPEN: string = '<<app:'
@@ -33,15 +34,18 @@ const CHAT_SYSTEM_PROMPT: string =
   "Make it display-only: give no editor for each value unless the person wants to change the values.\n" +
   "If an essential detail is missing and has no safe default, ask one concise question before requesting the widget.\n" +
   "For a widget, include exactly one complete marker on its own line, with this shape:\n" +
-  "<<app: one or two self-contained English sentences describing the widget, its controls, starting values, units, and constraints>>\n" +
-  "Copy the concrete numbers and names from the conversation into the description. The widget builder receives only that description. " +
-  "Carry explicit visual preferences into the marker, with exact values, units, behavior, and verified image addresses. Keep the marker within 600 characters. " +
+  '<<app: {"description":"English widget brief with controls, values, units and constraints","mode":"create"}>>\n' +
+  'For a revision, use mode "refine" and numeric targetMessageId from the shown widget messageId. ' +
+  'Use mode "create" only for an independent new widget. If the intended widget is ambiguous, ask one concise clarification question. ' +
+  'Never guess a target. A refinement creates a new widget and retains the previous widget.\n' +
+  "Copy the concrete numbers and names from the conversation into the description. The widget builder receives the current request and captured reference context. " +
+  "Carry explicit visual preferences into the marker, with exact values, units, behavior, and verified image addresses. Keep the complete marker payload within 8192 characters. " +
   "Do not refer to \"the above\" or omit details that appear elsewhere in the reply. " +
   "Place a brief complete sentence before the marker. Any text after it must also contain complete sentences. " +
-  "Use no nested markers or additional markers. Do not show program code. Keep the description under 1000 characters.\n" +
+  "Use no nested markers or additional markers. Do not show program code.\n" +
   "When the request needs several similar controls -- a button per stop, a row per item -- put all of them in that one widget " +
-  "and list every one in its description. Never write one marker per item: only the first would be built.\n" +
-  "To change a widget already shown in this chat, start the description with update: and describe the whole widget as it " +
+  "and list every one in its description. Use one marker for the complete widget.\n" +
+  'For mode "refine", describe the whole widget as it ' +
   "should be after the change, keeping what the person did not ask to change.\n" +
   "For a phone action, offer a button that requests the action and shows its returned result. " +
   "Support depends on discovered capabilities, available adapters, permissions, and device behavior. " +
@@ -63,17 +67,11 @@ const MAX_SEARCHES = 2
 const SEARCH_RESULTS = 4
 const SEARCH_CHARS = 400
 const EXA_URL = 'https://api.exa.ai/search'
-/**
- * A widget line longer than this is cut, and the cut is recorded and shown in
- * the stats rather than made silently. The limit exists because the line can
- * carry text from a web search into the builder; it is set well above what a
- * self-contained description needs, and the chat prompt asks for less.
- */
-const MAX_WIDGET_LINE = 1500
-/** A widget line that starts with this asks to change the chat's last widget rather than build a new one. */
-const UPDATE_PREFIX = 'update:'
+/** Reject oversized handoffs without changing their content. */
+const MAX_WIDGET_LINE = 8192
 
 export class ChatTurn {
+  messageId: number = 0
   role: string = 'user'
   text: string = ''
 }
@@ -83,6 +81,9 @@ export class ChatTurn {
  * either side of it; with no widget line everything is in `before`.
  */
 export class ParsedReply {
+  mode: string = 'create'
+  targetMessageId: number = 0
+  error: string = ''
   before: string = ''
   after: string = ''
   /** Empty until the line is closed with >>. */
@@ -109,53 +110,142 @@ export class MiniApp {
  * back from the text rather than shown, and the widget line counts as complete
  * only once its closing >> is in.
  */
-export function parseReply(raw: string): ParsedReply {
+/** Find the marker terminator outside a structured payload's quoted strings. */
+function markerEnd(raw: string, start: number): number {
+  let structured = raw.substring(start).trim().startsWith('{') || raw.substring(start).trim().startsWith('[')
+  let quoted = false
+  let escaped = false
+  for (let i = start; i < raw.length - 1; i++) {
+    let c = raw.charAt(i)
+    if (structured && quoted) {
+      if (escaped) { escaped = false }
+      else if (c === '\\') { escaped = true }
+      else if (c === '"') { quoted = false }
+    } else if (structured && c === '"') { quoted = true }
+    else if (raw.substring(i, i + 2) === APP_CLOSE) { return i }
+  }
+  return -1
+}
+
+/** JSON.parse accepts duplicate keys, so check the flat handoff object first. */
+function duplicateMarkerKeys(text: string): boolean {
+  let keys: string[] = []
+  let depth = 0
+  let start = -1
+  let escaped = false
+  for (let i = 0; i < text.length; i++) {
+    let c = text.charAt(i)
+    if (start >= 0) {
+      if (escaped) { escaped = false }
+      else if (c === '\\') { escaped = true }
+      else if (c === '"') {
+        if (depth === 1 && text.substring(i + 1).trim().startsWith(':')) {
+          let key = JSON.parse(text.substring(start, i + 1)) as string
+          if (keys.indexOf(key) >= 0) { return true }
+          keys.push(key)
+        }
+        start = -1
+      }
+    } else if (c === '"') { start = i }
+    else if (c === '{' || c === '[') { depth++ }
+    else if (c === '}' || c === ']') { depth-- }
+  }
+  return false
+}
+
+/** Validate one payload before the complete reply can request a build. */
+function parseMarker(payload: string): ParsedReply {
+  let out = new ParsedReply()
+  if (payload.length > MAX_WIDGET_LINE) { out.error = 'Widget marker exceeds 8192 characters.' }
+  let description = payload.trim()
+  if (description.length === 0) { out.error = 'Empty widget description.' }
+  if (description.indexOf(APP_OPEN) >= 0) { out.error = 'Nested widget marker.' }
+  if (description.startsWith('{') || description.startsWith('[')) {
+    try {
+      if (duplicateMarkerKeys(description)) { throw new Error('Duplicate widget field.') }
+      let value = JSON.parse(description) as Record<string, Object>
+      if (value === null || Array.isArray(value) || typeof value['description'] !== 'string' ||
+          (value['mode'] !== 'create' && value['mode'] !== 'refine')) {
+        throw new Error('Invalid widget fields.')
+      }
+      out.mode = value['mode'] as string
+      let target = value['targetMessageId']
+      if (out.mode === 'refine') {
+        if (typeof target !== 'number' || !Number.isSafeInteger(target as number) || (target as number) <= 0) {
+          throw new Error('A revision needs a valid targetMessageId.')
+        }
+        out.targetMessageId = target as number
+      } else if (target !== undefined) { throw new Error('A new widget cannot have a targetMessageId.') }
+      description = value['description'] as string
+      if (description.trim().length === 0) { throw new Error('Empty widget description.') }
+    } catch (e) { out.error = 'Invalid widget marker: ' + (e as Error).message }
+  }
+  else if (description.toLowerCase().startsWith('update:')) {
+    out.update = true
+    description = description.substring('update:'.length).trim()
+    if (description.length === 0) { out.error = 'Empty widget description.' }
+  }
+  if (out.error.length === 0) { out.appDescription = description }
+  return out
+}
+
+export function parseReply(raw: string, complete: boolean = false): ParsedReply {
   let out = new ParsedReply()
   let open = raw.indexOf(APP_OPEN)
   if (open < 0) {
     out.before = withoutPartialMarker(raw).trim()
+    if (complete && out.before !== raw.trim()) { out.error = 'Incomplete widget marker.' }
     return out
   }
   out.before = raw.substring(0, open).trim()
-  // A reply holds one widget, but the model sometimes writes one line per item
-  // (a navigation button per stop). Every complete line is kept and combined
-  // into one description, so no item is silently dropped; the text between
-  // them goes after the widget.
-  let lines: string[] = []
+  let descriptions: string[] = []
   let afterParts: string[] = []
-  let at = open
-  while (at >= 0) {
-    let close = raw.indexOf(APP_CLOSE, at)
+  let structured = false
+  let payloadCharacters = 0
+  while (open >= 0) {
+    let start = open + APP_OPEN.length
+    let close = markerEnd(raw, start)
     if (close < 0) {
-      out.describing = true
+      out.describing = !complete
+      if (payloadCharacters + raw.length - start > MAX_WIDGET_LINE) { out.error = 'Widget markers exceed 8192 characters.' }
+      else if (complete) { out.error = 'Incomplete widget marker.' }
       break
     }
-    lines.push(raw.substring(at + APP_OPEN.length, close).split('\n').join(' ').trim())
-    let next = raw.indexOf(APP_OPEN, close + APP_CLOSE.length)
-    let between = next < 0 ? raw.substring(close + APP_CLOSE.length) : raw.substring(close + APP_CLOSE.length, next)
-    if (next < 0) { between = withoutPartialMarker(between) }
+    let payload = raw.substring(start, close)
+    payloadCharacters += payload.length
+    let parsed = parseMarker(payload)
+    if (parsed.error.length > 0) { out.error = parsed.error }
+    let trimmed = payload.trim()
+    structured = structured || trimmed.startsWith('{') || trimmed.startsWith('[')
+    descriptions.push(parsed.appDescription)
+    out.update = out.update || parsed.update
+    out.mode = parsed.mode
+    out.targetMessageId = parsed.targetMessageId
+    let restStart = close + APP_CLOSE.length
+    open = raw.indexOf(APP_OPEN, restStart)
+    let between = open < 0 ? raw.substring(restStart) : raw.substring(restStart, open)
+    if (open < 0) {
+      let visible = withoutPartialMarker(between)
+      if (visible !== between) {
+        out.describing = !complete
+        if (complete) { out.error = 'Incomplete additional widget marker.' }
+      }
+      between = visible
+    }
     if (between.trim().length > 0) { afterParts.push(between.trim()) }
-    at = next
   }
   out.after = afterParts.join('\n')
-  if (lines.length === 0) { return out }
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].toLowerCase().startsWith(UPDATE_PREFIX)) {
-      out.update = true
-      lines[i] = lines[i].substring(UPDATE_PREFIX.length).trim()
-    }
-  }
-  let line = lines[0]
-  if (lines.length > 1) {
+  if (structured && descriptions.length > 1) { out.error = 'More than one widget marker with a structured payload.' }
+  if (payloadCharacters > MAX_WIDGET_LINE) { out.error = 'Widget markers exceed 8192 characters.' }
+  if (out.error.length > 0 || out.describing || descriptions.length === 0) { return out }
+  let description = descriptions[0]
+  if (descriptions.length > 1) {
     let parts: string[] = []
-    for (let i = 0; i < lines.length; i++) { parts.push('(' + (i + 1).toString() + ') ' + lines[i]) }
-    line = 'One widget holding all of these parts, in this order: ' + parts.join(' ')
+    for (let i = 0; i < descriptions.length; i++) { parts.push('(' + (i + 1).toString() + ') ' + descriptions[i]) }
+    description = 'One widget holding all of these parts, in this order: ' + parts.join(' ')
   }
-  if (line.length > MAX_WIDGET_LINE) {
-    out.cutFrom = line.length
-    line = line.substring(0, MAX_WIDGET_LINE)
-  }
-  out.appDescription = line
+  if (description.length > MAX_WIDGET_LINE) { out.error = 'Combined widget description exceeds 8192 characters.' }
+  else { out.appDescription = description }
   return out
 }
 
@@ -247,7 +337,8 @@ function toolResultMessage(id: string, content: string): Record<string, Object> 
  * failure.
  */
 export async function chatReply(history: ChatTurn[], onText: (soFar: string) => void,
-    onStatus: (status: string) => void, stats: ReplyStats): Promise<string> {
+    onStatus: (status: string) => void, stats: ReplyStats,
+    onVerifiedSearch: (text: string) => void = (_text: string): void => {}): Promise<string> {
   let key = settings.getApiKey()
   if (key.length === 0) {
     throw new Error('No DeepSeek API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key>')
@@ -255,7 +346,7 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
   let canSearch = settings.hasExaKey()
   let messages: Record<string, Object>[] = [plain('system', canSearch ? CHAT_SYSTEM_PROMPT + SEARCH_NOTE : CHAT_SYSTEM_PROMPT)]
   for (let t of history) {
-    messages.push(plain(t.role, t.text))
+    messages.push(plain(t.role, '[messageId=' + (t.messageId || 0).toString() + ']\n' + t.text))
   }
   let reply = ''
   let searches = 0
@@ -273,11 +364,17 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
     if (!offer || step.calls.length === 0) { break }
     messages.push(assistantCallsMessage(step))
     for (let call of step.calls) {
+      if (searches >= MAX_SEARCHES || call.name !== SEARCH_TOOL_NAME) {
+        messages.push(toolResultMessage(call.id, 'Search unavailable.'))
+        continue
+      }
       searches++
       let query = queryOf(call.args)
       onStatus('Searching the web: ' + query)
       let searchStarted = Date.now()
-      messages.push(toolResultMessage(call.id, await webSearch(query)))
+      let result = await webSearch(query)
+      messages.push(toolResultMessage(call.id, result))
+      if (result.startsWith('Web results for ')) { onVerifiedSearch(result) }
       stats.searches = stats.searches + 1
       stats.searchMs = stats.searchMs + (Date.now() - searchStarted)
     }
@@ -512,9 +609,17 @@ function readLine(line: string, step: ChatStep, pending: Map<number, PendingCall
  * the UI catalogue already spliced in. Calls must not overlap: the engine is a
  * singleton with one generation in flight.
  */
-export async function buildMiniApp(systemPrompt: string, description: string, personRequest: string, baseSource: string,
-    onStatus: (status: string) => void): Promise<MiniApp> {
+export async function buildMiniApp(systemPrompt: string, description: string | WidgetBuildContext,
+    personRequestOrStatus: string | ((status: string) => void), baseSource: string = '',
+    legacyStatus: (status: string) => void = (_status: string): void => {}): Promise<MiniApp> {
   let result = new MiniApp()
+  if (systemPrompt.trim().length === 0) { result.error = 'Widget resources are not ready.'; return result }
+  let prompt = typeof description === 'string' ? description : widgetContextPrompt(description)
+  let previousSource = typeof description === 'string' ? baseSource : description.source
+  let onStatus: (status: string) => void = typeof personRequestOrStatus === 'string' ? legacyStatus : personRequestOrStatus
+  if (typeof personRequestOrStatus === 'string' && personRequestOrStatus.length > 0) {
+    prompt += '\n\nWhat the person wrote, for reference only; where it differs, the description above wins: ' + personRequestOrStatus
+  }
   let failedSource = ''
   let feedback = ''
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -525,27 +630,16 @@ export async function buildMiniApp(systemPrompt: string, description: string, pe
     request.uiTool = false
     request.temperature = 0.2
     request.maxTokens = DEEPSEEK_GENERATION_MAX_TOKENS
-    // The description is the brief. What the person actually wrote goes with it
-    // so a detail the description dropped is not lost for good; the builder is
-    // told the description wins where the two differ.
-    let brief = description
-    if (personRequest.length > 0) {
-      brief = brief + '\n\nWhat the person wrote, for reference only; where it differs, the description above wins: ' + personRequest
-    }
     if (feedback.length > 0) {
       request.previousSource = failedSource
-      request.userPrompt = brief +
+      request.userPrompt = prompt +
         '\n\nThe program above is your previous attempt and it failed to compile:\n' + feedback +
         '\n\nRepair the failed source against these diagnostics. Preserve requested behavior and compatible state field names and types. ' +
         'Return the complete replacement program as source only, not a patch or continuation. ' +
         'If output was truncated, shorten optional content while preserving required behavior.'
-    } else if (baseSource.length > 0) {
-      // A change to a widget already in the chat: its program goes in as the
-      // previous source, and the engine asks for a complete replacement.
-      request.previousSource = baseSource
-      request.userPrompt = brief
     } else {
-      request.userPrompt = brief
+      request.previousSource = previousSource
+      request.userPrompt = prompt
     }
     // Widget generation uses reasoning on every attempt, including the first.
     deepseek.setThinking(true)

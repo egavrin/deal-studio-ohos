@@ -1,0 +1,225 @@
+VERA-SDK-EMBED-CMP need="battery level" token=[] embedding=[]
+VERA-SDK-TOOL round=1 need="battery level" found=0 via=embedding
+VERA-SDK-TIMING need="battery level" tokenFullMs=0 embeddingFullMs=0 callTotalMs=1
+VERA-SDK-EMBED-CMP need="battery level" token=[] embedding=[]
+VERA-SDK-TOOL round=1 need="battery level" found=0 via=embedding
+VERA-SDK-TIMING need="battery level" tokenFullMs=0 embeddingFullMs=0 callTotalMs=0
+VERA-SDK-EMBED-CMP need="battery level" token=[] embedding=[]
+VERA-SDK-TOOL round=2 need="battery level" found=0 via=embedding
+VERA-SDK-TIMING need="battery level" tokenFullMs=0 embeddingFullMs=0 callTotalMs=0
+VERA-SDK-EMBED-CMP need="battery level" token=[] embedding=[]
+VERA-SDK-TOOL round=3 need="battery level" found=0 via=embedding
+VERA-SDK-TIMING need="battery level" tokenFullMs=0 embeddingFullMs=0 callTotalMs=0
+VERA-SDK-EMBED-CMP need="battery level" token=[] embedding=[]
+VERA-SDK-TOOL round=4 need="battery level" found=0 via=embedding
+VERA-SDK-TIMING need="battery level" tokenFullMs=0 embeddingFullMs=0 callTotalMs=0
+VERA-UI-NEEDS ms=0 needs=[editable numeric amount]
+{
+  "revision": "3a5affbac68c05ec4bcc991862b88ba21c14eb4e",
+  "harness_sha256": "83baa0ea23567969939e7bccd05ca5eee2632e34c8e0beb7e14613384e2c7e1d",
+  "source_sha256": {
+    "entry/src/main/resources/rawfile/vera-skill.txt": "07865631c4a38228e34cc5363e85e23cbd2d07c20f9745146b8abf8b6b4260b3",
+    "entry/src/main/resources/rawfile/vera-widget.txt": "d6b61541b4ccf9b395d2171ea31b25bd5504d50b566cdebe49ec2791aff8e901",
+    "entry/src/main/ets/vera/VeraChat.ets": "d408bf83314b5dc0cd927a16e465b0858929d08bf59edf384bcf90bfcacccb54",
+    "entry/src/main/ets/vera/DeepSeekEngine.ets": "af0f7b2a4e4abcae93ced82a2e00b8c47be48505591667310a9b6bcc2a57ceca",
+    "entry/src/main/ets/pages/GeneratePage.ets": "f82986fb5d6be3b771a05b0f9458eb7556b86735abaf1039b461413424d970fe",
+    "docs/prompt-evaluation.md": "3406fbb3f9fbb19b3610451a61fc1d15fc2b1b6ff4052cacfe92fe8933a2b562"
+  },
+  "uncommitted_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "command": "node /Users/egavrin/Documents/deal-studio-ohos/tools/vera-harness/prompt-check.js /Users/egavrin/Documents/deal-studio-ohos /Users/egavrin/Documents/deal-studio-ohos/docs/chat-widget-evidence/prompts.json",
+  "inputs": "Checked-in prompt assets and deterministic mocked HTTP replies. Actual application compiler, VM, UI decoder and prompt transport execute on host.",
+  "expected": "All prompt and generation workflow checks PASS; DeepSeek application generation uses enabled reasoning and 32768 output tokens on every attempt.",
+  "observed": "PASS",
+  "checks": [
+    {
+      "name": "Prompt template assembly: full, selected, widget",
+      "status": "PASS",
+      "observed": {
+        "templateCharacters": 16461,
+        "widgetCharacters": 3882,
+        "modes": 3
+      }
+    },
+    {
+      "name": "Compile the complete prompt example",
+      "status": "PASS",
+      "observed": {
+        "bytecodeBytes": 6569
+      }
+    },
+    {
+      "name": "Render initial state through real VM and UI decoder",
+      "status": "PASS",
+      "observed": {
+        "root": "apptheme",
+        "nodes": 16,
+        "pendingEffects": 0
+      }
+    },
+    {
+      "name": "Edit input and add entry without mutating earlier state",
+      "status": "PASS",
+      "observed": {
+        "entries": 2
+      }
+    },
+    {
+      "name": "Persist, restore and render populated state",
+      "status": "PASS",
+      "observed": {
+        "root": "apptheme",
+        "nodes": 18
+      }
+    },
+    {
+      "name": "Intent callback classification through compile, dispatch and render",
+      "status": "PASS",
+      "observed": {
+        "cases": 5,
+        "rawAnswersPreserved": true
+      }
+    },
+    {
+      "name": "Widget currency helper handles cents and negative amounts",
+      "status": "PASS",
+      "observed": {
+        "cases": 7
+      }
+    },
+    {
+      "name": "Shared generation token limit is 32768",
+      "status": "PASS",
+      "observed": {
+        "maxTokens": 32768
+      }
+    },
+    {
+      "name": "Generate screen first candidate compiles with uniform settings and metrics",
+      "status": "PASS",
+      "observed": {
+        "attempts": 1,
+        "thinking": "enabled",
+        "maxTokens": 32768,
+        "metricsThinking": true
+      }
+    },
+    {
+      "name": "Generate screen cancellation during capability wait sends no model request",
+      "status": "PASS",
+      "observed": {
+        "modelRequests": 0,
+        "status": "Stopped"
+      }
+    },
+    {
+      "name": "Generate screen compiler retry retains exact source and diagnostics",
+      "status": "PASS",
+      "observed": {
+        "attempts": 2,
+        "exactFailedSource": true,
+        "exactCompilerDiagnostics": true,
+        "allMetricsThinking": true
+      }
+    },
+    {
+      "name": "Generate screen refinement first attempt retains current compiled source",
+      "status": "PASS",
+      "observed": {
+        "attempts": 1,
+        "currentSourcePreserved": true
+      }
+    },
+    {
+      "name": "Generate screen all three compiler attempts use uniform settings",
+      "status": "PASS",
+      "observed": {
+        "attempts": 3,
+        "terminalFailure": true
+      }
+    },
+    {
+      "name": "Widget first candidate compiles with uniform settings",
+      "status": "PASS",
+      "observed": {
+        "attempts": 1,
+        "thinking": "enabled",
+        "maxTokens": 32768
+      }
+    },
+    {
+      "name": "Widget all three compiler attempts use uniform settings",
+      "status": "PASS",
+      "observed": {
+        "attempts": 3,
+        "terminalFailure": true
+      }
+    },
+    {
+      "name": "Generate screen tool continuation retains uniform settings",
+      "status": "PASS",
+      "observed": {
+        "requests": 2,
+        "toolResultDelivered": true
+      }
+    },
+    {
+      "name": "Widget forced final tool round retains uniform settings",
+      "status": "PASS",
+      "observed": {
+        "requests": 5,
+        "finalToolsDisabled": true
+      }
+    },
+    {
+      "name": "Local generation keeps its original token budget",
+      "status": "PASS",
+      "observed": {
+        "maxTokens": 2048,
+        "httpRequests": 0
+      }
+    },
+    {
+      "name": "Cloud and local refinement transport preserve source and request",
+      "status": "PASS",
+      "observed": {
+        "providers": 2,
+        "sourcePreserved": true
+      }
+    },
+    {
+      "name": "Widget compile-repair workflow uses failed source and original goal",
+      "status": "PASS",
+      "observed": {
+        "attempts": 2,
+        "failedSourceReplayed": true
+      }
+    },
+    {
+      "name": "Truncated widget generation repairs a complete replacement",
+      "status": "PASS",
+      "observed": {
+        "attempts": 2,
+        "truncationFeedback": true
+      }
+    },
+    {
+      "name": "UI needs parser accepts one requirement without padding",
+      "status": "PASS",
+      "observed": {
+        "phrases": 1,
+        "temperature": 0
+      }
+    },
+    {
+      "name": "Chat marker streaming and description handoff",
+      "status": "PASS",
+      "observed": {
+        "completeMarker": true,
+        "partialMarkerHeld": true
+      }
+    }
+  ],
+  "limits": [
+    "HTTP and native imports are mocked. No real model or HarmonyOS device run. Generate screen methods execute from actual source with UI bookkeeping mocked. TypeScript transpilation is not an ArkTS SDK build."
+  ]
+}

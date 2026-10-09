@@ -13,13 +13,11 @@ import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { ensureUiEmbeddings } from '../vera/VeraUiIndex'
-import { loadRegistry } from '../vera/VeraIntentRegistry'
-import { loadIntentSummaries } from '../vera/VeraIntentIndex'
+import { ensureCapabilities, prepareCapabilityEmbeddings } from '../vera/VeraCapabilities'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
-import { loadSdkIndex } from '../vera/VeraSdkIndex'
-import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL, modelSupportNote } from '../vera/VeraEmbeddings'
-import { ensureSdkEmbeddings, sdkEmbeddingsReady } from '../vera/VeraSdkEmbeddingCache'
-import { ensureIntentEmbeddings, intentEmbeddingsReady } from '../vera/VeraIntentEmbeddingCache'
+import { modelSupportNote } from '../vera/VeraEmbeddings'
+import { ensureSdkEmbeddings } from '../vera/VeraSdkEmbeddingCache'
+import { ensureIntentEmbeddings } from '../vera/VeraIntentEmbeddingCache'
 import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchmark'
 import { sdkSearchRequested, runSdkSearchProbe } from '../vera/VeraSdkProbe'
 import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
@@ -287,44 +285,8 @@ struct GeneratePage {
       this.promptTemplate = skill
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
         .replace('{{UI_TOOL_NOTE}}\n', '')
-      // The phone's own list of intents, read once. find_intent_function
-      // reads it through VeraIntentRegistry.registryEntries(); without an
-      // address the model would have to invent one, and an invented address
-      // fails silently.
-      // Summaries first: the intent pool is built from the registry and the
-      // summaries together, and it is rebuilt when either grows, so order only
-      // saves one rebuild -- but it also keeps the first embedding pass from
-      // embedding every intent twice, once per text.
-      loadIntentSummaries(mgr).then(() => loadRegistry()).then((count: number) => {
-        console.info('VERA-REGISTRY ' + count.toString() + ' intents available to find_intent_function')
-        // ensureEmbeddingsReady() below races this same read (its own,
-        // independent async device call) and can run first -- re-checking
-        // here, now that the registry has actually finished, is what picks
-        // up the raw entries that were still missing at that point.
-        ensureIntentEmbeddings(getContext(this).filesDir, mgr).then(() => {
-          console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
-        })
-      })
-      // The sdk selector's index (docs/selector-design.md): loaded once here
-      // so it's ready before DeepSeekEngine's find_sdk_function tool call
-      // needs it mid-generation.
-      loadSdkIndex(mgr).then((count: number) => {
-        console.info('VERA-SDK ' + count.toString() + ' sdk functions available to search')
-        // Same reasoning as the loadRegistry() callback above: ensureSdkEmbeddings()
-        // can run before this rawfile read finishes, in which case its first
-        // pass sees an empty index and does nothing -- re-checking here,
-        // now that the index is actually loaded, is what starts the real build.
-        ensureSdkEmbeddings(getContext(this).filesDir, mgr).then(() => {
-          console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
-        })
-      })
-      // The embedding corpus caches: downloads EmbeddingGemma once if
-      // missing, loads it through the native llama.cpp binding, then builds
-      // or loads the sdk and intent corpus caches -- fire-and-forget, same
-      // as loadRegistry()/loadSdkIndex() above. find_sdk_function/
-      // find_intent_function (DeepSeekEngine.ets) fall back to today's token
-      // search whenever any step here isn't ready, so this never blocks or
-      // regresses a generation.
+      // Chat and Generate share index readiness and background embedding work.
+      ensureCapabilities(getContext(this))
       this.ensureEmbeddingsReady()
       this.systemPrompt = this.promptTemplate
       this.grammar = await loadRawfileText(mgr, 'vera.gbnf')
@@ -441,59 +403,21 @@ struct GeneratePage {
     }
   }
 
-  /**
-   * Downloads EmbeddingGemma straight from Hugging Face (no vera-server hop
-   * -- unlike downloadModel() above, this one is small and public), loads it
-   * through the native binding, then builds or loads the two corpus caches.
-   * Entirely best-effort: a failure at any step just leaves the embedding
-   * search unavailable for this session, and every caller already treats
-   * that the same as "not ready yet".
-   */
+  /** Preserve UI preparation and evaluation hooks after shared capability preparation. */
   private async ensureEmbeddingsReady(): Promise<void> {
     let filesDir = getContext(this).filesDir
-    if (!embedModelExists(filesDir)) {
-      await this.downloadEmbedModel(filesDir)
-    }
-    if (!embedModelExists(filesDir)) { return }
-    let ok = await loadEmbeddingModel(filesDir)
-    if (!ok) { return }
-    // Fire-and-forget, same as before -- both proceed concurrently and the
-    // page never blocks on either. benchmarkRequested() below awaits these
-    // same promises without changing that: a second consumer of an
-    // already-in-flight promise doesn't delay or re-trigger it.
+    await prepareCapabilityEmbeddings(getContext(this))
     let sdkPromise = ensureSdkEmbeddings(filesDir, getContext(this).resourceManager)
-    sdkPromise.then(() => {
-      console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
-    })
-    let uiPromise = ensureUiEmbeddings(filesDir)
     let intentPromise = ensureIntentEmbeddings(filesDir, getContext(this).resourceManager)
-    intentPromise.then(() => {
-      console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
-    })
+    let uiPromise = ensureUiEmbeddings(filesDir)
     if (benchmarkRequested()) {
       await sdkPromise
       await intentPromise
-      // loadRegistry()/loadSdkIndex() are separate, independent async
-      // reads (see the race-condition comments on ensureSdkEmbeddings/
-      // ensureIntentEmbeddings themselves) and may still be mid-flight
-      // even after the two awaits above settle with whatever was cached
-      // at that moment -- a few seconds' margin, then one more
-      // ensureIntentEmbeddings call (safe to repeat; coalesces with an
-      // in-flight one, re-checks missing keys otherwise) picks up a
-      // registry read that only finished in between. Only this opt-in
-      // path waits at all; an ordinary launch is unaffected.
-      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
-      await ensureIntentEmbeddings(filesDir, getContext(this).resourceManager)
       await runSearchBenchmark()
     }
     let search = sdkSearchRequested()
     if (search !== null) {
       await sdkPromise
-      // Same race, same margin as the benchmark path above: loadSdkIndex()
-      // is a separate, independent async read that sdkPromise alone
-      // doesn't wait for, and an empty live index makes both searches
-      // answer with nothing to find rather than a real ranking.
-      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
       await runSdkSearchProbe(search)
     }
     if (uiEvalRequested()) {
@@ -506,34 +430,7 @@ struct GeneratePage {
     }
     if (sdkEvalRequested()) {
       await sdkPromise
-      // Same race and margin as the search probe above.
-      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
       await runSdkEval(getContext(this).resourceManager)
-    }
-  }
-
-  private async downloadEmbedModel(filesDir: string): Promise<void> {
-    try {
-      fs.mkdirSync(filesDir + '/models', true)
-    } catch (_e) {}
-    console.info('VERA-EMBED downloading model (one-time, ~236MB)...')
-    try {
-      let task = await request.downloadFile(getContext(this), {
-        url: EMBED_MODEL_URL,
-        filePath: embedModelPath(filesDir)
-      })
-      task.on('progress', (received: number, total: number): void => {
-        if (total > 0) {
-          console.info('VERA-EMBED downloading ' + Math.floor(received * 100 / total).toString() + '%')
-        }
-      })
-      await new Promise<void>((resolve, reject) => {
-        task.on('complete', (): void => { resolve() })
-        task.on('fail', (err: number): void => { reject(new Error('download failed, code ' + err.toString())) })
-      })
-      console.info('VERA-EMBED model downloaded')
-    } catch (e) {
-      console.warn('VERA-EMBED model download failed: ' + (e as Error).message)
     }
   }
 
@@ -699,9 +596,11 @@ struct GeneratePage {
    * The one place that knows which model is behind the loop. Everything after
    * it -- compile, collect diagnostics, retry -- is identical for both.
    */
-  private callModel(request: GenerateRequest, onToken: (token: string) => void): Promise<GenerateResult> {
+  private async callModel(request: GenerateRequest, onToken: (token: string) => void): Promise<GenerateResult> {
     if (this.mode === MODE_DEEPSEEK) {
       // Initial generation, refinement, and retries share reasoning and output settings.
+      await ensureCapabilities(getContext(this))
+      if (this.cancelRequested) { return new GenerateResult() }
       deepseek.setThinking(true)
       request.maxTokens = DEEPSEEK_GENERATION_MAX_TOKENS
       return deepseek.generate(request, onToken)

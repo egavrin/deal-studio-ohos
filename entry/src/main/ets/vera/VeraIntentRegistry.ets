@@ -71,7 +71,7 @@ function domainOf(bundle: string): string {
 }
 
 let cache: RegistryEntry[] = []
-let loaded = false
+let loading: Promise<number> | null = null
 
 /**
  * Reads the registry once and remembers it.
@@ -81,9 +81,12 @@ let loaded = false
  * generation. Failure is not an error: an empty list means the prompt carries
  * the catalogue alone.
  */
-export async function loadRegistry(): Promise<number> {
-  if (loaded) { return cache.length }
-  loaded = true
+export function loadRegistry(): Promise<number> {
+  if (loading === null) { loading = loadRegistryRead() }
+  return loading!
+}
+
+async function loadRegistryRead(): Promise<number> {
   try {
     let infos = await insightIntentDriver.getAllInsightIntentInfo(
       insightIntentDriver.GetInsightIntentFlag.GET_FULL_INSIGHT_INTENT)
