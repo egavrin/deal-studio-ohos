@@ -123,6 +123,8 @@ struct StatsPanel {
   @Prop tally: Tally = new Tally()
   @Prop attempts: AttemptStat[] = []
   @Prop heading: string = ''
+  /** The <<app: ...>> line this reply handed to the widget builder; empty when it built none. */
+  @Prop widgetLine: string = ''
 
   private fresh(): number {
     let f = this.tally.input - this.tally.cached
@@ -138,6 +140,17 @@ struct StatsPanel {
     Column({ space: 8 }) {
       if (this.heading.length > 0) {
         Text(this.heading).fontSize(11).fontColor('#888888').width('100%')
+      }
+      if (this.widgetLine.length > 0) {
+        Column({ space: 4 }) {
+          Text('Widget request').fontSize(10).fontColor('#888888')
+          Text(this.widgetLine).fontSize(12).fontColor('#333333').fontFamily('monospace')
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding(10)
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
       }
       Row({ space: 8 }) {
         StatCell({ label: 'Time', value: formatMs(this.tally.ms),
@@ -270,7 +283,8 @@ struct MessageBubble {
           .constraintSize({ maxWidth: '85%' })
       }
       if (this.showStats && this.msg.role === 'assistant' && this.msg.chatInput + this.msg.attempts.length > 0) {
-        StatsPanel({ tally: tallyOf([this.msg]), attempts: this.msg.attempts, heading: 'This reply' })
+        StatsPanel({ tally: tallyOf([this.msg]), attempts: this.msg.attempts, heading: 'This reply',
+          widgetLine: this.msg.appDescription })
       }
     }
     .width('100%')
