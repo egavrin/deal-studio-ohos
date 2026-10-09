@@ -45,6 +45,9 @@ import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
 import { findUiComponentsByEmbedding } from './VeraUiIndex'
 import { describeComponents, optionalComponents } from './VeraUiCatalog'
 
+// Application generation uses this budget for both reasoning and source on every attempt.
+export const DEEPSEEK_GENERATION_MAX_TOKENS: number = 32768
+
 const SDK_TOOL_NAME = 'find_sdk_function'
 // 16, not 8: on the gold set the right function sat at rank 9-16 often enough that
 // recall went from 0.62 at 8 to 0.76 at 16, for a few hundred more tokens a call.
