@@ -1,0 +1,30 @@
+import * as ui from "std/ui"
+
+@jsonable
+class AppState {
+  screen: string;
+}
+
+function init(): AppState {
+  return { screen: "list" };
+}
+
+function goBack(state: AppState, _v: int): AppState {
+  return { screen: "list" };
+}
+
+function openDetail(state: AppState, _v: int): AppState {
+  return { screen: "detail" };
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("spacious", [
+      ui.When(state.screen === "list", ui.Button("primary", "Open", "openDetail", 0, true)),
+      ui.When(state.screen === "detail", ui.Column("default", [
+        ui.Text("body", "Detail screen"),
+        ui.BackHandler("goBack")
+      ]))
+    ])
+  ]);
+}

@@ -24,7 +24,7 @@ than something applied silently.
 
 Usage:
     python3 tools/select-sdk-backend-candidates.py \
-        --index tools/sdk-index.json \
+        --index entry/src/main/resources/rawfile/sdk-index.json \
         --out-json tools/sdk-backend-selected.json \
         --out-doc docs/sdk-backend-500.md \
         --limit 500
@@ -156,7 +156,7 @@ def recognizability_score(entry):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--index', default='tools/sdk-index.json')
+    ap.add_argument('--index', default='entry/src/main/resources/rawfile/sdk-index.json')
     ap.add_argument('--out-json', default='tools/sdk-backend-selected.json')
     ap.add_argument('--out-doc', default='docs/sdk-backend-500.md')
     ap.add_argument('--limit', type=int, default=500)

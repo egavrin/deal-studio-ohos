@@ -32,6 +32,10 @@ export class VeraUiNode {
   minimum: number = 0
   maximum: number = 100
   options: string[] = []
+  /** A chart's raw values, for ui.Sparkline -- the one int[] prop in the language. */
+  series: number[] = []
+  /** ui.Sparkline: draw series as separate bars instead of a connected line. */
+  bars: boolean = false
   children: VeraUiNode[] = []
 
   /**
@@ -54,6 +58,19 @@ export class VeraUiNode {
 
   /** The name of an icon in VeraIcons; '' for none. */
   icon: string = ''
+
+  /** ui.TextField validation; see VeraUiCatalog's guidance for the component. */
+  keyboardType: string = ''
+  required: boolean = false
+  requiredMessage: string = ''
+  minLength: number = 0
+  minLengthMessage: string = ''
+  maxLength: number = -1
+  maxLengthMessage: string = ''
+  pattern: string = ''
+  patternMessage: string = ''
+  email: boolean = false
+  emailMessage: string = ''
 }
 
 function asString(v: RuntimeValue): string {
@@ -400,6 +417,17 @@ export class UiHostEnvironment extends HostEnvironment {
           ['label', new VeraStringValue(argString(args, 1))],
           ['value', new VeraStringValue(argString(args, 2))],
           ['action', new VeraStringValue(argString(args, 3))],
+          ['keyboardType', new VeraStringValue(argString(args, 4))],
+          ['required', new VeraBooleanValue(argBool(args, 5, false))],
+          ['requiredMessage', new VeraStringValue(argString(args, 6))],
+          ['minLength', new VeraIntValue(argInt(args, 7, 0))],
+          ['minLengthMessage', new VeraStringValue(argString(args, 8))],
+          ['maxLength', new VeraIntValue(argInt(args, 9, -1))],
+          ['maxLengthMessage', new VeraStringValue(argString(args, 10))],
+          ['pattern', new VeraStringValue(argString(args, 11))],
+          ['patternMessage', new VeraStringValue(argString(args, 12))],
+          ['email', new VeraBooleanValue(argBool(args, 13, false))],
+          ['emailMessage', new VeraStringValue(argString(args, 14))],
         ])
       case 'Toggle':
       case 'Checkbox':
@@ -454,6 +482,10 @@ export class UiHostEnvironment extends HostEnvironment {
       case 'Divider':
         return viewNode('divider', [
           ['style', new VeraStringValue(argString(args, 0))],
+        ])
+      case 'BackHandler':
+        return viewNode('backhandler', [
+          ['action', new VeraStringValue(argString(args, 0))],
         ])
       case 'Progress':
         return viewNode('progress', [
@@ -630,6 +662,18 @@ export class UiHostEnvironment extends HostEnvironment {
           ['enabled', new VeraBooleanValue(argBool(args, 6))],
           ['icon', new VeraStringValue(argString(args, 7))],
         ])
+      case 'Table':
+        return viewNode('table', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['options', argArray(args, 1)],
+          ['columns', new VeraIntValue(argInt(args, 2))],
+          ['children', argArray(args, 3)],
+        ])
+      case 'TableRow':
+        return viewNode('tablerow', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['options', argArray(args, 1)],
+        ])
       case 'KeyValueGroup':
         return viewNode('kvgroup', [
           ['style', new VeraStringValue(argString(args, 0))],
@@ -662,6 +706,38 @@ export class UiHostEnvironment extends HostEnvironment {
           ['style', new VeraStringValue(argString(args, 0))],
           ['text', new VeraStringValue(argString(args, 1))],
           ['icon', new VeraStringValue(argString(args, 2))],
+        ])
+      // Loading and transient-status feedback. None of these need a new
+      // VeraUiNode field: Skeleton reuses minimum/maximum/checked exactly as
+      // Ticker already does for intervalMs/running, and Snackbar reuses
+      // text/value/action exactly as InsetBanner does for message/
+      // actionText/action.
+      case 'Skeleton':
+        return viewNode('skeleton', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['minimum', new VeraIntValue(argInt(args, 1))],
+          ['maximum', new VeraIntValue(argInt(args, 2))],
+          ['checked', new VeraBooleanValue(argBool(args, 3, false))],
+        ])
+      case 'Spinner':
+        return viewNode('spinner', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+        ])
+      case 'Snackbar':
+        return viewNode('snackbar', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['text', new VeraStringValue(argString(args, 1))],
+          ['value', new VeraStringValue(argString(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
+        ])
+      case 'Sparkline':
+        return viewNode('sparkline', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['series', argArray(args, 1)],
+          ['maximum', new VeraIntValue(argInt(args, 2))],
+          ['label', new VeraStringValue(argString(args, 3))],
+          ['bars', new VeraBooleanValue(argBool(args, 4, false))],
         ])
       case 'When':
         if (asBool(args[0])) { return args[1] }
@@ -826,6 +902,9 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
       case 'enabled':
         if (v instanceof VeraBooleanValue) { node.enabled = (v as VeraBooleanValue).value }
         break
+      case 'bars':
+        if (v instanceof VeraBooleanValue) { node.bars = (v as VeraBooleanValue).value }
+        break
       case 'options':
         if (v instanceof VeraArrayValue) {
           let opts: string[] = []
@@ -834,6 +913,48 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
           }
           node.options = opts
         }
+        break
+      case 'series':
+        if (v instanceof VeraArrayValue) {
+          let nums: number[] = []
+          for (let n of (v as VeraArrayValue).elements) {
+            if (n instanceof VeraIntValue) { nums.push((n as VeraIntValue).value) }
+          }
+          node.series = nums
+        }
+        break
+      case 'keyboardType':
+        if (v instanceof VeraStringValue) { node.keyboardType = (v as VeraStringValue).value }
+        break
+      case 'required':
+        if (v instanceof VeraBooleanValue) { node.required = (v as VeraBooleanValue).value }
+        break
+      case 'requiredMessage':
+        if (v instanceof VeraStringValue) { node.requiredMessage = (v as VeraStringValue).value }
+        break
+      case 'minLength':
+        if (v instanceof VeraIntValue) { node.minLength = (v as VeraIntValue).value }
+        break
+      case 'minLengthMessage':
+        if (v instanceof VeraStringValue) { node.minLengthMessage = (v as VeraStringValue).value }
+        break
+      case 'maxLength':
+        if (v instanceof VeraIntValue) { node.maxLength = (v as VeraIntValue).value }
+        break
+      case 'maxLengthMessage':
+        if (v instanceof VeraStringValue) { node.maxLengthMessage = (v as VeraStringValue).value }
+        break
+      case 'pattern':
+        if (v instanceof VeraStringValue) { node.pattern = (v as VeraStringValue).value }
+        break
+      case 'patternMessage':
+        if (v instanceof VeraStringValue) { node.patternMessage = (v as VeraStringValue).value }
+        break
+      case 'email':
+        if (v instanceof VeraBooleanValue) { node.email = (v as VeraBooleanValue).value }
+        break
+      case 'emailMessage':
+        if (v instanceof VeraStringValue) { node.emailMessage = (v as VeraStringValue).value }
         break
       case 'children':
         if (v instanceof VeraArrayValue) {

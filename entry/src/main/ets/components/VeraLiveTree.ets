@@ -41,12 +41,27 @@ export class LiveNode {
   @Trace minimum: number = 0
   @Trace maximum: number = 100
   @Trace options: string[] = []
+  // ui.Sparkline's raw values; see VeraUiNode.
+  @Trace series: number[] = []
+  @Trace bars: boolean = false
   // The typed numeric layer; see VeraUiNode.
   @Trace intValue: number = 0
   @Trace prefix: string = ''
   @Trace suffix: string = ''
   @Trace minimumDigits: number = 1
   @Trace icon: string = ''
+  // ui.TextField validation; see VeraUiNode.
+  @Trace keyboardType: string = ''
+  @Trace required: boolean = false
+  @Trace requiredMessage: string = ''
+  @Trace minLength: number = 0
+  @Trace minLengthMessage: string = ''
+  @Trace maxLength: number = -1
+  @Trace maxLengthMessage: string = ''
+  @Trace pattern: string = ''
+  @Trace patternMessage: string = ''
+  @Trace email: boolean = false
+  @Trace emailMessage: string = ''
   @Trace children: LiveNode[] = []
 }
 
@@ -71,11 +86,24 @@ export function toLive(node: VeraUiNode): LiveNode {
   live.minimum = node.minimum
   live.maximum = node.maximum
   live.options = node.options
+  live.series = node.series
+  live.bars = node.bars
   live.intValue = node.intValue
   live.prefix = node.prefix
   live.suffix = node.suffix
   live.minimumDigits = node.minimumDigits
   live.icon = node.icon
+  live.keyboardType = node.keyboardType
+  live.required = node.required
+  live.requiredMessage = node.requiredMessage
+  live.minLength = node.minLength
+  live.minLengthMessage = node.minLengthMessage
+  live.maxLength = node.maxLength
+  live.maxLengthMessage = node.maxLengthMessage
+  live.pattern = node.pattern
+  live.patternMessage = node.patternMessage
+  live.email = node.email
+  live.emailMessage = node.emailMessage
   let kids: LiveNode[] = []
   for (let child of node.children) { kids.push(toLive(child)) }
   live.children = kids
@@ -122,11 +150,24 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.minimum !== next.minimum) { live.minimum = next.minimum }
   if (live.maximum !== next.maximum) { live.maximum = next.maximum }
   if (live.options.join('\u0000') !== next.options.join('\u0000')) { live.options = next.options }
+  if (live.series.join(',') !== next.series.join(',')) { live.series = next.series }
+  if (live.bars !== next.bars) { live.bars = next.bars }
   if (live.intValue !== next.intValue) { live.intValue = next.intValue }
   if (live.prefix !== next.prefix) { live.prefix = next.prefix }
   if (live.suffix !== next.suffix) { live.suffix = next.suffix }
   if (live.minimumDigits !== next.minimumDigits) { live.minimumDigits = next.minimumDigits }
   if (live.icon !== next.icon) { live.icon = next.icon }
+  if (live.keyboardType !== next.keyboardType) { live.keyboardType = next.keyboardType }
+  if (live.required !== next.required) { live.required = next.required }
+  if (live.requiredMessage !== next.requiredMessage) { live.requiredMessage = next.requiredMessage }
+  if (live.minLength !== next.minLength) { live.minLength = next.minLength }
+  if (live.minLengthMessage !== next.minLengthMessage) { live.minLengthMessage = next.minLengthMessage }
+  if (live.maxLength !== next.maxLength) { live.maxLength = next.maxLength }
+  if (live.maxLengthMessage !== next.maxLengthMessage) { live.maxLengthMessage = next.maxLengthMessage }
+  if (live.pattern !== next.pattern) { live.pattern = next.pattern }
+  if (live.patternMessage !== next.patternMessage) { live.patternMessage = next.patternMessage }
+  if (live.email !== next.email) { live.email = next.email }
+  if (live.emailMessage !== next.emailMessage) { live.emailMessage = next.emailMessage }
 
   // Reconcile the positions that already exist, in place, so the components
   // rendering them keep pointing at a node that is still being updated.

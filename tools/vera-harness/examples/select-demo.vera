@@ -1,0 +1,23 @@
+import * as ui from "std/ui"
+
+@jsonable
+class AppState {
+  day: int;
+}
+
+function init(): AppState {
+  return { day: 0 };
+}
+
+function pick(state: AppState, index: int): AppState {
+  return { day: index };
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("spacious", [
+      ui.Header("default", "Weekly reminder", "", "", ""),
+      ui.Select("default", "Repeat on", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], 0, "pick")
+    ])
+  ]);
+}

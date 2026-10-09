@@ -30,6 +30,7 @@
 
 import storageStatistics from '@ohos.file.storageStatistics'
 import { AbilityContext } from './VeraPermissions'
+import calendarManager from '@ohos.calendarManager'
 import camera from '@ohos.multimedia.camera'
 import audio from '@ohos.multimedia.audio'
 import fs from '@ohos.file.fs'
@@ -814,6 +815,107 @@ async function vibrateNow(params: Map<string, string>): Promise<string> {
   }
 }
 
+// Calendar. The app's own default calendar (the one `requestCalendarPermissions`
+// in VeraPermissions.ets already asks READ_CALENDAR/WRITE_CALENDAR for at
+// startup, before any program runs) is fetched once and reused -- a generated
+// program has no way to hold a Calendar object between two sdk.call's, since
+// its parameters are plain strings, so every adapter below is self-contained
+// and resolves the calendar itself rather than expecting one passed in.
+//
+// Event id travels through a VERA program as an opaque decimal string
+// (addEvent's answer, stored in state, passed back to deleteEvent/deleteEvents)
+// rather than an int: VERA-L has no string-to-int conversion, so the id is
+// never parsed by the generated program, only by this file.
+//
+// title/hour/minute/durationMinutes/remindBefore/repeat/location mirrors the
+// dropped std/calendar module's own addEvent shape (see
+// docs/examples/shanghai-layover.vera) -- hour and minute-of-day, not a raw
+// timestamp, because that is what a VERA program actually has (time.hourOfDay/
+// time.minuteOfHour, or arithmetic on them); VERA-L has no Date type and could
+// not build the real API's 13-digit millisecond timestamp itself.
+
+let cachedCalendar: calendarManager.Calendar | null = null
+
+async function defaultCalendar(): Promise<calendarManager.Calendar> {
+  if (cachedCalendar !== null) { return cachedCalendar }
+  let context = AbilityContext.value
+  if (context === null) { throw new Error('no ability context yet') }
+  let manager = calendarManager.getCalendarManager(context)
+  let found = await manager.getCalendar()
+  cachedCalendar = found
+  return found
+}
+
+// Local midnight, in epoch milliseconds, so hour/minute-of-today can become
+// the real API's timestamp without a Date(year, month, day) constructor --
+// matches the millisOfDay math VeraUi.ets's std/time already uses.
+function localMidnightMs(now: Date): number {
+  let millisOfDay = ((now.getHours() * 60 + now.getMinutes()) * 60 + now.getSeconds()) * 1000 +
+    now.getMilliseconds()
+  return now.getTime() - millisOfDay
+}
+
+function recurrenceFrequencyFor(repeat: string): calendarManager.RecurrenceFrequency | undefined {
+  let v = repeat.trim().toLowerCase()
+  if (v.length === 0 || v === 'once' || v === 'none') { return undefined }
+  if (v === 'daily') { return calendarManager.RecurrenceFrequency.DAILY }
+  if (v === 'weekly') { return calendarManager.RecurrenceFrequency.WEEKLY }
+  if (v === 'monthly') { return calendarManager.RecurrenceFrequency.MONTHLY }
+  if (v === 'yearly') { return calendarManager.RecurrenceFrequency.YEARLY }
+  throw new Error('parameter repeat must be once, daily, weekly, monthly or yearly, got "' + repeat + '"')
+}
+
+function parseEventIds(text: string): number[] {
+  let parts = text.split(',')
+  let ids: number[] = []
+  for (let i = 0; i < parts.length; i++) {
+    let trimmed = parts[i].trim()
+    if (trimmed.length === 0) { continue }
+    let n = Number.parseInt(trimmed, 10)
+    if (Number.isNaN(n)) { throw new Error('parameter ids must be comma-separated integers, got "' + trimmed + '"') }
+    ids.push(n)
+  }
+  if (ids.length === 0) { throw new Error('parameter ids is required (comma-separated event ids)') }
+  return ids
+}
+
+class CalendarNewAccount implements calendarManager.CalendarAccount {
+  readonly name: string
+  type: calendarManager.CalendarType = calendarManager.CalendarType.LOCAL
+  displayName?: string
+
+  constructor(name: string, displayName: string) {
+    this.name = name
+    this.displayName = displayName.length > 0 ? displayName : undefined
+  }
+}
+
+class CalendarEventLocation implements calendarManager.Location {
+  location: string
+  constructor(location: string) { this.location = location }
+}
+
+class CalendarEventRecurrence implements calendarManager.RecurrenceRule {
+  recurrenceFrequency: calendarManager.RecurrenceFrequency
+  constructor(frequency: calendarManager.RecurrenceFrequency) { this.recurrenceFrequency = frequency }
+}
+
+class CalendarNewEvent implements calendarManager.Event {
+  type: calendarManager.EventType = calendarManager.EventType.NORMAL
+  title: string
+  startTime: number
+  endTime: number
+  reminderTime?: number[]
+  recurrenceRule?: calendarManager.RecurrenceRule
+  location?: calendarManager.Location
+
+  constructor(title: string, startTime: number, endTime: number) {
+    this.title = title
+    this.startTime = startTime
+    this.endTime = endTime
+  }
+}
+
 // -- generated helpers below (tools/generate-sdk-backend.py) --
 
 function paramString(params: Map<string, string>, name: string, fallback: string): string {
@@ -1083,6 +1185,60 @@ const ADAPTERS: Map<string, SdkAdapter> = new Map<string, SdkAdapter>([
   }],
   ['AudioKit.AudioRenderer.release', async (_params: Map<string, string>): Promise<string> => {
     return await releaseAudioRenderer()
+  }],
+  ['CalendarKit.CalendarManager.getCalendar', async (_params: Map<string, string>): Promise<string> => {
+    let calendar = await defaultCalendar()
+    return calendar.id.toString()
+  }],
+  ['CalendarKit.CalendarManager.createCalendar', async (params: Map<string, string>): Promise<string> => {
+    let context = AbilityContext.value
+    if (context === null) { throw new Error('no ability context yet') }
+    let name = paramString(params, 'name', '')
+    if (name.trim().length === 0) { throw new Error('parameter name is required') }
+    let displayName = paramString(params, 'displayName', '')
+    let manager = calendarManager.getCalendarManager(context)
+    let created = await manager.createCalendar(new CalendarNewAccount(name, displayName))
+    return created.id.toString()
+  }],
+  // hour/minute are today's hour-of-day and minute-of-hour, the values a
+  // VERA program actually has; durationMinutes defaults to an hour,
+  // remindBefore (minutes before the start) is omitted unless given,
+  // repeat is once/daily/weekly/monthly/yearly. Answers with the new
+  // event's id (a plain decimal string) so the program can keep it for a
+  // later deleteEvent/deleteEvents.
+  ['CalendarKit.Calendar.addEvent', async (params: Map<string, string>): Promise<string> => {
+    let title = paramString(params, 'title', '')
+    if (title.trim().length === 0) { throw new Error('parameter title is required') }
+    let hour = paramInt(params, 'hour', -1)
+    let minute = paramInt(params, 'minute', -1)
+    if (hour < 0 || hour > 23) { throw new Error('parameter hour must be 0-23, got ' + hour.toString()) }
+    if (minute < 0 || minute > 59) { throw new Error('parameter minute must be 0-59, got ' + minute.toString()) }
+    let durationMinutes = paramInt(params, 'durationMinutes', 60)
+    if (durationMinutes <= 0) { throw new Error('parameter durationMinutes must be more than 0') }
+    let remindBefore = paramInt(params, 'remindBefore', -1)
+    let frequency = recurrenceFrequencyFor(paramString(params, 'repeat', 'once'))
+    let location = paramString(params, 'location', '')
+    let start = localMidnightMs(new Date()) + (hour * 60 + minute) * 60000
+    let event = new CalendarNewEvent(title, start, start + durationMinutes * 60000)
+    if (remindBefore >= 0) { event.reminderTime = [remindBefore] }
+    if (frequency !== undefined) { event.recurrenceRule = new CalendarEventRecurrence(frequency) }
+    if (location.trim().length > 0) { event.location = new CalendarEventLocation(location) }
+    let calendar = await defaultCalendar()
+    let id = await calendar.addEvent(event)
+    return id.toString()
+  }],
+  ['CalendarKit.Calendar.deleteEvent', async (params: Map<string, string>): Promise<string> => {
+    let id = paramInt(params, 'id', -1)
+    if (id < 0) { throw new Error('parameter id is required') }
+    let calendar = await defaultCalendar()
+    await calendar.deleteEvent(id)
+    return 'ok'
+  }],
+  ['CalendarKit.Calendar.deleteEvents', async (params: Map<string, string>): Promise<string> => {
+    let ids = parseEventIds(paramString(params, 'ids', ''))
+    let calendar = await defaultCalendar()
+    await calendar.deleteEvents(ids)
+    return 'ok'
   }],
   ['CoreFileKit.storageStatistics.getFreeSizeSync', async (_params: Map<string, string>): Promise<string> => {
     return storageStatistics.getFreeSizeSync().toString()

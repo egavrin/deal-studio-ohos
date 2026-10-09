@@ -38,7 +38,7 @@ by hand against the actual output rather than engineered away:
 
 Usage:
     python3 tools/build-sdk-index.py --sdk-dir ~/work/ohos/interface/sdk-js/api
-    python3 tools/build-sdk-index.py --sdk-dir <path> --out tools/sdk-index.json
+    python3 tools/build-sdk-index.py --sdk-dir <path> --out entry/src/main/resources/rawfile/sdk-index.json
 """
 
 import argparse
@@ -437,8 +437,8 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--sdk-dir', required=True,
                      help='path to the interface_sdk-js api/ directory')
-    ap.add_argument('--out', default='tools/sdk-index.json',
-                     help='where to write the JSON index (default: tools/sdk-index.json)')
+    ap.add_argument('--out', default='entry/src/main/resources/rawfile/sdk-index.json',
+                     help='where to write the JSON index (default: entry/src/main/resources/rawfile/sdk-index.json)')
     ap.add_argument('--summaries', help='JSON from tools/build-sdk-summaries.py; adds a `summary` to each entry')
     ap.add_argument('--keep-overloads', action='store_true',
                     help='keep every declaration instead of one entry per function')

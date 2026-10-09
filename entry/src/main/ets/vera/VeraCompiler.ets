@@ -1085,6 +1085,7 @@ function buildStdUiModule(): ModuleInterface {
       else if (p.kind === 'view') params.push(viewType)
       else if (p.kind === 'view[]') params.push(viewArray)
       else if (p.kind === 'string[]') params.push(new VeraArrayType(STRING))
+      else if (p.kind === 'int[]') params.push(new VeraArrayType(INT))
       else params.push(STRING)
     }
     // Trailing optionals may be left off, so a program written against an

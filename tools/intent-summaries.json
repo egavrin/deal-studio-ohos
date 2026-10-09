@@ -1,0 +1,3258 @@
+{
+"com.alibaba.wireless_hmos/CheckProductDiscountInfo": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the discount details for a product in the shopping app. Ask to see a product's discount or current deal."
+},
+"com.alibaba.wireless_hmos/JumpFunctionPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a specific feature page inside the shopping app. Ask to go to a particular tool or section of the app."
+},
+"com.alibaba.wireless_hmos/ViewCommodity": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows a product's page in the shopping app. Ask to view an item or open a product listing."
+},
+"com.alibaba.wireless_hmos/ViewSearchPageLocal": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the search page in the shopping app. Ask to search for products or find something to buy."
+},
+"com.alipay.mobile.client/ViewUtilityBill": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows a utility bill in the payment app. Ask to view or check a water, electricity or gas bill."
+},
+"com.amap.hmapp/StartNavigate": {
+"reviewed": true,
+"source": "name",
+"summary": "Starts turn-by-turn navigation in the maps app. Ask for directions or to navigate to a place."
+},
+"com.amap.hmapp/StartTaxi": {
+"reviewed": true,
+"source": "name",
+"summary": "Starts a taxi request in the maps app. Ask to call a cab or book a ride."
+},
+"com.baidu.baiduapp/ViewRankingList": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows a ranking list in the search app. Ask to see top charts or a ranked list of items."
+},
+"com.huawei.batterycare/CheckSettingItem": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether a particular battery setting is on or off, optionally for one app. Ask this to see if a battery option is enabled."
+},
+"com.huawei.batterycare/CustomizeBatteryLife": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens battery settings so you can adjust how your phone manages power. Ask for this to change battery preferences."
+},
+"com.huawei.batterycare/ExtendBatteryLife": {
+"reviewed": true,
+"source": "name",
+"summary": "Helps make your phone's battery last longer by applying power-saving choices. Ask for this to save battery."
+},
+"com.huawei.batterycare/GetBatteryLife": {
+"reviewed": true,
+"source": "name",
+"summary": "Reports the current battery level or remaining battery life. Ask for this to check how much battery is left."
+},
+"com.huawei.batterycare/GetOptionScope": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows which settings or apps a battery option applies to. Ask for this to see the range of a battery setting."
+},
+"com.huawei.batterycare/GetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Returns the available choices for a battery setting. Ask for this to see what battery options you can pick."
+},
+"com.huawei.batterycare/GetSettingStatus": {
+"reviewed": true,
+"source": "name",
+"summary": "Reports the current state of a battery setting. Ask for this to check a battery setting's status."
+},
+"com.huawei.batterycare/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reports whether a battery switch is turned on or off. Ask for this to check if a battery toggle is enabled."
+},
+"com.huawei.batterycare/ResetBatteryLife": {
+"reviewed": true,
+"source": "name",
+"summary": "Resets the battery health data in the phone's battery care settings. Ask for this to recalibrate or refresh battery life information."
+},
+"com.huawei.batterycare/SetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a chosen option within the phone's battery care settings. Ask for this to pick a different battery setting value."
+},
+"com.huawei.batterycare/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a battery care setting on or off. Ask for this to enable or disable a battery option."
+},
+"com.huawei.hmos.advisor/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the state of a single setting item in the phone's advisor settings. Ask for this to see whether one setting is on or off."
+},
+"com.huawei.hmos.advisor/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the settings shown on an advisor settings page. Ask for this to review the options on a settings screen."
+},
+"com.huawei.hmos.advisor/GetAgentParam": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads a stored parameter used by the phone's advisor feature. Ask for this to look up an advisor setting value."
+},
+"com.huawei.hmos.advisor/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether an advisor setting switch is on or off. Ask for this to check the state of a setting."
+},
+"com.huawei.hmos.advisor/JumpPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a specific page in the phone's advisor settings. Ask for this to go straight to a settings screen."
+},
+"com.huawei.hmos.advisor/RecommendTopic": {
+"reviewed": true,
+"source": "name",
+"summary": "Asks the advisor app for a suggested topic or recommendation. Use it when you want ideas on what to look at or do next."
+},
+"com.huawei.hmos.advisor/SetAgentParam": {
+"previous": "Sets a preference or option for the advisor app's assistant. Use it when you want to adjust how the advisor behaves.",
+"reviewed": true,
+"source": "name",
+"summary": "Sets a preference for the advisor app's assistant. Use it when you want to adjust how the assistant behaves."
+},
+"com.huawei.hmos.advisor/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns an advisor app setting on or off. Use it when you want to enable or disable an option in the advisor."
+},
+"com.huawei.hmos.advsecmode/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a security setting in the advanced security mode app. Use it when you want to see whether a security option is set."
+},
+"com.huawei.hmos.advsecmode/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether a security setting is currently on or off. Use it when you want to know the state of a security option."
+},
+"com.huawei.hmos.advsecmode/SetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Chooses a value for a security setting. Use it when you want to change a security option to a different choice."
+},
+"com.huawei.hmos.advsecmode/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a security setting on or off. Use it when you want to enable or disable a security option."
+},
+"com.huawei.hmos.aidispatchservice/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a setting in the AI dispatch service. Use it when you want to see whether a related option is configured."
+},
+"com.huawei.hmos.aidispatchservice/GetSettingStatus": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a particular setting is currently on or off. Ask to see if a setting is enabled."
+},
+"com.huawei.hmos.aidispatchservice/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads the current position of a settings switch. Ask what a setting is set to."
+},
+"com.huawei.hmos.aidispatchservice/SetSettingSwitch": {
+"previous": "Turns a settings switch on or off. Ask to change a setting.",
+"reviewed": true,
+"source": "name",
+"summary": "Turns a settings switch on or off. Ask to turn a setting on or off."
+},
+"com.huawei.hmos.browser/GetNewsFeedPageInfo": {
+"reviewed": true,
+"source": "name",
+"summary": "Fetches details about the news feed page in the browser. Ask to see the news feed."
+},
+"com.huawei.hmos.calendar/ViewCalendarEvent": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a specific calendar event so you can see its details. Ask to view an event in the Calendar app."
+},
+"com.huawei.hmos.callsetting/AddCallRecordNumber": {
+"reviewed": true,
+"source": "celia",
+"summary": "Adds a phone number to the list for automatic call recording, either for that number alone or for all calls. Ask to set up call recording for a number."
+},
+"com.huawei.hmos.callsetting/CheckDataRoamingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether data roaming is available for a chosen SIM card. Ask if data roaming is supported on SIM 1 or SIM 2."
+},
+"com.huawei.hmos.callsetting/CheckImsSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the IMS calling feature is turned on. Ask if IMS is enabled."
+},
+"com.huawei.hmos.callsetting/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a call setting item in the phone's call settings. Ask to check a call setting."
+},
+"com.huawei.hmos.callsetting/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens or checks a call settings page in the phone's call settings. Ask to view call settings."
+},
+"com.huawei.hmos.callsetting/DeleteAllCallRecordNumbers": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes every number from the list of numbers that are automatically recorded during calls. Ask to clear all auto-recorded call numbers."
+},
+"com.huawei.hmos.callsetting/DeleteCallRecordNumber": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes one or more numbers from the list of numbers that are automatically recorded during calls. Ask to delete a number from auto call recording."
+},
+"com.huawei.hmos.callsetting/GetCallRecordNumbers": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the list of numbers that are automatically recorded during calls. Ask which numbers are set to auto-record calls."
+},
+"com.huawei.hmos.callsetting/GetCallRecordSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Tells whether automatic call recording is turned on or off. Ask if auto call recording is on."
+},
+"com.huawei.hmos.callsetting/GetDataRoamingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether data roaming is on for a chosen SIM card, card 1 or card 2. Ask if data roaming is on for a SIM."
+},
+"com.huawei.hmos.callsetting/GetFlipMuteSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the setting that mutes calls when you flip the phone over. Ask if flipping the phone mutes calls."
+},
+"com.huawei.hmos.callsetting/GetImsSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether IMS calling is turned on in the phone's call settings. Ask this to see if IMS or VoLTE calling is enabled."
+},
+"com.huawei.hmos.callsetting/GetPickUpReduceVolumeSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the phone lowers the ringtone volume when you pick it up. Ask this to see if picking up the phone quiets the ringing."
+},
+"com.huawei.hmos.callsetting/GetQuickCallSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether quick calling is turned on in the phone's call settings. Ask this to see if quick call is enabled."
+},
+"com.huawei.hmos.callsetting/GetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads a chosen call setting option from the phone's call settings. Ask this to look up how a particular calling option is set."
+},
+"com.huawei.hmos.callsetting/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a particular call setting switch is on or off. Ask this to see if a calling feature is enabled."
+},
+"com.huawei.hmos.callsetting/JumpToCallForwarding": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the call forwarding page in the phone's call settings, for card 1 or card 2. Ask this to set up or check forwarding of your calls."
+},
+"com.huawei.hmos.callsetting/JumpToFlipMuteSetting": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the flip-to-mute setting in the phone's call settings. Ask this to turn on or off muting calls by flipping the phone."
+},
+"com.huawei.hmos.callsetting/JumpToPickUpReduceVolumeSetting": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the setting that lowers the ringtone when you pick up the phone. Ask this to turn on or off quieter ringing when you pick up."
+},
+"com.huawei.hmos.callsetting/JumpToQuickCallSetting": {
+"previous": "Opens the quick call settings screen in the phone app. Use this to quickly adjust call-related options like forwarding or recording.",
+"reviewed": true,
+"source": "name",
+"summary": "Opens the quick call settings screen in the phone's call settings. Ask this to set up or change quick calling."
+},
+"com.huawei.hmos.callsetting/QueryCallForwarding": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks the current call forwarding status and number for a chosen SIM card. Ask to see if calls are being forwarded on SIM 1 or SIM 2."
+},
+"com.huawei.hmos.callsetting/SetCallForwardingOff": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns off call forwarding for a selected SIM card. Use this to stop sending calls to another number on SIM 1 or SIM 2."
+},
+"com.huawei.hmos.callsetting/SetCallRecordMergeSetting": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets how call history is grouped, either by time or by contact. Choose to merge call records by time or by contact."
+},
+"com.huawei.hmos.callsetting/SetCallRecordSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns call recording on or off. Use this to enable or disable recording of phone calls."
+},
+"com.huawei.hmos.callsetting/SetDataRoamingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns data roaming on or off for a specific SIM card. Use this to allow or block mobile data when roaming on SIM 1 or SIM 2."
+},
+"com.huawei.hmos.callsetting/SetFlipMuteSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the flip-to-mute feature on or off, which silences incoming calls when you flip the phone. Use this to enable or disable muting by flipping."
+},
+"com.huawei.hmos.callsetting/SetImsSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns IMS (VoLTE calling) on or off. Use this to enable or disable IMS services for calls."
+},
+"com.huawei.hmos.callsetting/SetPickUpReduceVolumeSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the setting that lowers ring volume when you pick up the phone on or off. Ask to stop the ring from being so loud when you grab your phone."
+},
+"com.huawei.hmos.callsetting/SetQuickCallSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the quick call feature on or off in phone settings. Ask to enable or disable quick calling."
+},
+"com.huawei.hmos.callsetting/SetSettingSwitch": {
+"previous": "Turns a call setting on or off in phone settings. Ask to change a calling option.",
+"reviewed": true,
+"source": "name",
+"summary": "Turns a call setting on or off in the Phone app. Ask to turn on or off a calling option like call recording or data roaming."
+},
+"com.huawei.hmos.camera/DoCameraFunction": {
+"previous": "Performs a camera action in the Camera app. Ask to use the camera for a specific task.",
+"reviewed": true,
+"source": "name",
+"summary": "Performs a camera action in the Camera app. Ask to take a photo or use the camera."
+},
+"com.huawei.hmos.camera/OpenCamera": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the Camera app, letting you choose photo or video mode and front or back camera. Ask to open the camera, take a photo, or start recording."
+},
+"com.huawei.hmos.camera/TakePhoto": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the Camera app and takes a photo or records a video, with front or back camera. Ask to take a picture or record a video."
+},
+"com.huawei.hmos.cardistributedassist/JumpCarHopSettingPage": {
+"previous": "Opens the car assistant settings page. Ask to change car connection or assistant settings.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the car assistant settings page in the Car Assistant app. Ask to open car assistant settings or change car connection options."
+},
+"com.huawei.hmos.clock/CreateAlarm": {
+"reviewed": true,
+"source": "celia",
+"summary": "Creates an alarm in the Clock app, with options for time, label, repeat days, and ring type. Ask to set an alarm for a certain time or day."
+},
+"com.huawei.hmos.clock/CreateTimer": {
+"reviewed": true,
+"source": "celia",
+"summary": "Starts a countdown timer in the Clock app for a length of time you give in seconds. Ask to start a timer, like \"set a timer for 60 seconds\" or \"count down ten minutes\"."
+},
+"com.huawei.hmos.clock/DelayAlarmRing": {
+"reviewed": true,
+"source": "celia",
+"summary": "Postpones an alarm that is currently ringing in the Clock app, giving you a few more minutes of sleep. Ask to snooze or delay the alarm that is going off."
+},
+"com.huawei.hmos.clock/DeleteAlarm": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes an alarm from the Clock app, choosing it by its identifier. Ask to delete or cancel an alarm you no longer want."
+},
+"com.huawei.hmos.clock/DeleteTimer": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes a countdown timer from the Clock app, picking it by name or instance. Ask to cancel or delete a timer that is running."
+},
+"com.huawei.hmos.clock/GetRemainTimer": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks how much time is left on a countdown timer in the Clock app, choosing it by name or instance. Ask how long is left on the timer."
+},
+"com.huawei.hmos.clock/ModifyAlarm": {
+"reviewed": true,
+"source": "celia",
+"summary": "Changes an existing alarm in the Clock app, such as its time, label, on/off state, or which days it repeats. Ask to edit an alarm, like \"change my 7am alarm to 8am\" or \"make my alarm repeat on weekdays\"."
+},
+"com.huawei.hmos.clock/ModifyTimer": {
+"reviewed": true,
+"source": "celia",
+"summary": "Changes a countdown timer in the Clock app by setting a new length, found by name or instance. Ask to change or reset a timer, like \"make the timer 5 minutes\"."
+},
+"com.huawei.hmos.clock/PauseStopwatch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Pauses the stopwatch in the Clock app so the elapsed time stops counting. Ask to pause or stop the stopwatch."
+},
+"com.huawei.hmos.clock/PauseTimer": {
+"reviewed": true,
+"source": "celia",
+"summary": "Pauses a running timer in the Clock app, optionally choosing which timer by its name or ID. Ask to pause a timer or stop the countdown for now."
+},
+"com.huawei.hmos.clock/QueryAlarmRing": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether an alarm is ringing right now in the Clock app. Ask if an alarm is going off or if any alarm is currently ringing."
+},
+"com.huawei.hmos.clock/ResetStopwatch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Resets the stopwatch back to zero in the Clock app, but only after it has been paused. Ask to reset the stopwatch or clear its time."
+},
+"com.huawei.hmos.clock/ResetTimer": {
+"reviewed": true,
+"source": "celia",
+"summary": "Resets a timer in the Clock app so it starts counting again from the last set duration, optionally choosing which timer by name or ID. Ask to reset a timer or start the timer over."
+},
+"com.huawei.hmos.clock/SearchAlarm": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows all alarms set in the Clock app. Ask to see my alarms or list all alarms."
+},
+"com.huawei.hmos.clock/StartStopwatch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Starts the stopwatch in the Clock app, either fresh or continuing from where it left off. Ask to start the stopwatch or resume timing."
+},
+"com.huawei.hmos.clock/StartTimer": {
+"reviewed": true,
+"source": "celia",
+"summary": "Starts or resumes a timer in the Clock app, either creating a new one or continuing a paused one, optionally choosing which timer by name or ID. Ask to start a timer or resume the countdown."
+},
+"com.huawei.hmos.clock/StopAlarmRing": {
+"reviewed": true,
+"source": "celia",
+"summary": "Stops an alarm that is currently ringing in the Clock app. Ask to turn off the alarm or silence a ringing alarm."
+},
+"com.huawei.hmos.clock/ViewAlarm": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the Clock app to show an alarm, identified by its unique entry ID. Ask to view an alarm or check a specific alarm in the clock."
+},
+"com.huawei.hmos.clock/ViewStopwatch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the Clock app's stopwatch screen so you can see the stopwatch. Ask to view the stopwatch or open the stopwatch in the clock."
+},
+"com.huawei.hmos.clock/ViewTimer": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the Clock app's timer screen. Ask to view the timer or open the countdown timer in the clock."
+},
+"com.huawei.hmos.communicationsetting/GetTrafficDisplaySwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the data traffic display setting is turned on in phone settings. Ask whether data usage display is enabled."
+},
+"com.huawei.hmos.communicationsetting/JumpToMoreTrafficSettings": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the additional data traffic settings page in phone settings. Ask to see more data usage settings."
+},
+"com.huawei.hmos.communicationsetting/JumpToTrafficManagement": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the data traffic management page in phone settings. Ask to manage mobile data usage."
+},
+"com.huawei.hmos.communicationsetting/JumpToTrafficRanking": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the data traffic ranking page in phone settings, showing which apps use the most data. Ask to see which apps use the most data."
+},
+"com.huawei.hmos.communicationsetting/OpenAppNetwork": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the network settings for an app in phone settings. Ask to change an app's network access or data permissions."
+},
+"com.huawei.hmos.communicationsetting/SetTrafficDisplaySwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the data traffic display on or off in phone settings. Ask to show or hide mobile data usage on screen."
+},
+"com.huawei.hmos.databackup/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the backup settings page in the phone's backup app. Ask to check or open backup settings."
+},
+"com.huawei.hmos.databackup/ViewBackupRestore": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the backup and restore page in phone settings. Ask to back up your phone or restore from a backup."
+},
+"com.huawei.hmos.databackup/ViewExternalStorage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows information about external storage in the backup and restore area of phone settings. Ask to view external storage details or check storage for backups."
+},
+"com.huawei.hmos.databackup/ViewPhoneAssistant": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the phone assistant page inside backup and restore in phone settings. Ask to use the phone assistant for backups or transfers."
+},
+"com.huawei.hmos.dataclone/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the data clone settings page in the phone clone app. Ask to check or open data clone settings."
+},
+"com.huawei.hmos.dataclone/ViewHmosDataClone": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the phone clone settings page so you can move data to a new phone. Ask to clone or transfer your phone data."
+},
+"com.huawei.hmos.emergencycommunication/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens an emergency communication setting item in phone settings. Ask to check or open emergency communication settings."
+},
+"com.huawei.hmos.emergencycommunication/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether an emergency communication setting is turned on or off. Ask for this to see if emergency communication is enabled."
+},
+"com.huawei.hmos.files/CloseExternalDevice": {
+"reviewed": true,
+"source": "name",
+"summary": "Closes or disconnects an external device in the Files app. Ask for this to disconnect a connected storage device or drive."
+},
+"com.huawei.hmos.files/OpenExternalDevice": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens or connects to an external device in the Files app. Ask for this to access files on a connected storage device or drive."
+},
+"com.huawei.hmos.files/OpenExternalDevice1": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens or connects to an external device in the Files app. Ask for this to access files on a connected storage device or drive."
+},
+"com.huawei.hmos.findservice/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a setting item in the Find Service app. Ask for this to see whether a find-my-device setting is on."
+},
+"com.huawei.hmos.findservice/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the settings page in the Find Service app. Ask for this to view find-my-device settings."
+},
+"com.huawei.hmos.health/ViewWorkout": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows a workout in the Health app. Ask for this to look at a recorded exercise session."
+},
+"com.huawei.hmos.health/ViewWorkoutCourse": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows a workout course in the Health app. Ask for this to view a guided exercise or training course."
+},
+"com.huawei.hmos.hicar/DeleteHiCarDevice": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes a saved car kit device from the phone, using the device's unique identifier. Ask for this to delete or forget a car device."
+},
+"com.huawei.hmos.hicar/DisconnectHiCarDevice": {
+"reviewed": true,
+"source": "celia",
+"summary": "Ends the connection to the car kit device that is currently linked. Ask for this to disconnect from the car."
+},
+"com.huawei.hmos.hicar/GetHiCarDevices": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up information about the car kit devices known to the phone. Ask for this to see which car devices are available or connected."
+},
+"com.huawei.hmos.hicar/SetHiCarAutoConnectSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns automatic connection on or off for a chosen car kit device, identified by its unique ID. Ask for this to control whether the car connects by itself."
+},
+"com.huawei.hmos.hiskytone/JumpFunctionPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a feature page in the HiskyTone app. Ask for this to go to a HiskyTone function."
+},
+"com.huawei.hmos.hiviewcare/AppMsgRecvAbnormalDetect": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether app messages are failing to arrive because of a network problem, either over Wi-Fi or mobile data. Ask for this to find out why messages are not coming through."
+},
+"com.huawei.hmos.hiviewcare/CheckIntelligentDetect": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether the phone's diagnostic tool supports a particular test, such as battery, temperature, network or storage checks. Ask for this to see if a certain phone check is available."
+},
+"com.huawei.hmos.hiviewcare/ConsumptionDetectIntent": {
+"reviewed": true,
+"source": "celia",
+"summary": "Runs a battery drain check that lists the apps using the most power in the last day. Ask for this to find out why the battery is running down fast."
+},
+"com.huawei.hmos.hiviewcare/DetectCarrier": {
+"reviewed": true,
+"source": "celia",
+"summary": "Runs a check for SIM card arrears or data plan problems. Ask for this when your mobile data is not working and you want to find out if your plan or balance is the cause."
+},
+"com.huawei.hmos.hiviewcare/DetectWeakSignal": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks the carrier network status. Ask for this when your signal seems weak or your connection keeps dropping and you want to know if the network is the problem."
+},
+"com.huawei.hmos.hiviewcare/ExecuteIntelligentDetect": {
+"reviewed": true,
+"source": "celia",
+"summary": "Runs a smart diagnostic on your phone, choosing one area such as battery, temperature, storage use, messages, performance, Wi-Fi, restart, network, calls, signal, charging or app notifications. Ask for this when you want to test a specific part of your phone for problems."
+},
+"com.huawei.hmos.hiviewcare/FeedbackQueAndSug": {
+"reviewed": true,
+"source": "celia",
+"summary": "Submits a problem report or suggestion, with a chosen subject and type. Ask for this when you want to send feedback or suggest an improvement."
+},
+"com.huawei.hmos.hiviewcare/GetDetectCardInfo": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the card details for one smart check, such as battery, temperature, storage use, messages, performance, Wi-Fi, restart, network, calls, signal, charging or app notifications. Ask for this when you want to see the result card for a particular phone check."
+},
+"com.huawei.hmos.hiviewcare/PerformanceDetectIntent": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks how your phone has performed over the past one to seven days, looking for slow-starting apps, stuttering frames or slow page switching, optionally for one app. Ask for this when your phone or an app feels slow and you want to find out why."
+},
+"com.huawei.hmos.hiviewcare/TemperatureDetectIntent": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks for overheating, showing which apps ran hot in the last day or week, how long and how badly, the cause, or whether charging is making the phone hot. Ask for this when your phone feels too warm and you want to know what is causing it."
+},
+"com.huawei.hmos.hiviewpage/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a setting item on a settings page. Ask for this when you want to see or confirm the state of a particular phone setting."
+},
+"com.huawei.hmos.hiviewpage/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a settings page is available in the HiView app. Use this to see if a particular settings screen can be opened."
+},
+"com.huawei.hmos.hiviewpage/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads the current state of a settings switch in the HiView app. Use this to find out if a setting is turned on or off."
+},
+"com.huawei.hmos.hiviewpage/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a settings switch in the HiView app to on or off. Use this to turn a setting on or off."
+},
+"com.huawei.hmos.hwquickaccessmenu/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a specific settings item exists in the quick access menu. Use this to see if a setting is available."
+},
+"com.huawei.hmos.hwquickaccessmenu/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a settings page is available in the quick access menu. Use this to see if a settings screen can be opened."
+},
+"com.huawei.hmos.hwquickaccessmenu/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads the current state of a settings switch in the quick access menu. Use this to find out if a setting is turned on or off."
+},
+"com.huawei.hmos.hwquickaccessmenu/GetSmartControl": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up which app or service is assigned to the smart control key or double-tap action. Use this to check what the smart key or double-tap does."
+},
+"com.huawei.hmos.hwquickaccessmenu/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a settings switch in the quick access menu to on or off. Use this to turn a setting on or off."
+},
+"com.huawei.hmos.hwquickaccessmenu/SetSmartControl": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets what a double-tap on the fingerprint key opens, choosing an app and one of its services. Ask for this to make a double tap on the fingerprint sensor launch an app."
+},
+"com.huawei.hmos.intelligentscene/ActivateMode": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns on a scene mode on the phone. Ask for this to switch on a mode such as a focus or sleep scene."
+},
+"com.huawei.hmos.intelligentscene/ActivateModeByEndTime": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns on a scene mode that stops by a chosen end time. Ask for this to run a mode until a certain time."
+},
+"com.huawei.hmos.intelligentscene/ActivateModeByTimer": {
+"previous": "Turns on a scene mode for a set length of time. Ask for this to run a mode for a timer duration.",
+"reviewed": true,
+"source": "name",
+"summary": "Turns on a scene mode for a set length of time. Ask to run a mode for a timer duration."
+},
+"com.huawei.hmos.intelligentscene/CreateMode": {
+"previous": "Creates a new scene mode on the phone. Ask for this to set up a new mode for situations like sleep or work.",
+"reviewed": true,
+"source": "name",
+"summary": "Creates a new scene mode on the phone. Ask to set up a new mode for situations like sleep or work."
+},
+"com.huawei.hmos.intelligentscene/DeactivateMode": {
+"previous": "Turns off a scene mode that is currently running. Ask for this to stop a mode such as a focus or sleep scene.",
+"reviewed": true,
+"source": "name",
+"summary": "Turns off a scene mode that is currently running. Ask to stop a mode such as a focus or sleep scene."
+},
+"com.huawei.hmos.intelligentscene/ModifyModeAddNewPeriod": {
+"previous": "Adds another time period to an existing scene mode. Ask for this to give a mode an extra scheduled time slot.",
+"reviewed": true,
+"source": "name",
+"summary": "Adds another time period to an existing scene mode. Ask to give a mode an extra scheduled time slot."
+},
+"com.huawei.hmos.intelligentscene/ModifyModeAssociatedSwitch": {
+"previous": "Changes which switches are linked to a scene mode. Ask for this to choose what turns on or off together with a mode.",
+"reviewed": true,
+"source": "name",
+"summary": "Changes which switches are linked to a scene mode. Ask to choose what turns on or off together with a mode."
+},
+"com.huawei.hmos.intelligentscene/ModifyModeCallAllowPolicy": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes whether calls are allowed in a phone mode. Ask to allow or block calls in a mode."
+},
+"com.huawei.hmos.intelligentscene/ModifyModeNotifyAllowPolicy": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes whether notifications are allowed in a phone mode. Ask to allow or block notifications in a mode."
+},
+"com.huawei.hmos.intelligentscene/ModifyModePeriod": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes the time period for a phone mode. Ask to set when a mode starts and ends."
+},
+"com.huawei.hmos.intelligentscene/ModifyModeSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a phone mode on or off. Ask to switch a mode on or off."
+},
+"com.huawei.hmos.intelligentscene/ModifyModeSyncSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns syncing for a phone mode on or off. Ask to sync a mode across devices or turn sync off."
+},
+"com.huawei.hmos.intelligentscene/QueryMode": {
+"reviewed": true,
+"source": "name",
+"summary": "Looks up details of a phone mode. Ask what a mode does or its settings."
+},
+"com.huawei.hmos.intelligentscene/QueryModeList": {
+"reviewed": true,
+"source": "name",
+"summary": "Lists the phone modes available. Ask to see all modes."
+},
+"com.huawei.hmos.maps.app/MarkingLocations": {
+"reviewed": true,
+"source": "name",
+"summary": "Marks locations on a map. Ask to mark places on the map."
+},
+"com.huawei.hmos.maps.app/StartNavigate": {
+"reviewed": true,
+"source": "celia",
+"summary": "Starts turn-by-turn navigation in the Maps app to a destination, optionally with waypoints. Ask to navigate to a place or get driving directions."
+},
+"com.huawei.hmos.maps.app/ViewRoutes": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows route options in the Maps app between two places for driving, walking, or cycling. Ask to see routes or how to get somewhere by car, foot, or bike."
+},
+"com.huawei.hmos.maps.app/ViewSearchPageLocal": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a local search page in the Maps app to look for nearby places. Ask to search for places or things near you on the map."
+},
+"com.huawei.hmos.mediacontroller/SetEarMonitorMode": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the ear monitor on or off in the Media Controller app so you can hear yourself while singing. Ask to enable or disable ear monitoring during karaoke."
+},
+"com.huawei.hmos.mediacontroller/SetEarMonitorReverbMode": {
+"reviewed": true,
+"source": "name",
+"summary": "Sets the reverb mode for ear monitoring in the Media Controller app. Ask to adjust the reverb or echo when using ear monitors."
+},
+"com.huawei.hmos.meetimeservice/BatchSearchMeeTimeDevices": {
+"reviewed": true,
+"source": "name",
+"summary": "Searches for multiple MeeTime devices at once in the MeeTime app. Ask to find or list available MeeTime devices."
+},
+"com.huawei.hmos.meetimeservice/CallMeeTime": {
+"reviewed": true,
+"source": "celia",
+"summary": "Starts a MeeTime call to a phone number or device, choosing video or audio. Ask to make a MeeTime video or audio call."
+},
+"com.huawei.hmos.meetimeservice/CheckMeeTimeFunction": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether MeeTime is available on this device. Ask if MeeTime is supported or enabled."
+},
+"com.huawei.hmos.meetimeservice/CheckRemoteMessageCap": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether the other person can receive MeeTime messages, for one-to-one or group chats. Ask to see if someone can get a MeeTime message before sending one."
+},
+"com.huawei.hmos.meetimeservice/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a setting item in the MeeTime app. Ask to look up or verify a MeeTime setting."
+},
+"com.huawei.hmos.meetimeservice/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a settings page in the MeeTime app. Ask to open or view MeeTime settings."
+},
+"com.huawei.hmos.meetimeservice/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether a MeeTime setting switch is on or off. Ask to check if a MeeTime option is turned on."
+},
+"com.huawei.hmos.meetimeservice/SearchMeeTimeDevices": {
+"reviewed": true,
+"source": "celia",
+"summary": "Finds the MeeTime devices that can be used for calls, for yourself or another phone number, choosing video or audio. Ask which devices can make a MeeTime call."
+},
+"com.huawei.hmos.meetimeservice/SendFileMessage": {
+"reviewed": true,
+"source": "name",
+"summary": "Sends a file through MeeTime. Ask to share a file in a MeeTime chat."
+},
+"com.huawei.hmos.meetimeservice/SendLocationMessage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sends a location message in MeeTime, to one person or a group, with the place name and address. Ask to share your location in a MeeTime chat."
+},
+"com.huawei.hmos.meetimeservice/SendPhotoMessage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sends a photo in MeeTime, to one person or a group. Ask to send a picture in a MeeTime chat."
+},
+"com.huawei.hmos.meetimeservice/SendTextMessage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sends a text message through the MeeTime app to a contact or group chat. Use it to send a message to someone or a group."
+},
+"com.huawei.hmos.meetimeservice/SetSettingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the MeeTime communication switch on or off. Use it to enable or disable MeeTime calling and messaging."
+},
+"com.huawei.hmos.motiongesture/CheckSettingItem": {
+"previous": "Checks a setting item related to motion gestures. Use it to check a motion gesture setting.",
+"reviewed": true,
+"source": "name",
+"summary": "Checks a motion gesture setting item. Ask to check a motion gesture setting."
+},
+"com.huawei.hmos.motiongesture/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a settings page related to motion gestures. Use it to check a motion gesture settings page."
+},
+"com.huawei.hmos.motiongesture/EnterSettingPage": {
+"previous": "Opens a specific settings page, such as battery, accessibility, sound, account, or developer options. Use it to go to a particular setting.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a specific settings page in the Motion Gesture app, such as battery, accessibility, sound, account, or developer options. Use it to go to a particular setting."
+},
+"com.huawei.hmos.motiongesture/GetOptionScope": {
+"reviewed": true,
+"source": "name",
+"summary": "Gets the scope of options for a motion gesture setting. Use it to find out what options are available for a motion gesture setting."
+},
+"com.huawei.hmos.motiongesture/GetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Gets the current option for a motion gesture setting. Use it to check which option is selected for a motion gesture setting."
+},
+"com.huawei.hmos.motiongesture/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Gets the on or off state of a motion gesture setting. Use it to check if a motion gesture setting is enabled or disabled."
+},
+"com.huawei.hmos.motiongesture/SetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a motion gesture option in the phone's gesture settings. Use this to adjust how motion gestures behave."
+},
+"com.huawei.hmos.motiongesture/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a motion gesture setting on or off. Use this to enable or disable motion gestures."
+},
+"com.huawei.hmos.notepad/CallSummaryCreateNote": {
+"reviewed": true,
+"source": "name",
+"summary": "Creates a note from a call summary in the Notepad app. Use this to save a call summary as a note."
+},
+"com.huawei.hmos.notepad/CreateNote": {
+"reviewed": true,
+"source": "celia",
+"summary": "Creates a new note in the Notepad app with a title and content. Use this to write a memo, jot down a note, or save something quickly."
+},
+"com.huawei.hmos.notepad/DeleteNote": {
+"reviewed": true,
+"source": "celia",
+"summary": "Deletes one or more notes from the Notepad app. Use this to remove a note you no longer need."
+},
+"com.huawei.hmos.notepad/GetNote": {
+"reviewed": true,
+"source": "name",
+"summary": "Retrieves a note from the Notepad app. Use this to open or read a saved note."
+},
+"com.huawei.hmos.notepad/ModifyNote": {
+"reviewed": true,
+"source": "celia",
+"summary": "Adds text to an existing note in the Notepad app. Use this to append more content to a note."
+},
+"com.huawei.hmos.notepad/ShareNote": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shares a note from the Notepad app with someone else. Use this to send a note to another person."
+},
+"com.huawei.hmos.notepad/ViewNote": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a note in the Notepad app so you can read it. Ask for this when you want to view a saved note or read a memo."
+},
+"com.huawei.hmos.parentcontrol/AddScreenUsePhoneUsePeriod": {
+"reviewed": true,
+"source": "celia",
+"summary": "Adds an allowed screen-time period in the parental controls, with a name, a length of time, and which days of the week it repeats. Ask for this to set daily screen time limits for a child."
+},
+"com.huawei.hmos.parentcontrol/AddScreenUseSuspensionPeriod": {
+"reviewed": true,
+"source": "celia",
+"summary": "Adds a blocked period when the phone can't be used, with a start time, an end time, and which days it repeats. Ask for this to set downtime or bedtime hours for a child's device."
+},
+"com.huawei.hmos.parentcontrol/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a parental control setting to see its current state. Ask for this to look up how a screen-time or parental control option is set."
+},
+"com.huawei.hmos.parentcontrol/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the parental control settings page to see what options are available. Ask for this to view the health and screen-time settings for a child's device."
+},
+"com.huawei.hmos.parentcontrol/CloseHealthUsePhone": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns off the health-use-phone parental controls, optionally keeping the current settings saved. Ask for this to disable screen-time limits or parental controls."
+},
+"com.huawei.hmos.parentcontrol/DeleteAllAppAlwaysAllowUsed": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes every app from the always-allowed list in parental controls. Ask for this to clear the apps that are exempt from screen-time limits."
+},
+"com.huawei.hmos.parentcontrol/DeleteAllAppForbidUsed": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes the ban on all apps in the app-limit settings. Ask for this to unblock apps that were forbidden by screen-time limits."
+},
+"com.huawei.hmos.parentcontrol/DeleteAllAppLimitTime": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes the time limit set for every app in the parental control settings. Ask to clear all app time limits or remove screen time limits for all apps."
+},
+"com.huawei.hmos.parentcontrol/DeleteAppsAlwaysAllowUsed": {
+"reviewed": true,
+"source": "celia",
+"summary": "Cancels the always-allowed status for one or more apps in parental controls. Ask to stop apps from being always allowed or remove them from the always-allowed list."
+},
+"com.huawei.hmos.parentcontrol/DeleteAppsForbidUse": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes the ban on using one or more apps in parental controls. Ask to unblock apps or stop apps from being forbidden."
+},
+"com.huawei.hmos.parentcontrol/DeleteAppsLimitTime": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes the time limit for one or more apps in parental controls. Ask to clear time limits for certain apps or remove app usage limits."
+},
+"com.huawei.hmos.parentcontrol/DeleteAwayTime": {
+"reviewed": true,
+"source": "celia",
+"summary": "Deletes a downtime period in parental controls, choosing start time, end time, and which days it repeats. Ask to remove a downtime schedule or delete a no-use time block."
+},
+"com.huawei.hmos.parentcontrol/DeleteTotalTime": {
+"reviewed": true,
+"source": "celia",
+"summary": "Deletes an available time limit in parental controls, choosing its name and repeat days. Ask to remove a daily time allowance or delete a screen time limit."
+},
+"com.huawei.hmos.parentcontrol/GetAppDailyUsage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows how long a specific app was used on a given date. Ask to check an app's usage time for a day or see how much an app was used."
+},
+"com.huawei.hmos.parentcontrol/GetAppLastSevenDayUsage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows how long a specific app was used over the past seven days. Ask to see an app's weekly usage or check app usage for the last week."
+},
+"com.huawei.hmos.parentcontrol/GetAppsAlwaysAllowUsed": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows which apps are set to always be allowed in the parental control app. Ask to see apps that are always allowed."
+},
+"com.huawei.hmos.parentcontrol/GetAppsForbidUse": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows which apps are blocked from having time limits in the parental control app. Ask to see apps that are not limited."
+},
+"com.huawei.hmos.parentcontrol/GetAppsLimitTime": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the time limits set for one or more apps in the parental control app. Ask to check app time limits."
+},
+"com.huawei.hmos.parentcontrol/GetDailyMostUsage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the most used apps for a given day in the parental control app. Ask to see daily app usage."
+},
+"com.huawei.hmos.parentcontrol/GetHealthyUseStatus": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the current healthy phone use mode in the parental control app. Ask to check healthy use settings."
+},
+"com.huawei.hmos.parentcontrol/GetLastSevenDayMostUsage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the most used apps and their durations over the past seven days in the parental control app. Ask to see weekly app usage."
+},
+"com.huawei.hmos.parentcontrol/GetLastSevenDayTotalUsage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows total phone usage time over the past seven days in the parental control app. Ask to see weekly total usage."
+},
+"com.huawei.hmos.parentcontrol/GetScreenUsePhoneUsePeriod": {
+"previous": "Shows available usage time information in the parental control app. Ask to check available screen time.",
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the allowed phone usage time period in the parental control app. Ask to check the allowed screen time period."
+},
+"com.huawei.hmos.parentcontrol/GetScreenUseSuspensionPeriod": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks the scheduled time when screen use is paused in the parental control settings. Ask this to see when screen time is blocked."
+},
+"com.huawei.hmos.parentcontrol/GetScreenUseTimeManageSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Tells you whether screen time management is turned on in the device's health and parental controls. Ask this to check if screen time limits are active."
+},
+"com.huawei.hmos.parentcontrol/GetSpecifiedAppUsage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows how long apps were used on a particular day, given that day's date. Ask this to see app usage time for a specific day."
+},
+"com.huawei.hmos.parentcontrol/GetSpecifiedTotalUsage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows total phone usage time for a particular day, given that day's date. Ask this to see how much the phone was used on a specific day."
+},
+"com.huawei.hmos.parentcontrol/IsHealthUsePhoneSetPassword": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether a password is set for healthy phone use in parental controls. Ask this to find out if a parental control password exists."
+},
+"com.huawei.hmos.parentcontrol/SetAllAppAlwaysAllowUsed": {
+"reviewed": true,
+"source": "celia",
+"summary": "Marks every app as always allowed, so none are restricted by screen time limits. Ask this to let all apps be used without limits."
+},
+"com.huawei.hmos.parentcontrol/SetAllAppForbidUsed": {
+"reviewed": true,
+"source": "celia",
+"summary": "Blocks all apps by setting their limit to forbidden, making them unusable. Ask this to stop all apps from being used."
+},
+"com.huawei.hmos.parentcontrol/SetAllAppLimitTime": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets a daily time limit for all apps, given the allowed seconds per day. Ask this to cap how long apps can be used each day."
+},
+"com.huawei.hmos.parentcontrol/SetAppsAlwaysAllowUsed": {
+"reviewed": true,
+"source": "celia",
+"summary": "Marks chosen apps as always allowed in parental controls, so they stay usable even during downtime and don't count toward app limits. Ask to always allow certain apps or keep an app usable during screen-time limits."
+},
+"com.huawei.hmos.parentcontrol/SetAppsForbidUse": {
+"reviewed": true,
+"source": "celia",
+"summary": "Blocks one or more chosen apps in parental controls so they can't be used at all. Ask to forbid an app or stop a child from opening certain apps."
+},
+"com.huawei.hmos.parentcontrol/SetAppsLimitTime": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets a daily time limit for chosen apps in parental controls, given in seconds and applied the same across the week. Ask to limit how long an app can be used each day."
+},
+"com.huawei.hmos.parentcontrol/SetScreenUseTimeManageSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the screen time management feature on or off in parental controls. Ask to enable or disable screen time management."
+},
+"com.huawei.hmos.photos/AgentJump": {
+"previous": "Opens a destination inside the Photos app. Ask to jump to a place in Photos.",
+"reviewed": true,
+"source": "name",
+"summary": "Opens a specific page or section inside the Photos app. Ask to jump to a place in Photos."
+},
+"com.huawei.hmos.photos/AgentLinkTo": {
+"reviewed": true,
+"source": "name",
+"summary": "Links to a location inside the Photos app. Ask to open a linked spot in Photos."
+},
+"com.huawei.hmos.photos/AgentSearch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Searches the Photos app by meaning, matching people, places, times, scenes or holidays, and returns matching photo IDs. Ask to find photos of a person, place or event."
+},
+"com.huawei.hmos.photos/AlbumManagement": {
+"reviewed": true,
+"source": "celia",
+"summary": "Creates a new album with photos or adds photos to an existing album in the Photos app, either asking you to confirm or doing it quietly. Ask to make an album or add pictures to one."
+},
+"com.huawei.hmos.photos/AlbumManagementForeground": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the Photos app's album management screen so you can organize and manage your albums. Ask to manage albums or organize photos into albums."
+},
+"com.huawei.hmos.photos/AppLock": {
+"reviewed": true,
+"source": "name",
+"summary": "Locks the Photos app so others can't open your pictures without unlocking. Ask to lock the gallery or keep your photos private."
+},
+"com.huawei.hmos.photos/BatchNegativeFilter": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes sensitive, low-quality, or ID-style pictures from a batch of photos in the Photos app. Choose a strict, normal, or loose filtering level. Ask to clean up unwanted or sensitive photos."
+},
+"com.huawei.hmos.photos/BatchNegativeSimilaritySelection": {
+"previous": "Picks out similar or duplicate-looking pictures from a batch in the Photos app, likely to remove or review them. Ask to find near-duplicate photos.",
+"reviewed": true,
+"source": "name",
+"summary": "Picks out near-duplicate or look-alike pictures from a batch in the Photos app. Ask to find similar or duplicate photos."
+},
+"com.huawei.hmos.photos/BatchSimilaritySelection": {
+"reviewed": true,
+"source": "celia",
+"summary": "Finds similar photos in a batch and keeps the best of each group, removing duplicates. Choose a strict, normal, or loose deduplication level. Ask to remove duplicate pictures."
+},
+"com.huawei.hmos.photos/BestSelectionPipeline": {
+"reviewed": true,
+"source": "celia",
+"summary": "Runs the whole photo-picking process at once in the Photos app: filters out bad shots, removes duplicates, balances the selection, and orders a cover. Ask to automatically pick the best photos."
+},
+"com.huawei.hmos.photos/BoomerangEventTrigger": {
+"reviewed": true,
+"source": "name",
+"summary": "Triggers a boomerang-style short looping photo or video effect in the Photos app. Ask to make a boomerang clip."
+},
+"com.huawei.hmos.photos/CheckFrontDesk": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the Photos app is currently open in the foreground. Ask to see if the gallery is on screen."
+},
+"com.huawei.hmos.photos/CheckPersonReference": {
+"previous": "Opens a picker in the Photos app so you can choose the album that matches a person. Use it when you want to pick which album belongs to someone, like choosing a person's photos.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a picker in the Photos app so you can choose the album that matches a person. Ask to pick which album belongs to someone."
+},
+"com.huawei.hmos.photos/ConstructSearchQuery": {
+"reviewed": true,
+"source": "name",
+"summary": "Builds a search query in the Photos app. Use it when you want to search your photos for something."
+},
+"com.huawei.hmos.photos/CoverGridSelection": {
+"reviewed": true,
+"source": "celia",
+"summary": "Picks the best cover images from a set of photos, either a top four or top nine grid. Use it when you want to choose cover photos for an album or collage."
+},
+"com.huawei.hmos.photos/EnterMediaEditUiExtension": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the photo editing screen in the Photos app. Use it when you want to edit a photo or video."
+},
+"com.huawei.hmos.photos/EventBalancedCoverGridSelection": {
+"reviewed": true,
+"source": "name",
+"summary": "Selects a balanced set of cover images for an event in the Photos app. Use it when you want cover photos that represent an event evenly."
+},
+"com.huawei.hmos.photos/EventBalancedSelection": {
+"reviewed": true,
+"source": "celia",
+"summary": "Picks a balanced set of photos from an event, grouped by scene, person, or time, up to a chosen number. Use it when you want a fair mix of photos from an event."
+},
+"com.huawei.hmos.photos/GalleryAbort": {
+"reviewed": true,
+"source": "name",
+"summary": "Stops the current gallery action in the Photos app. Use it when you want to cancel what the gallery is doing."
+},
+"com.huawei.hmos.photos/GetFrontForm": {
+"previous": "Gets the front form in the Photos app. Use it when you want to see the main form or front view of the gallery.",
+"reviewed": true,
+"source": "name",
+"summary": "Reports which main view the Photos app is currently showing in front. Ask what the gallery is displaying right now."
+},
+"com.huawei.hmos.photos/GetPersonReference": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up the albums linked to particular people in the Photos app, returning their album IDs without asking the user anything. Ask for this to find someone's photos or albums by name or relationship."
+},
+"com.huawei.hmos.photos/GetPhotoBrowserViewUri": {
+"previous": "Opens a photo browsing view in the Photos app. Ask for this to browse or view your pictures.",
+"reviewed": true,
+"source": "name",
+"summary": "Gets the URI for a photo browsing view in the Photos app. Ask for this to get the link to view your pictures."
+},
+"com.huawei.hmos.photos/GetRelation": {
+"reviewed": true,
+"source": "name",
+"summary": "Gets relationship information in the Photos app. Ask for this to see how people in your photos are related."
+},
+"com.huawei.hmos.photos/JumpAlbum": {
+"reviewed": true,
+"source": "name",
+"summary": "Jumps to an album in the Photos app. Ask for this to open one of your photo albums."
+},
+"com.huawei.hmos.photos/JumpToAlbum": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a specific album page in the Photos app using its album ID. Ask for this to go straight to a particular photo album."
+},
+"com.huawei.hmos.photos/LoadingPage": {
+"previous": "Shows a loading page in the Photos app. Ask for this when the gallery needs a moment to load.",
+"reviewed": true,
+"source": "name",
+"summary": "Shows the loading screen in the Photos app. Ask to show the gallery loading page."
+},
+"com.huawei.hmos.photos/OpenGalleryPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Navigates to a chosen page inside the Photos gallery, carrying along any needed details. Ask for this to move to a specific part of your gallery."
+},
+"com.huawei.hmos.photos/PhotoInfoQueryExecutor": {
+"reviewed": true,
+"source": "name",
+"summary": "Looks up details about photos in the Photos app. Ask for this to get information about your pictures."
+},
+"com.huawei.hmos.photos/PhotoSearchExecutor": {
+"reviewed": true,
+"source": "celia",
+"summary": "Searches your photo library on the device and returns matching pictures. Use it to find photos by describing what you remember, like people, places, times, or text in the image."
+},
+"com.huawei.hmos.photos/PhotosSearch": {
+"reviewed": true,
+"source": "name",
+"summary": "Searches the Photos app for pictures. Use it to find photos you want, such as by a person, place, or thing."
+},
+"com.huawei.hmos.photos/QueryAlbum": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up the ID of a photo album by its name. Use it to find a specific album so you can open or manage it."
+},
+"com.huawei.hmos.photos/QueryOperationLog": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the history of edits made in the photo editor, like brightness changes, filters, crops, or AI erasing. Use it to see what editing steps were already done."
+},
+"com.huawei.hmos.photos/ReservoirSampling": {
+"reviewed": true,
+"source": "name",
+"summary": "Picks a random sample of photos from a larger set. Use it to get a varied selection of pictures without choosing them all."
+},
+"com.huawei.hmos.photos/SelectBestPhoto": {
+"previous": "Chooses the best photo from a group, likely based on quality or content. Use it to automatically pick the strongest shot from several similar ones.",
+"reviewed": true,
+"source": "name",
+"summary": "Chooses the best photo from a group of similar ones in the Photos app. Ask to pick the best shot."
+},
+"com.huawei.hmos.photos/VersionCheck": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the version of the Photos app. Use it to see which version is installed or whether an update is available."
+},
+"com.huawei.hmos.screenreader/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a setting in the screen reader app. Use it to find out whether a specific accessibility option is turned on or off."
+},
+"com.huawei.hmos.screenreader/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the screen reader's settings page so you can review its options. Ask for this when you want to check or change screen reader settings."
+},
+"com.huawei.hmos.screenreader/GetAudioVolumeSeekBar": {
+"previous": "Shows the volume slider used for the screen reader's audio. Ask for this when you want to adjust how loud the screen reader sounds.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads the screen reader's current speech volume level. Ask how loud the screen reader is set."
+},
+"com.huawei.hmos.screenreader/GetOptionScope": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows the range of choices available for a screen reader option. Ask for this when you want to see what settings you can pick from."
+},
+"com.huawei.hmos.screenreader/GetScreenReaderInCall": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows whether the screen reader stays on during phone calls. Ask for this when you want to check if it works while you are on a call."
+},
+"com.huawei.hmos.screenreader/GetScreenRecognitionAppSwitch": {
+"previous": "Shows the switch for letting the screen reader recognize what is on screen. Ask for this when you want to turn screen recognition on or off.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether the screen reader is allowed to recognize what is on screen. Ask if screen recognition is turned on."
+},
+"com.huawei.hmos.screenreader/GetSettingOption": {
+"previous": "Shows the current choice for a screen reader setting. Ask for this when you want to see which option is selected.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads which choice is currently selected for a screen reader setting. Ask which option the screen reader is using."
+},
+"com.huawei.hmos.screenreader/GetSettingSeekBar": {
+"previous": "Shows a slider for adjusting a screen reader setting. Ask for this when you want to change a value like speed or volume.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads the current level of a slider setting in the screen reader, such as speed or volume. Ask what speed or volume the screen reader is set to."
+},
+"com.huawei.hmos.screenreader/GetSettingSwitch": {
+"previous": "Shows an on or off switch for a screen reader setting. Ask for this when you want to turn a screen reader feature on or off.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether a screen reader feature is turned on or off. Ask if a screen reader option is enabled."
+},
+"com.huawei.hmos.screenreader/PauseScreenReading": {
+"reviewed": true,
+"source": "name",
+"summary": "Pauses the screen reader so it stops reading aloud for now. Ask for this when you want the phone to stop talking while you do something else."
+},
+"com.huawei.hmos.screenreader/ResetScreenReadingSpeed": {
+"reviewed": true,
+"source": "celia",
+"summary": "Puts the screen reader's speaking speed back to its default. Ask for this when the reading voice is too fast or too slow and you want the normal speed back."
+},
+"com.huawei.hmos.screenreader/ResetScreenReadingTone": {
+"reviewed": true,
+"source": "celia",
+"summary": "Puts the screen reader's voice pitch back to its default. Ask for this when the reading voice sounds too high or too low and you want the normal tone back."
+},
+"com.huawei.hmos.screenreader/RestoreScreenReading": {
+"reviewed": true,
+"source": "name",
+"summary": "Brings the screen reader back into use after it was paused or turned off. Ask for this when you want the phone to start reading the screen aloud again."
+},
+"com.huawei.hmos.screenreader/RestoreScreenReadingDefaults": {
+"reviewed": true,
+"source": "celia",
+"summary": "Returns every screen reader setting to how it was originally. Ask for this when you have changed the reading options and want them all back to normal."
+},
+"com.huawei.hmos.screenreader/RestoreScreenReadingGestures": {
+"reviewed": true,
+"source": "celia",
+"summary": "Returns the screen reader's custom shortcut gestures to their original setup. Ask for this when your changed gestures are not working and you want the standard ones back."
+},
+"com.huawei.hmos.screenreader/SetInCallCustomGesture": {
+"reviewed": true,
+"source": "name",
+"summary": "Chooses a custom gesture to use while you are on a call with the screen reader. Ask for this when you want your own gesture to control reading during calls."
+},
+"com.huawei.hmos.screenreader/SetInCallSystemDefault": {
+"reviewed": true,
+"source": "name",
+"summary": "Sets the screen reader's in-call gestures back to the standard ones. Ask for this when you want calls to use the usual gestures again."
+},
+"com.huawei.hmos.screenreader/SetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a chosen option in the screen reader's settings. Use it to pick a different setting choice for how the screen reader works."
+},
+"com.huawei.hmos.screenreader/SetSettingSeekBar": {
+"reviewed": true,
+"source": "name",
+"summary": "Adjusts a slider value in the screen reader's settings. Use it to change a screen reader setting that has a range of levels."
+},
+"com.huawei.hmos.screenreader/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a screen reader setting on or off. Use it to enable or disable an option in the screen reader."
+},
+"com.huawei.hmos.screenreader/TurnAudioVolumeSeekBar": {
+"reviewed": true,
+"source": "name",
+"summary": "Sets the screen reader's audio volume to a chosen level. Use it to change how loud the screen reader speaks."
+},
+"com.huawei.hmos.screenreader/TurnDownAudioVolumeSeekBar": {
+"reviewed": true,
+"source": "name",
+"summary": "Lowers the screen reader's audio volume. Use it to make the screen reader quieter."
+},
+"com.huawei.hmos.screenreader/TurnMaximumAudioVolumeSeekBar": {
+"reviewed": true,
+"source": "name",
+"summary": "Raises the screen reader's audio volume to the highest level. Use it to make the screen reader as loud as possible."
+},
+"com.huawei.hmos.screenreader/TurnMinimumAudioVolumeSeekBar": {
+"reviewed": true,
+"source": "name",
+"summary": "Lowers the screen reader's audio volume to the lowest level. Use it to make the screen reader as quiet as possible."
+},
+"com.huawei.hmos.screenreader/TurnOffScreenRecognitionAppSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns off screen recognition for apps in the screen reader. Use it to stop the screen reader from recognizing what is on screen."
+},
+"com.huawei.hmos.screenreader/TurnOnScreenRecognitionAppSwitch": {
+"previous": "Turns on the screen recognition switch in the screen reader app. Ask for this to make the screen reader recognize what's on screen.",
+"reviewed": true,
+"source": "name",
+"summary": "Turns on screen recognition for apps in the screen reader. Use it to make the screen reader recognize what's on screen."
+},
+"com.huawei.hmos.screenreader/TurnUpAudioVolumeSeekBar": {
+"reviewed": true,
+"source": "name",
+"summary": "Raises the audio volume slider in the screen reader app. Ask for this to make the screen reader's sound louder."
+},
+"com.huawei.hmos.security.privacycenter/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a setting item in the privacy and security settings. Ask for this to look at a specific privacy or security option."
+},
+"com.huawei.hmos.security.privacycenter/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a settings page in the privacy and security area. Ask for this to view a privacy or security settings page."
+},
+"com.huawei.hmos.security.privacycenter/GetAccessSpecifiedPermissionApps": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows which apps have a chosen permission, such as location, camera, microphone, contacts, calendar, clipboard, or fitness. Ask for this to see which apps can use a certain permission."
+},
+"com.huawei.hmos.security.privacycenter/GetAllPermissionsesUsedByApp": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows all permissions used by an app. Ask for this to see everything an app is allowed to access."
+},
+"com.huawei.hmos.security.privacycenter/GetAppAccessPermissions": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether a chosen app has a specific permission, like location, camera, microphone, contacts, or calendar. Ask for this to see if an app can use a certain permission."
+},
+"com.huawei.hmos.security.privacycenter/GetAppAllPermissionsRecords": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows how many times an app used its permissions during a chosen time period. Ask for this to see an app's permission activity over time."
+},
+"com.huawei.hmos.security.privacycenter/GetAppSpecifiedPermissionRecord": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks how many times one app used a chosen permission during a time period. Ask to see an app's access history for things like camera, microphone, or location."
+},
+"com.huawei.hmos.security.privacycenter/GetCameraSettingSwicth": {
+"reviewed": true,
+"source": "celia",
+"summary": "Tells you whether the camera permission switch is on or off in phone settings. Ask if camera access is allowed or to check the camera permission setting."
+},
+"com.huawei.hmos.security.privacycenter/GetLocationSettingSwicth": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows whether location access is turned on or off in phone settings. Ask if location services are enabled or to check the location permission setting."
+},
+"com.huawei.hmos.security.privacycenter/GetMicSettingSwicth": {
+"reviewed": true,
+"source": "celia",
+"summary": "Tells you whether the microphone permission switch is on or off in phone settings. Ask if microphone access is allowed or to check the microphone permission setting."
+},
+"com.huawei.hmos.security.privacycenter/GetOptionScope": {
+"reviewed": true,
+"source": "name",
+"summary": "Looks up the available range or scope for a privacy setting option. Ask what choices exist for a privacy setting."
+},
+"com.huawei.hmos.security.privacycenter/GetSettingOption": {
+"previous": "Retrieves a privacy setting option from phone settings. Ask to see a specific privacy setting choice.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads the current value of a privacy setting option in phone settings. Ask what a privacy setting is set to."
+},
+"com.huawei.hmos.security.privacycenter/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a privacy setting switch is on or off. Ask if a privacy setting is enabled."
+},
+"com.huawei.hmos.security.privacycenter/GetSpecifiedPermissionAllRecords": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows how many times all apps used a chosen permission between two times. Ask to see which apps accessed camera, microphone, or location in a time range."
+},
+"com.huawei.hmos.security.privacycenter/SetAppAccessPermissions": {
+"reviewed": true,
+"source": "celia",
+"summary": "Changes whether a chosen app is allowed to use a specific permission, such as camera, microphone, location, contacts or calendar. Ask to allow or block an app's access to something like the camera or your location."
+},
+"com.huawei.hmos.security.privacycenter/SetCameraSettingSwicth": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the camera permission on or off for the whole device in privacy settings. Ask to turn the camera access on or off."
+},
+"com.huawei.hmos.security.privacycenter/SetLocationSettingSwicth": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns location access on or off for the whole device in privacy settings. Ask to turn location on or off."
+},
+"com.huawei.hmos.security.privacycenter/SetMicSettingSwicth": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns microphone permission on or off for the whole device in privacy settings. Ask to turn the microphone on or off."
+},
+"com.huawei.hmos.security.privacycenter/SetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a privacy or security setting option in the privacy center. Ask to change a privacy setting."
+},
+"com.huawei.hmos.security.privacycenter/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a privacy or security switch on or off in the privacy center. Ask to turn a privacy setting on or off."
+},
+"com.huawei.hmos.settings/CheckBiometricsAndPassword": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the biometrics and password settings on the device. Ask about fingerprint, face unlock or password settings."
+},
+"com.huawei.hmos.settings/CheckContinuation": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether the device supports continuing tasks across devices. Ask whether handoff or continuation is available or on."
+},
+"com.huawei.hmos.settings/CheckCrossDeviceClipboard": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether clipboard sharing between devices is available in phone settings. Ask if you can copy on one device and paste on another."
+},
+"com.huawei.hmos.settings/CheckDeviceInterconnectivity": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether this device can connect and work together with other devices, in phone settings. Ask if your phone can link up with your other devices."
+},
+"com.huawei.hmos.settings/CheckFlashReminderEnable": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the flash reminder is turned on in phone settings. Ask if your phone's flash blinks to alert you."
+},
+"com.huawei.hmos.settings/CheckHandEyeShare": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether hand-eye sharing is supported in phone settings. Ask if your device supports hand-eye sharing."
+},
+"com.huawei.hmos.settings/CheckHuaweiHiplay": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether HiPlay is available in phone settings. Ask if you can use HiPlay to cast or share to another screen."
+},
+"com.huawei.hmos.settings/CheckHuaweiShareDetectState": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether nearby-device detection for sharing is on in phone settings. Ask if your phone can find nearby devices to share with."
+},
+"com.huawei.hmos.settings/CheckHuaweiShareMainSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the main sharing switch is on in phone settings. Ask if sharing to nearby devices is turned on."
+},
+"com.huawei.hmos.settings/CheckHuaweiSharePage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the sharing page is available in phone settings. Ask to see the sharing options page."
+},
+"com.huawei.hmos.settings/CheckHuaweiSharePermissionSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the permission switch for Huawei Share is on or off in phone settings. Ask this to see if sharing is allowed before sending files."
+},
+"com.huawei.hmos.settings/CheckKeyMouseShare": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether the device supports sharing a keyboard and mouse with other devices. Ask this to find out if key and mouse sharing is available."
+},
+"com.huawei.hmos.settings/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the current state of a particular setting item in phone settings. Ask this to see whether a specific setting is on or off."
+},
+"com.huawei.hmos.settings/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a particular settings page is available or open in phone settings. Ask this to find out if a settings screen exists."
+},
+"com.huawei.hmos.settings/CheckSoundRecognitionEnable": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether sound recognition is turned on in phone settings. Ask this to see if the phone can recognize sounds."
+},
+"com.huawei.hmos.settings/CheckSuperDevice": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether Super Device is available or enabled in phone settings. Ask this to see if connecting to other devices is possible."
+},
+"com.huawei.hmos.settings/CreateCloneApp": {
+"reviewed": true,
+"source": "celia",
+"summary": "Creates a duplicate copy of a chosen app so you can use two accounts at once. Ask this to make an app clone for a second login."
+},
+"com.huawei.hmos.settings/DeleteCloneApp": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes a duplicate copy of a chosen app, identified by its index. Ask this to delete an app clone you no longer need."
+},
+"com.huawei.hmos.settings/EndRunningApp": {
+"reviewed": true,
+"source": "celia",
+"summary": "Stops a running app in phone settings. Ask to close or force stop an app."
+},
+"com.huawei.hmos.settings/EnterSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a settings page in the phone settings app. Ask to open a settings screen."
+},
+"com.huawei.hmos.settings/GetAppPowerConsumptionPercent": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks how much battery a specific app has used, as a percentage, in phone settings. Ask how much battery an app uses."
+},
+"com.huawei.hmos.settings/GetAppPowerConsumptionRanking": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the battery usage ranking of apps in phone settings. Ask which apps use the most battery."
+},
+"com.huawei.hmos.settings/GetAppUsageDurationAndPower": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks how long an app ran in the background or foreground and its battery use, in phone settings. Ask for an app's usage time or power use."
+},
+"com.huawei.hmos.settings/GetBluetoothDeviceName": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up the name of a paired Bluetooth device in phone settings. Ask for a Bluetooth device's name."
+},
+"com.huawei.hmos.settings/GetCloneAppList": {
+"reviewed": true,
+"source": "celia",
+"summary": "Lists apps that can be cloned or duplicated in phone settings. Ask which apps support app cloning."
+},
+"com.huawei.hmos.settings/GetContinueSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether the continue or handoff switch is on or off in phone settings. Ask if the continue switch is enabled."
+},
+"com.huawei.hmos.settings/GetCrossDeviceClipboard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether the cross-device clipboard feature is turned on or off in phone settings. Ask to see if clipboard sharing between devices is enabled."
+},
+"com.huawei.hmos.settings/GetCurrentRingtone": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the ringtone currently set for a chosen SIM card, card 1 or card 2, in phone settings. Ask what ringtone your phone uses for calls on a specific SIM."
+},
+"com.huawei.hmos.settings/GetDefaultPayApp": {
+"reviewed": true,
+"source": "celia",
+"summary": "Tells you which app is set as the default for payments in phone settings. Ask which app is used by default when you tap to pay."
+},
+"com.huawei.hmos.settings/GetDeviceInterconnectivity": {
+"previous": "Checks the device interconnectivity setting in phone settings, likely showing whether connection with other devices is on. Ask about linking your phone with other devices.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether device interconnection is turned on in phone settings. Ask if your phone is set to link with your other devices."
+},
+"com.huawei.hmos.settings/GetDoubleClickLockScreen": {
+"previous": "Checks the double-click lock screen setting in phone settings, likely showing whether double-tapping locks the screen. Ask if double-tap to lock the screen is turned on.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether double-tap to lock the screen is turned on in phone settings. Ask if double-tapping locks the screen."
+},
+"com.huawei.hmos.settings/GetFlashReminderScene": {
+"previous": "Checks which scene is set for flash reminders in phone settings, likely showing when the flash blinks for notifications. Ask when the flash reminder light is used.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads in which situations the flash reminder blinks, in phone settings. Ask when the flash light is used for alerts."
+},
+"com.huawei.hmos.settings/GetFlashReminderSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the flash reminder feature is on or off in phone settings. Ask if the flash blinks for alerts on your phone."
+},
+"com.huawei.hmos.settings/GetHandEyeShare": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether the hand-eye sharing feature is turned on or off in phone settings. Ask if hand-eye sharing is enabled on your phone."
+},
+"com.huawei.hmos.settings/GetHotspotConnectedDevices": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows which devices are currently connected to your personal hotspot in phone settings. Ask to see who is connected to your hotspot or what devices are using it."
+},
+"com.huawei.hmos.settings/GetHuaweiShareDetectState": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether nearby-device detection for sharing is turned on in phone settings. Ask if sharing detection is on or if your phone can find nearby devices to share with."
+},
+"com.huawei.hmos.settings/GetHuaweiShareMainSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the main sharing switch is on or off in phone settings. Ask if sharing is turned on or to check the sharing switch."
+},
+"com.huawei.hmos.settings/GetHuaweiSharePermissionSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the sharing permission switch is on or off in phone settings. Ask if sharing permission is allowed or to check the sharing permission setting."
+},
+"com.huawei.hmos.settings/GetKeyMouseShare": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether keyboard and mouse sharing is turned on or off in phone settings. Ask if keyboard and mouse sharing is on or to check that switch."
+},
+"com.huawei.hmos.settings/GetMagnificationType": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks which screen magnification style is set in phone settings. Ask what magnification type is on or how the screen zoom is set up."
+},
+"com.huawei.hmos.settings/GetOptionScope": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the allowed choices for a particular setting in phone settings. Ask what options a setting has or what values you can pick for it."
+},
+"com.huawei.hmos.settings/GetOtherBluetoothDevices": {
+"reviewed": true,
+"source": "celia",
+"summary": "Lists other Bluetooth devices shown in phone settings. Ask to see other Bluetooth devices or what Bluetooth devices are available."
+},
+"com.huawei.hmos.settings/GetOtherSparkLinkDevices": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up other nearby SparkLink devices in phone settings. Ask to see other SparkLink devices when you want to find or connect to one."
+},
+"com.huawei.hmos.settings/GetPairedBluetoothDevices": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the Bluetooth devices already paired with your phone in phone settings. Ask to see paired Bluetooth devices when you want to check or manage them."
+},
+"com.huawei.hmos.settings/GetPairedSparkLinkDevices": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the SparkLink devices already paired with your phone in phone settings. Ask to see paired SparkLink devices when you want to check or manage them."
+},
+"com.huawei.hmos.settings/GetPerformanceModeSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether performance mode is turned on in phone settings. Ask about performance mode when you want to know if your phone is set for speed."
+},
+"com.huawei.hmos.settings/GetScheduledPowerStatus": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the status of scheduled power on or off in phone settings. Ask about scheduled power when you want to see if your phone turns on or off on a schedule."
+},
+"com.huawei.hmos.settings/GetSettingOption": {
+"reviewed": true,
+"source": "celia",
+"summary": "Reads the current value of a chosen phone setting, such as dial tone, e-book mode, screen refresh rate, or subtitle options. Ask what a setting is set to when you want to check an option's value."
+},
+"com.huawei.hmos.settings/GetSettingSeekBar": {
+"reviewed": true,
+"source": "celia",
+"summary": "Reads a slider-style setting, like ringtone, call, media, alarm, or assistant volume, or brightness and text speed. Ask how loud the volume is or what a slider is set to."
+},
+"com.huawei.hmos.settings/GetSettingStatus": {
+"reviewed": true,
+"source": "celia",
+"summary": "Reads a status value in phone settings, such as battery level, time zone, battery health, storage use, Bluetooth address, or IP address. Ask for a status like battery percentage or IP address."
+},
+"com.huawei.hmos.settings/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether a particular phone setting is turned on or off. Ask to check if a setting is enabled."
+},
+"com.huawei.hmos.settings/GetSimCardCellId": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up the cell ID for a chosen SIM card, either card 1 or card 2. Ask for the cell ID of a SIM."
+},
+"com.huawei.hmos.settings/GetSimCardMccMnc": {
+"reviewed": true,
+"source": "celia",
+"summary": "Gets the mobile country and network codes for a chosen SIM card, either card 1 or card 2. Ask for the MCC and MNC of a SIM."
+},
+"com.huawei.hmos.settings/GetSimCardMobileNetworkType": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the mobile network type for a chosen SIM card, either card 1 or card 2. Ask what network type a SIM is using."
+},
+"com.huawei.hmos.settings/GetSimCardNetwork": {
+"reviewed": true,
+"source": "celia",
+"summary": "Tells you the network operator for a chosen SIM card, either card 1 or card 2. Ask which carrier a SIM is on."
+},
+"com.huawei.hmos.settings/GetSimCardSignalStrength": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks the signal strength for a chosen SIM card, either card 1 or card 2. Ask how strong the signal is on a SIM."
+},
+"com.huawei.hmos.settings/GetSimCardSmsCenterNumber": {
+"reviewed": true,
+"source": "celia",
+"summary": "Retrieves the SMS center number for a chosen SIM card, either card 1 or card 2. Ask for the SMS center number of a SIM."
+},
+"com.huawei.hmos.settings/GetSoundRecognitionSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether sound recognition is turned on or off in phone settings. Ask if sound recognition is enabled."
+},
+"com.huawei.hmos.settings/GetSoundTypeSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the sound type switch is on or off in phone settings. Ask to see if a sound mode is enabled."
+},
+"com.huawei.hmos.settings/GetStorageSpaceOfApp": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows how much storage a chosen app is using, including its app and data totals. Ask to check an app's storage use."
+},
+"com.huawei.hmos.settings/GetSuperDevice": {
+"reviewed": true,
+"source": "name",
+"summary": "Looks up the Super Device setting in phone settings. Ask to check Super Device status or options."
+},
+"com.huawei.hmos.settings/GetZoomGestureTrigger": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the zoom gesture trigger setting in phone settings. Ask to see how the zoom gesture is set."
+},
+"com.huawei.hmos.settings/JumpAdvancedSettingsPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the advanced settings page in phone settings. Ask to open advanced settings."
+},
+"com.huawei.hmos.settings/JumpBiometricsAndPasswordPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the biometrics and password page in phone settings, where you manage fingerprint, face and passwords. Ask to manage biometrics or passwords."
+},
+"com.huawei.hmos.settings/JumpBionicVisionPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the bionic vision page in phone settings. Ask to open bionic vision settings."
+},
+"com.huawei.hmos.settings/JumpDoubleClickLockScreen": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the double-click lock screen setting in phone settings. Ask to change double-click lock screen options."
+},
+"com.huawei.hmos.settings/JumpFlashReminderPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the flash reminder settings page in phone settings. Ask for this to turn on or off flash notifications for incoming calls or messages."
+},
+"com.huawei.hmos.settings/JumpHdrPicDisplayPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the HDR picture display settings page in phone settings. Ask for this to control how HDR photos are shown on screen."
+},
+"com.huawei.hmos.settings/JumpHdrPicEnhancePage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the HDR picture enhancement settings page in phone settings. Ask for this to turn HDR photo enhancement on or off."
+},
+"com.huawei.hmos.settings/JumpHdrVideoEnhancePage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the HDR video enhancement settings page in phone settings. Ask for this to turn HDR video enhancement on or off."
+},
+"com.huawei.hmos.settings/JumpHuaweiHiplayPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the HiPlay settings page in phone settings. Ask for this to set up or manage HiPlay screen projection."
+},
+"com.huawei.hmos.settings/JumpPaymentInfoPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the payment information settings page in phone settings. Ask for this to view or manage saved payment details."
+},
+"com.huawei.hmos.settings/JumpScheduledPower": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the scheduled power settings page in phone settings. Ask for this to set a time for the phone to turn on or off automatically."
+},
+"com.huawei.hmos.settings/JumpSoundRecognitionPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the sound recognition settings page in phone settings. Ask for this to turn on or off alerts that recognize sounds like alarms or doorbells."
+},
+"com.huawei.hmos.settings/JumpWalletAndPaymentPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the wallet and payment settings page in phone settings. Use this to manage wallet or payment options."
+},
+"com.huawei.hmos.settings/OpenAlarmRingtoneSettingPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the alarm ringtone settings page in phone settings. Use this to change the sound your alarm makes."
+},
+"com.huawei.hmos.settings/OpenAppManagerPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the app manager page in phone settings. Use this to manage installed apps."
+},
+"com.huawei.hmos.settings/OpenContinueSwitchPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the continue switch settings page in phone settings. Use this to turn the continue feature on or off."
+},
+"com.huawei.hmos.settings/OpenCrossDeviceClipboard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the cross-device clipboard settings page in phone settings. Use this to turn clipboard sharing between devices on or off."
+},
+"com.huawei.hmos.settings/OpenDeviceInterconnectivityPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the device interconnectivity settings page in phone settings. Use this to manage connections between your devices."
+},
+"com.huawei.hmos.settings/OpenGesturesMenuPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the gestures menu page in phone settings. Use this to change gesture controls."
+},
+"com.huawei.hmos.settings/OpenHuaweiSharePage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the Huawei Share settings page in phone settings. Use this to manage file sharing with nearby devices."
+},
+"com.huawei.hmos.settings/OpenIdentificationMenuPage": {
+"previous": "Opens the identification settings page in phone settings. Useful when you want to manage how your device identifies you or verifies your identity.",
+"reviewed": true,
+"source": "name",
+"summary": "Opens the identification settings page in phone settings. Use this to manage how your device identifies you or verifies your identity."
+},
+"com.huawei.hmos.settings/OpenInCallGestureMenuPage": {
+"previous": "Opens the in-call gesture settings page in phone settings. Useful when you want to change or review gestures used during phone calls.",
+"reviewed": true,
+"source": "name",
+"summary": "Opens the in-call gesture settings page in phone settings. Use this to change or review gestures used during phone calls."
+},
+"com.huawei.hmos.settings/OpenKeyMouseShare": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the keyboard and mouse sharing settings page in phone settings, where you can turn sharing on or off. Useful when you want to share a keyboard or mouse between devices."
+},
+"com.huawei.hmos.settings/OpenNavigationSettingsPage": {
+"previous": "Opens the navigation settings page in phone settings. Useful when you want to adjust navigation options such as gesture or button navigation.",
+"reviewed": true,
+"source": "name",
+"summary": "Opens the navigation settings page in phone settings. Use this to adjust navigation options such as gesture or button navigation."
+},
+"com.huawei.hmos.settings/OpenScreenReaderSettingsMenuPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the screen reader settings page in phone settings. Useful when you want to turn on or configure spoken feedback for the screen."
+},
+"com.huawei.hmos.settings/OpenScreenlockEditTransparenCloc": {
+"previous": "Opens the transparent clock settings for the lock screen in phone settings. Useful when you want to customize how the clock looks on your lock screen.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the transparent clock settings for the lock screen in phone settings. Ask for this to customize how the clock looks on your lock screen."
+},
+"com.huawei.hmos.settings/OpenShortcutMenuConfigurationPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the shortcut menu configuration page in phone settings. Useful when you want to choose or rearrange the shortcuts shown in the quick settings menu."
+},
+"com.huawei.hmos.settings/OpenSuperDevicePage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the super device page in phone settings, where connected devices are managed. Useful when you want to connect or manage other devices with your phone."
+},
+"com.huawei.hmos.settings/OpenTouchFeedbackPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the touch feedback settings page in phone settings. Ask for this to change touch vibration or feedback options."
+},
+"com.huawei.hmos.settings/OpenVirtualTouchpadPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the virtual touchpad settings page in phone settings. Ask for this to find virtual touchpad options."
+},
+"com.huawei.hmos.settings/OpenVoiceSettingsPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the voice settings page in phone settings. Ask for this to change voice or speech options."
+},
+"com.huawei.hmos.settings/QueryCloneApp": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up the app clone information for a chosen app in phone settings. Ask for this to check whether an app can be cloned or is already cloned."
+},
+"com.huawei.hmos.settings/RestoreDefaultPhoneRingtone": {
+"reviewed": true,
+"source": "celia",
+"summary": "Restores the default ringtone for incoming calls in phone settings. Ask for this to reset your call ringtone back to the original."
+},
+"com.huawei.hmos.settings/SetContinueSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the app continuation switch on or off in phone settings. Ask for this to enable or disable continuing apps across devices."
+},
+"com.huawei.hmos.settings/SetCrossDeviceClipboard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the cross-device clipboard switch on or off in phone settings. Ask for this to share copied text between your devices or stop sharing it."
+},
+"com.huawei.hmos.settings/SetDefaultInputMethod": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets which keyboard or input method is the default in phone settings. Ask for this to choose your main keyboard."
+},
+"com.huawei.hmos.settings/SetDefaultPayApp": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets which app is used by default when you tap to pay. Ask to choose or change the default payment app for NFC payments."
+},
+"com.huawei.hmos.settings/SetDeviceInterconnectivity": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns device interconnection on or off in phone settings. Ask to enable or disable linking your phone with other devices."
+},
+"com.huawei.hmos.settings/SetDoubleClickLockScreen": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the double-tap-to-lock-screen feature on or off. Ask to enable or disable locking the screen by double tapping it."
+},
+"com.huawei.hmos.settings/SetFlashReminderScene": {
+"reviewed": true,
+"source": "name",
+"summary": "Chooses which situations trigger the flash reminder in phone settings. Ask to set when the flash should blink for notifications."
+},
+"com.huawei.hmos.settings/SetFlashReminderSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the flash reminder on or off in phone settings. Ask to enable or disable blinking flash alerts for calls or messages."
+},
+"com.huawei.hmos.settings/SetHandEyeShare": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the hand-eye sharing feature on or off in phone settings. Ask to enable or disable hand-eye sharing."
+},
+"com.huawei.hmos.settings/SetHuaweiShareDetectState": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns detection for nearby sharing on or off in phone settings. Ask to enable or disable finding nearby devices to share with."
+},
+"com.huawei.hmos.settings/SetHuaweiShareMainSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the main sharing switch on or off in phone settings. Ask to enable or disable sharing with nearby devices."
+},
+"com.huawei.hmos.settings/SetHuaweiSharePermissionSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Toggles the permission switch for Huawei Share in phone settings. Ask to turn Huawei Share permission on or off."
+},
+"com.huawei.hmos.settings/SetKeyMouseShare": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the keyboard and mouse sharing feature on or off in phone settings. Ask to enable or disable keyboard and mouse sharing."
+},
+"com.huawei.hmos.settings/SetMagnificationType": {
+"reviewed": true,
+"source": "name",
+"summary": "Sets the type of screen magnification in phone settings. Ask to change how the screen zoom or magnifier works."
+},
+"com.huawei.hmos.settings/SetPerformanceModeSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns performance mode on or off in phone settings. Ask to switch to high performance mode or turn it off."
+},
+"com.huawei.hmos.settings/SetScheduledPower": {
+"reviewed": true,
+"source": "name",
+"summary": "Sets a scheduled power on or off time in phone settings. Ask to schedule when the phone powers on or off."
+},
+"com.huawei.hmos.settings/SetSettingOption": {
+"reviewed": true,
+"source": "celia",
+"summary": "Changes a setting option such as sound mode (ring, vibrate, or silent) or other system settings. Ask to set silent mode, vibrate, ring, or adjust options like screen refresh rate or caption language."
+},
+"com.huawei.hmos.settings/SetSettingSeekBar": {
+"reviewed": true,
+"source": "celia",
+"summary": "Adjusts a slider value such as volume or brightness in phone settings. Ask to turn volume up or down, set brightness, or adjust other sliders."
+},
+"com.huawei.hmos.settings/SetSettingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns a setting switch on or off, like Bluetooth, hotspot, or power saving mode. Ask to enable or disable Bluetooth, turn on hotspot, or switch power saving mode."
+},
+"com.huawei.hmos.settings/SetSoundRecognitionSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the sound recognition setting on or off in phone settings. Ask to enable or disable sound recognition."
+},
+"com.huawei.hmos.settings/SetSoundTypeSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the sound type setting on or off in phone settings. Ask to switch a sound type on or off."
+},
+"com.huawei.hmos.settings/SetSuperDevice": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes the super device setting in phone settings. Ask to set up or adjust a super device."
+},
+"com.huawei.hmos.settings/SetSystemLanguage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Changes the language used across the phone in phone settings. Ask to switch the system language."
+},
+"com.huawei.hmos.settings/SetSystemRegion": {
+"reviewed": true,
+"source": "celia",
+"summary": "Changes the region set for the phone in phone settings. Ask to change the system region."
+},
+"com.huawei.hmos.settings/SetWifiAutoEnable": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns automatic Wi-Fi enabling on or off in phone settings. Ask to turn on or off auto Wi-Fi."
+},
+"com.huawei.hmos.settings/SetZoomGestureTrigger": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns the zoom gesture trigger on or off in phone settings. Ask to enable or disable the zoom gesture."
+},
+"com.huawei.hmos.settings/ViewSettingItem": {
+"previous": "Opens the screen for a specific setting item in phone settings. Ask to view a particular setting.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the screen for a specific setting item in phone settings. Ask to open a particular setting."
+},
+"com.huawei.hmos.simcardmanagement/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a SIM card setting item in phone settings. Ask to check a SIM setting."
+},
+"com.huawei.hmos.simcardmanagement/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the SIM card settings page in phone settings. Ask to check the SIM settings page."
+},
+"com.huawei.hmos.simcardmanagement/CheckSimSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether a chosen SIM card's switch is supported, for card 1 or card 2. Ask if a SIM card switch is available."
+},
+"com.huawei.hmos.simcardmanagement/GetDefaultDialingSimCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up which SIM card is set as the default for making calls. Ask which SIM is used for calls by default."
+},
+"com.huawei.hmos.simcardmanagement/GetDefaultMobileDataSimCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up which SIM card is set as the default for mobile data. Ask which SIM is used for mobile data by default."
+},
+"com.huawei.hmos.simcardmanagement/GetSimCardNumber": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up the phone number of a chosen SIM card, for card 1 or card 2. Ask for a SIM card's number."
+},
+"com.huawei.hmos.simcardmanagement/GetSimSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether a chosen SIM card is turned on, for card 1 or card 2. Ask if a SIM card is enabled."
+},
+"com.huawei.hmos.simcardmanagement/SetDefaultDialingSimCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets a chosen SIM card, card 1 or card 2, as the default for making calls. Ask to choose which SIM makes calls by default."
+},
+"com.huawei.hmos.simcardmanagement/SetDefaultMobileDataSimCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Chooses which SIM card the phone uses for mobile data, either card 1 or card 2. Ask for this to pick the SIM that should handle your internet connection."
+},
+"com.huawei.hmos.simcardmanagement/SetSimSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns a chosen SIM card on or off, selecting card 1 or card 2. Ask for this to enable or disable one of your SIM cards."
+},
+"com.huawei.hmos.slassistant/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a particular setting is currently turned on or off. Ask for this to find out if a setting is enabled."
+},
+"com.huawei.hmos.slassistant/GetTrustDevices": {
+"reviewed": true,
+"source": "name",
+"summary": "Lists the devices that are trusted or paired with this phone. Ask for this to see which devices are trusted."
+},
+"com.huawei.hmos.slassistant/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a particular setting on or off. Ask for this to enable or disable a setting."
+},
+"com.huawei.hmos.soundrecorder/EndRecord": {
+"reviewed": true,
+"source": "celia",
+"summary": "Stops the current recording in the Sound Recorder app and finishes the audio file. Ask for this to stop recording."
+},
+"com.huawei.hmos.soundrecorder/PauseRecord": {
+"reviewed": true,
+"source": "celia",
+"summary": "Pauses the recording that is currently in progress in the Sound Recorder app. Ask for this to pause recording."
+},
+"com.huawei.hmos.soundrecorder/ResumeRecord": {
+"reviewed": true,
+"source": "celia",
+"summary": "Continues a paused recording in the Sound Recorder app. Ask for this to resume recording."
+},
+"com.huawei.hmos.soundrecorder/StartRecord": {
+"reviewed": true,
+"source": "celia",
+"summary": "Starts recording audio with the Sound Recorder app. Ask to start recording or begin a voice recording."
+},
+"com.huawei.hmos.spamshield/AddBlockList": {
+"reviewed": true,
+"source": "celia",
+"summary": "Adds a phone number to the call blocking list in the spam and fraud protection settings. Ask to block a number or add someone to the blacklist."
+},
+"com.huawei.hmos.spamshield/AddTrustList": {
+"reviewed": true,
+"source": "celia",
+"summary": "Adds a phone number and name to the trusted list so their calls are not blocked. Ask to allow a number or add someone to the whitelist."
+},
+"com.huawei.hmos.spamshield/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a setting item in the spam and fraud protection settings. Ask to check a blocking or protection setting."
+},
+"com.huawei.hmos.spamshield/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a settings page in the spam and fraud protection settings. Ask to view a blocking or protection settings page."
+},
+"com.huawei.hmos.spamshield/ClearCallBlockRecords": {
+"reviewed": true,
+"source": "celia",
+"summary": "Clears the record of blocked calls in the spam and fraud protection settings. Ask to clear blocked call history or delete call blocking records."
+},
+"com.huawei.hmos.spamshield/ClearSmsBlockRecords": {
+"reviewed": true,
+"source": "celia",
+"summary": "Clears the record of blocked messages in the spam and fraud protection settings. Ask to clear blocked message history or delete message blocking records."
+},
+"com.huawei.hmos.spamshield/GetOptionScope": {
+"reviewed": true,
+"source": "name",
+"summary": "Gets the available options for a setting in the spam and fraud protection settings. Ask what blocking options are available."
+},
+"com.huawei.hmos.spamshield/GetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads a setting option from the spam and fraud blocking settings. Ask to check a blocking preference."
+},
+"com.huawei.hmos.spamshield/GetSettingStatus": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a spam blocking setting is on or off. Ask if call blocking is enabled."
+},
+"com.huawei.hmos.spamshield/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Tells you if a spam blocking switch is turned on. Ask whether a blocking feature is active."
+},
+"com.huawei.hmos.spamshield/GetSpsOptionScope": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the allowed values for a call blocking option, for SIM card 1 or 2. Ask what choices a blocking setting has."
+},
+"com.huawei.hmos.spamshield/GetSpsSettingOption": {
+"reviewed": true,
+"source": "celia",
+"summary": "Reads the current value of a call blocking option, like the harassment or scam threshold, for SIM card 1 or 2. Ask what a blocking threshold is set to."
+},
+"com.huawei.hmos.spamshield/GetSpsSettingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether a call blocking feature, such as blocking calls that ring once, is on for SIM card 1 or 2. Ask if a call blocking switch is enabled."
+},
+"com.huawei.hmos.spamshield/RemoveFromBlockList": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes a phone number from the blocked list. Ask to unblock a number."
+},
+"com.huawei.hmos.spamshield/RemoveFromTrustList": {
+"reviewed": true,
+"source": "celia",
+"summary": "Removes a phone number from the trusted list. Ask to remove a number from the allow list."
+},
+"com.huawei.hmos.spamshield/SetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a chosen option in the spam and fraud blocking settings to a new value. Use this to adjust how calls are filtered, such as setting a blocking threshold."
+},
+"com.huawei.hmos.spamshield/SetSettingSwitch": {
+"previous": "Turns a specific switch on or off in the spam and fraud blocking settings. Use this to enable or disable a call blocking feature.",
+"reviewed": true,
+"source": "name",
+"summary": "Turns a switch on or off in the spam and fraud blocking settings. Use this to enable or disable a call blocking feature."
+},
+"com.huawei.hmos.spamshield/SetSpsSettingOption": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets the value for a call blocking option, like the threshold for harassing, scam, advertising, or real estate calls, for a chosen SIM card. Use this to change how many calls of a type are blocked."
+},
+"com.huawei.hmos.spamshield/SetSpsSettingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns a call blocking feature on or off for a specific SIM card, such as blocking calls that ring once. Use this to control whether such calls are blocked."
+},
+"com.huawei.hmos.superhub/CheckSettingItem": {
+"previous": "Checks the current state of a setting item in the SuperHub app. Use this to see how a particular setting is configured.",
+"reviewed": true,
+"source": "name",
+"summary": "Checks the current state of a setting item in the SuperHub app. Use this to see how a setting is configured."
+},
+"com.huawei.hmos.superhub/EnterSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the settings page in the SuperHub app. Use this to access and change SuperHub settings."
+},
+"com.huawei.hmos.superhub/GetSettingSwitch": {
+"previous": "Reads whether a specific switch is on or off in the SuperHub app. Use this to check if a setting is enabled.",
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether a switch is on or off in the SuperHub app. Use this to check if a setting is enabled."
+},
+"com.huawei.hmos.superhub/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a specific switch on or off in the SuperHub app. Use this to enable or disable a SuperHub setting."
+},
+"com.huawei.hmos.vassistant/AccountBindConfirm": {
+"reviewed": true,
+"source": "celia",
+"summary": "Confirms binding an account, likely finishing a sign-in or linking step. Ask to confirm or complete account binding."
+},
+"com.huawei.hmos.vassistant/AiImageToObs": {
+"reviewed": true,
+"source": "celia",
+"summary": "Uploads an AI-generated image from a web address and returns an image id. Use it to save or store an AI-made picture online."
+},
+"com.huawei.hmos.vassistant/BackCardDataToTool": {
+"previous": "Plausibly sends card data back to a tool. Ask to return or pass card information to a tool.",
+"reviewed": true,
+"source": "name",
+"summary": "Hands the data from an assistant card back to the tool that asked for it. Ask to return or pass card information to a tool."
+},
+"com.huawei.hmos.vassistant/CallAutoSummaryConfig": {
+"reviewed": true,
+"source": "celia",
+"summary": "Views or changes automatic call summaries: the main on/off switch, whether all calls or only chosen contacts and numbers are summarized. Ask to turn call summaries on or off, or add or remove a person or number."
+},
+"com.huawei.hmos.vassistant/CashierPicker": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a payment chooser for an order so someone can pick how to pay. Ask to pay for something or choose a payment method."
+},
+"com.huawei.hmos.vassistant/CheckSettingItem": {
+"previous": "Plausibly checks a setting item's current value or state. Ask to look up or check a phone setting.",
+"reviewed": true,
+"source": "name",
+"summary": "Checks the current value or state of one setting item. Ask to look up or check a phone setting."
+},
+"com.huawei.hmos.vassistant/CommonInteractiveCard": {
+"previous": "Plausibly shows a general interactive card with tappable content. Ask to open or display an interactive card.",
+"reviewed": true,
+"source": "name",
+"summary": "Shows a general-purpose interactive card with tappable content in the assistant. Ask to open or display an interactive card."
+},
+"com.huawei.hmos.vassistant/CreateDoraSkill": {
+"reviewed": true,
+"source": "celia",
+"summary": "Creates a Dora skill from a list of steps. Ask to make or set up a new Dora skill."
+},
+"com.huawei.hmos.vassistant/DeleteVassistantAnalysisImprove": {
+"reviewed": true,
+"source": "celia",
+"summary": "Deletes the assistant's improvement records from its data and privacy settings. Use this to clear the assistant's analysis and improvement history."
+},
+"com.huawei.hmos.vassistant/DisPlaySongAgentErrorMsg": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows an error message card when the song assistant runs into a problem. Use this to see what went wrong with a song request."
+},
+"com.huawei.hmos.vassistant/DisplayAudioRecordCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the audio recording card for the song assistant. Use this to view or manage a song recording."
+},
+"com.huawei.hmos.vassistant/DisplayFixPictureCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows a card with the result of an image edit. Use this to see a picture that was fixed or edited."
+},
+"com.huawei.hmos.vassistant/DisplaySongTuningPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the page for tuning a song's settings. Use this to adjust how a song sounds."
+},
+"com.huawei.hmos.vassistant/DownloadMusic": {
+"reviewed": true,
+"source": "celia",
+"summary": "Saves a generated music file to the device. Use this to download a song you made."
+},
+"com.huawei.hmos.vassistant/EditMusic": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the flow for editing or tuning a music file. Use this to change or adjust a song."
+},
+"com.huawei.hmos.vassistant/EnableImageEditCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Marks an image edit card as enabled after a safety check. Use this to activate an image editing card."
+},
+"com.huawei.hmos.vassistant/ExecuteSkill": {
+"reviewed": true,
+"source": "celia",
+"summary": "Runs a skill from a Dora card when you tap it, using the entity's ID and type. Ask to launch a Dora skill or execute a card action."
+},
+"com.huawei.hmos.vassistant/FileUploadForClaw": {
+"reviewed": true,
+"source": "celia",
+"summary": "Uploads files for Celia Claw and returns their web addresses. Ask to upload files to Celia Claw or get file links."
+},
+"com.huawei.hmos.vassistant/GetCollectionItemData": {
+"reviewed": true,
+"source": "name",
+"summary": "Fetches data for an item in a collection. Ask to get collection item details or view saved item information."
+},
+"com.huawei.hmos.vassistant/GetLoadMapRouteCardData": {
+"reviewed": true,
+"source": "celia",
+"summary": "Gets route card details for a trip, including start and end points, travel mode, and available taxi or navigation apps. Ask for route options or directions between two places."
+},
+"com.huawei.hmos.vassistant/GetOnAppImageInfo": {
+"reviewed": true,
+"source": "name",
+"summary": "Gets image information from an app. Ask to retrieve image details or view an image from an app."
+},
+"com.huawei.hmos.vassistant/GetOptionScope": {
+"previous": "Retrieves the available range for an option. Ask to see what choices are available for a setting.",
+"reviewed": true,
+"source": "name",
+"summary": "Shows the available choices for a setting in the voice assistant. Ask what options you can pick for a voice assistant setting."
+},
+"com.huawei.hmos.vassistant/GetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Gets a setting option's current value or choices. Ask to check a setting or see its options."
+},
+"com.huawei.hmos.vassistant/GetSettingSeekBar": {
+"reviewed": true,
+"source": "name",
+"summary": "Gets the value of a slider setting. Ask to check a slider setting like volume or brightness."
+},
+"com.huawei.hmos.vassistant/GetSettingStatus": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a phone setting is currently on or off. Ask this to find out if something like Bluetooth or Wi-Fi is enabled."
+},
+"com.huawei.hmos.vassistant/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads the current state of a phone setting switch. Ask this to see whether a particular setting is turned on or off."
+},
+"com.huawei.hmos.vassistant/HandleImageEditPostPictureCardGuide": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows a guide card that helps you upload a picture for editing. Ask this when you want help getting an image ready to edit."
+},
+"com.huawei.hmos.vassistant/HandleImageEditPostPictureCardKeepAsk": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows a card with follow-up choices after an image edit. Ask this when you want more options to keep refining an edited picture."
+},
+"com.huawei.hmos.vassistant/HandleMultiModelReject": {
+"reviewed": true,
+"source": "celia",
+"summary": "Handles a rejected image edit result and clears the related card. Ask this when an image edit was turned down and you want it dismissed."
+},
+"com.huawei.hmos.vassistant/HandleMutiModeResult": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the finished result card after an image edit. Ask this when you want to see the outcome of an edited picture."
+},
+"com.huawei.hmos.vassistant/ImageUploadForClaw": {
+"reviewed": true,
+"source": "celia",
+"summary": "Uploads pictures and returns their web links. Ask this when you want to send images somewhere and get shareable URLs back."
+},
+"com.huawei.hmos.vassistant/MakeAiCall": {
+"reviewed": true,
+"source": "celia",
+"summary": "Places a phone call on your behalf using an AI assistant. Ask this when you want the assistant to make a call for you."
+},
+"com.huawei.hmos.vassistant/ManageAppServiceSettings": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the assistant's settings for managing app services. Ask for this to change how apps or services behave in the assistant."
+},
+"com.huawei.hmos.vassistant/MoreAction": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows extra actions you can take on a music file, using its local path. Ask for this when you want more options for a song file."
+},
+"com.huawei.hmos.vassistant/NavigateAppSelector": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows a list of navigation apps to choose from. Ask for this when you want to pick which map or navigation app to use."
+},
+"com.huawei.hmos.vassistant/OpenCashierPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the payment checkout page. Ask for this when you want to pay or check out."
+},
+"com.huawei.hmos.vassistant/OpenFaceToFaceTranslation": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a page for translating a face-to-face conversation. Ask for this when you want to talk with someone in another language in person."
+},
+"com.huawei.hmos.vassistant/OpenImmersiveTranslation": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a translation view that overlays translated text on what you see. Ask for this when you want to read signs or text in another language."
+},
+"com.huawei.hmos.vassistant/OpenSimultaneousInterpretation": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a page for live interpreting as people speak. Ask for this when you want real-time spoken translation."
+},
+"com.huawei.hmos.vassistant/OpenTextTranslation": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a page for translating typed text. Ask for this when you want to translate words you type."
+},
+"com.huawei.hmos.vassistant/OpenTranslationHistory": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the translation history page in the assistant app. Ask for this to see your past translations or look back at what you translated before."
+},
+"com.huawei.hmos.vassistant/Pay": {
+"reviewed": true,
+"source": "celia",
+"summary": "Runs a third-party payment through the assistant app. Ask for this to pay for something or complete a purchase."
+},
+"com.huawei.hmos.vassistant/PlayMusic": {
+"reviewed": true,
+"source": "name",
+"summary": "Starts playing music in the assistant app. Ask for this to play a song or start some music."
+},
+"com.huawei.hmos.vassistant/PreviewImage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows images in a detail view, starting at the one you pick. Ask for this to look at a picture or view photos full screen."
+},
+"com.huawei.hmos.vassistant/RedirectToImageEditPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Takes you to the image editing page in the assistant app. Ask for this to edit a photo or change a picture."
+},
+"com.huawei.hmos.vassistant/SaveFileToFileManager": {
+"reviewed": true,
+"source": "name",
+"summary": "Saves a file into the file manager. Ask for this to keep a file or store a document."
+},
+"com.huawei.hmos.vassistant/SaveMediaToGallery": {
+"reviewed": true,
+"source": "name",
+"summary": "Saves media into the gallery. Ask for this to keep a photo or video in your gallery."
+},
+"com.huawei.hmos.vassistant/SendMessage": {
+"reviewed": true,
+"source": "name",
+"summary": "Sends a message from the assistant app. Ask for this to text someone or send a message."
+},
+"com.huawei.hmos.vassistant/SetAutoAnswerConfig": {
+"previous": "Lets you manage the assistant's auto-answer cards, including querying, adding, changing, or deleting them, and setting a global do-not-disturb card. Use it to set up or adjust how calls are answered automatically.",
+"reviewed": true,
+"source": "celia",
+"summary": "Manages the assistant's auto-answer cards: query, add, change, or delete them, and set a global do-not-disturb card. Use it to set up how calls are answered automatically."
+},
+"com.huawei.hmos.vassistant/SetCallAssistance": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns call assistance on or off for the assistant. Use it to enable or disable help with handling calls."
+},
+"com.huawei.hmos.vassistant/SetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a chosen option in the assistant's settings. Use it to pick a different value for an assistant setting."
+},
+"com.huawei.hmos.vassistant/SetSettingSeekBar": {
+"reviewed": true,
+"source": "name",
+"summary": "Adjusts a slider-style setting for the assistant. Use it to change a level or amount in the assistant's settings."
+},
+"com.huawei.hmos.vassistant/SetSettingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the assistant's dialect broadcast setting on or off. Use it to enable or disable speaking in a local dialect."
+},
+"com.huawei.hmos.vassistant/ShareMusic": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shares a music file you have generated, using its local path and display name. Use it to send or share a song you made."
+},
+"com.huawei.hmos.vassistant/SocialMediaPostCardTransformer": {
+"reviewed": true,
+"source": "name",
+"summary": "Transforms a social media post into a card format. Use it to turn a social media post into a shareable card."
+},
+"com.huawei.hmos.vassistant/TaxiAppSelector": {
+"reviewed": true,
+"source": "name",
+"summary": "Lets you choose which taxi app to use. Use it to pick a ride-hailing app for booking a taxi."
+},
+"com.huawei.hmos.vassistant/TextRecognize": {
+"previous": "Reads text out of an image, such as a card, so it can be used automatically. Ask for this when you want text from a picture recognized.",
+"reviewed": true,
+"source": "celia",
+"summary": "Reads text out of an image, such as an auto-renewal card, so it can be used automatically. Ask for this when you want text from a picture recognized."
+},
+"com.huawei.hmos.vassistant/ViewDoraTask": {
+"previous": "Opens a Dora task to show its details. Ask for this when you want to see a Dora task.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a Dora task to show its details. Ask to see a Dora task."
+},
+"com.huawei.hmos.vassistant/ViewSkill": {
+"previous": "Opens the detail page for a Dora skill, chosen by its type and identifier. Ask for this when you want to view a specific skill's details.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the detail page for a Dora skill. Ask to view a specific skill's details."
+},
+"com.huawei.hmos.vassistant/ViewTaskList": {
+"reviewed": true,
+"source": "celia",
+"summary": "Shows the list of tasks. Ask for this when you want to see your task list."
+},
+"com.huawei.hmos.vassistant/ViewVassistantAbout": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the about page for the assistant. Ask for this when you want information about the assistant."
+},
+"com.huawei.hmos.vassistant/ViewVassistantAnalysisImprove": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the assistant's analysis and improvement settings, where you can manage improvement data and location use. Ask for this when you want to change the assistant's improvement options."
+},
+"com.huawei.hmos.vassistant/ViewVassistantAppServiceMode": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the assistant's app service mode page. Ask for this when you want to change how the assistant's app services work."
+},
+"com.huawei.hmos.vassistant/ViewVassistantExpandedService": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the assistant's expanded service page, where extra services can be turned off. Ask for this when you want to stop the assistant's expanded services."
+},
+"com.huawei.hmos.vassistant/ViewVassistantOther": {
+"previous": "Opens other pages in the Xiaoyi assistant, such as how your location data is used. Ask to see more assistant information or privacy details.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens other assistant pages, such as how your location data is used. Ask to see more assistant information or privacy details."
+},
+"com.huawei.hmos.vassistant/ViewVassistantPersonalizedRec": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the personalized recommendations screen in the Xiaoyi assistant. Ask to view or manage personalized recommendations."
+},
+"com.huawei.hmos.vassistant/ViewVassistantServiceManagement": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the service management screen in the Xiaoyi assistant. Ask to manage assistant services."
+},
+"com.huawei.hmos.vassistant/ViewVassistantSetting": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the settings screen for the Xiaoyi assistant. Ask to change assistant settings."
+},
+"com.huawei.hmos.wallet/AddSubwayCard": {
+"reviewed": true,
+"source": "name",
+"summary": "Adds a subway card in the Wallet app. Ask to add a subway or transit card."
+},
+"com.huawei.hmos.wallet/Default": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the Wallet app's main screen. Ask to open the Wallet app."
+},
+"com.huawei.hmos.wallet/RechargeSubwayCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Recharges a subway card in the Wallet app, using the card's ID. Ask to top up a subway or transit card."
+},
+"com.huawei.hmos.wallet/TriggerPublicTransportation": {
+"reviewed": true,
+"source": "celia",
+"summary": "Starts a public transportation ride in the Wallet app. Ask to use a transit card for a bus or subway ride."
+},
+"com.huawei.hmos.wallet/ViewSubwayCard": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the Wallet app to show a subway transit card, identified by its card ID. Ask to view your subway card or check your metro card balance."
+},
+"com.huawei.hms.payment/RequestPayment": {
+"reviewed": true,
+"source": "name",
+"summary": "Starts a payment request through the phone's payment service. Ask to pay someone or make a payment."
+},
+"com.huawei.hms.payment/SendRedPacket": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sends a red packet through the payment service, choosing an ordinary, lucky-draw, or good-luck type and setting the amount, number, and note. Ask to send a red packet or give lucky money."
+},
+"com.huawei.hms.textautofill/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a single autofill setting item in the phone's text autofill settings. Ask whether a particular autofill option is on."
+},
+"com.huawei.hms.textautofill/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the autofill settings page in the phone's text autofill settings. Ask to see the autofill settings screen."
+},
+"com.huawei.hms.textautofill/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether a text autofill switch is turned on or off. Ask if autofill is enabled."
+},
+"com.huawei.hms.textautofill/OpenSmartFillPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the smart fill page in the phone's text autofill settings. Ask to open smart fill or autofill settings."
+},
+"com.huawei.hms.textautofill/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a text autofill switch on or off. Ask to enable or disable autofill."
+},
+"com.huawei.hmsapp.books/JumpFunctionPage": {
+"previous": "Opens a specific feature page inside the Books app. Use it when you want to jump straight to a particular reading tool or section.",
+"reviewed": true,
+"source": "name",
+"summary": "Opens a feature page inside the Books app. Ask to open a reading tool or section in Books."
+},
+"com.huawei.hmsapp.books/OpenDownloadPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the download page in the Books app. Use it when you want to see or manage your book downloads."
+},
+"com.huawei.hmsapp.books/PlayAudio": {
+"reviewed": true,
+"source": "name",
+"summary": "Starts audio playback in the Books app. Use it when you want to listen to an audiobook."
+},
+"com.huawei.hmsapp.books/ReadBook": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a book for reading in the Books app. Use it when you want to start reading a book."
+},
+"com.huawei.hmsapp.books/ReadRecommendBook": {
+"previous": "Opens a recommended book for reading in the Books app, identified by its unique ID. Use it when you want to read a book that has been suggested to you.",
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a recommended book for reading in the Books app. Use it when you want to read a book that has been suggested to you."
+},
+"com.huawei.hmsapp.books/ViewDownloadedContent": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows content you have already downloaded in the Books app. Use it when you want to view your saved books or downloads."
+},
+"com.huawei.hmsapp.himovie/OpenDownloadPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the download page in the Movie app. Use it when you want to see or manage your movie downloads."
+},
+"com.huawei.hmsapp.himovie/PlayVideo": {
+"reviewed": true,
+"source": "name",
+"summary": "Starts video playback in the Movie app. Use it when you want to watch a movie or video."
+},
+"com.huawei.hmsapp.himovie/SaveVideoList": {
+"previous": "Saves a list of videos in the Movie app. Ask to save videos to watch later.",
+"reviewed": true,
+"source": "name",
+"summary": "Saves a list of videos in the Movie app. Use it when you want to save videos to watch later."
+},
+"com.huawei.hmsapp.himovie/ViewDownloadedContent": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows videos you have downloaded in the Movie app. Ask to see your downloaded movies."
+},
+"com.huawei.hmsapp.litegamelauncher/PlayGame": {
+"reviewed": true,
+"source": "name",
+"summary": "Starts a game from the Lite Game launcher. Ask to play a game."
+},
+"com.huawei.hmsapp.litegames/OpenDownloadPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the download page in the Lite Games app. Ask to download a game."
+},
+"com.huawei.hmsapp.litegames/ViewDownloadedContent": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows games you have downloaded in the Lite Games app. Ask to see your downloaded games."
+},
+"com.huawei.hmsapp.litegames/ViewRankingList": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows a ranking list of games in the Lite Games app. Ask to see top or popular games."
+},
+"com.huawei.hmsapp.music/JumpFunctionPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a feature page in the Music app. Ask to go to a music feature."
+},
+"com.huawei.hmsapp.music/OpenDownloadPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the download page in the Music app. Ask to download music."
+},
+"com.huawei.hmsapp.music/PlayMusic": {
+"reviewed": true,
+"source": "celia",
+"summary": "Starts playing music in the Music app. Ask for this when you want to play music, put on some music, or start playing a song."
+},
+"com.huawei.hmsapp.music/PlayMusicList": {
+"reviewed": true,
+"source": "celia",
+"summary": "Plays a music playlist in the Music app. Ask for this when you want to play a playlist or listen to your saved songs."
+},
+"com.huawei.hmsapp.music/PreloadMusic": {
+"reviewed": true,
+"source": "name",
+"summary": "Prepares music in the Music app ahead of time so it is ready to play. Ask for this when you want music loaded in advance."
+},
+"com.huawei.hmsapp.music/RemoveMusic": {
+"reviewed": true,
+"source": "name",
+"summary": "Removes music from the Music app. Ask for this when you want to delete a song or take music out of your library."
+},
+"com.huawei.hmsapp.music/SaveMusicList": {
+"reviewed": true,
+"source": "name",
+"summary": "Saves a music playlist in the Music app. Ask for this when you want to keep a playlist for later."
+},
+"com.huawei.hmsapp.music/ViewDownloadedContent": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the downloaded content in the Music app. Ask for this when you want to see the music you have downloaded."
+},
+"com.huawei.hmsapp.music/ViewSearchPageLocal": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the local search page in the Music app. Ask for this when you want to search your own music on the device."
+},
+"com.jd.hm.mall/CheckProductDiscountInfo": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks discount information for a product in the shopping app. Ask for this when you want to see a product's deals or price cuts."
+},
+"com.jd.hm.mall/ViewCommodity": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a product page in the shopping app so you can look at an item's details. Ask to view a product or check something you want to buy."
+},
+"com.jd.hm.mall/ViewReservedTicket": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows a ticket you have reserved in the shopping app. Ask to see your reserved ticket or booking."
+},
+"com.kuaishou.hmapp/JumpFunctionPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Takes you to a feature page inside the short-video app. Ask to open a specific app feature or tool."
+},
+"com.kuaishou.hmapp/ViewCommodity": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a product page in the short-video app so you can see an item for sale. Ask to view a product or shop item."
+},
+"com.kuaishou.hmapp/ViewSubscribedLiveStreaming": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the live streams you follow in the short-video app. Ask to watch live streams from people you subscribe to."
+},
+"com.ohos.contacts/AddContact": {
+"reviewed": true,
+"source": "celia",
+"summary": "Creates a new contact in the Contacts app from supplied contact details. Ask to add a person to your contacts."
+},
+"com.ohos.contacts/CheckMissedCall": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows missed calls in the Contacts app. Ask to see who called you and you missed it."
+},
+"com.ohos.contacts/ContactsSettingSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns a chosen Contacts app setting on or off. Ask to change a contacts setting, such as switching one on or off."
+},
+"com.ohos.contacts/DeleteContact": {
+"reviewed": true,
+"source": "celia",
+"summary": "Deletes contacts from the Contacts app by their IDs. Use this to remove one or more people from your address book."
+},
+"com.ohos.contacts/JumpMyCardSettingsPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens the settings page for your own contact card in the Contacts app. Use this to edit your personal contact details."
+},
+"com.ohos.contacts/OpenBatchDeleteCallLogPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens a page in the Contacts app to delete several call records at once. Use this to clear multiple calls from your history."
+},
+"com.ohos.contacts/QueryCallLog": {
+"reviewed": true,
+"source": "celia",
+"summary": "Searches the Contacts app's call history and returns matching call records. Use this to find recent calls, including by typing a plain-language query."
+},
+"com.ohos.contacts/SearchContacts": {
+"reviewed": true,
+"source": "celia",
+"summary": "Searches the Contacts app for people matching your conditions and returns the results. Use this to find a contact, including by typing a plain-language query."
+},
+"com.ohos.sceneboard/CheckAggregationNotification": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks aggregated notifications on the home screen. Use this to see grouped notifications from your apps."
+},
+"com.ohos.sceneboard/CheckPrioritySettingPage": {
+"previous": "Opens the priority settings page on the home screen. Use this to adjust which notifications or items are shown first.",
+"reviewed": true,
+"source": "name",
+"summary": "Opens the priority settings page on the home screen. Use this to set which notifications or items appear first."
+},
+"com.ohos.sceneboard/CheckSettingItem": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks a settings item on the home screen. Use this to view or verify a home screen setting."
+},
+"com.ohos.sceneboard/CheckSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether a settings page is available on the device. Ask for this when you want to know if a particular settings screen can be opened."
+},
+"com.ohos.sceneboard/CheckSmartNotificationService": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks whether the smart notification service is available. Ask for this when you want to know if smart notifications are supported on the device."
+},
+"com.ohos.sceneboard/CloseFlashlight": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns off the flashlight. Ask for this when you want to turn off the torch or flashlight."
+},
+"com.ohos.sceneboard/EnterAppNotificationSettingPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the notification management page for a specific app, where you can control ringing, vibration, allowing notifications, categories and pinning. Ask for this when you want to change how a particular app sends notifications."
+},
+"com.ohos.sceneboard/EnterSettingPage": {
+"reviewed": true,
+"source": "name",
+"summary": "Opens a settings page. Ask for this when you want to open settings on the device."
+},
+"com.ohos.sceneboard/EntryImmersiveLightPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the immersive light and transparency settings page. Ask for this when you want to adjust light effects, glass transparency or immersive feel."
+},
+"com.ohos.sceneboard/EntryPrioritySettingPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the priority notification settings, either the general priority notification page or the smart recognition page, and can target a specific app. Ask for this when you want to manage priority notifications or smart recognition."
+},
+"com.ohos.sceneboard/EntrySingleHandMode": {
+"reviewed": true,
+"source": "celia",
+"summary": "Puts the device into one-handed mode, choosing the left or right side. Ask for this when you want to use the phone with one hand."
+},
+"com.ohos.sceneboard/EntrySingleHandModeSettingPage": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the one-handed mode settings page in system settings. Ask to set up or turn on one-handed mode."
+},
+"com.ohos.sceneboard/ExitSingleHandMode": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns off one-handed mode and returns the device to normal display. Ask to exit or stop one-handed mode."
+},
+"com.ohos.sceneboard/GetAllowAppNotifyCategory": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether a notification category is allowed for an app. Categories are social, service reminders, and content updates. Ask about an app's notification category settings."
+},
+"com.ohos.sceneboard/GetAllowAppNotifySwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether notifications are allowed for an app. Ask if an app's notifications are turned on or off."
+},
+"com.ohos.sceneboard/GetAppNotifyCategoryType": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks which notification categories an app supports. Ask what kinds of notifications an app can send."
+},
+"com.ohos.sceneboard/GetAppNotifyDisplayOnBanner": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether an app shows banner notifications. Ask if an app's notifications pop up as banners."
+},
+"com.ohos.sceneboard/GetAppNotifyDisplayOnIconMark": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether an app shows a badge on its home screen icon. Ask if an app's icon shows notification dots."
+},
+"com.ohos.sceneboard/GetAppNotifyDisplayOnLockScreen": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether an app shows notifications on the lock screen. Ask if an app's notifications appear on the lock screen."
+},
+"com.ohos.sceneboard/GetAppNotifyDisplayOnTop": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether an app's notifications are set to show on top. Use this to see if an app's alerts appear at the top of the screen."
+},
+"com.ohos.sceneboard/GetAppNotifyWithRinging": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether an app's notifications are allowed to ring. Use this to see if an app's alerts make a sound."
+},
+"com.ohos.sceneboard/GetAppNotifyWithVibrate": {
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether an app's notifications are allowed to vibrate. Use this to see if an app's alerts make the phone buzz."
+},
+"com.ohos.sceneboard/GetRecommendSwitch": {
+"previous": "Shows a card with the status of the location-based live window reminder setting. Use this to check if location reminders are on.",
+"reviewed": true,
+"source": "celia",
+"summary": "Checks whether location-based live window reminders are turned on and shows a card with the result. Use this to see if location reminders are enabled."
+},
+"com.ohos.sceneboard/GetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads a setting option from the phone's settings. Use this to check what a particular setting is currently set to."
+},
+"com.ohos.sceneboard/GetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Reads whether a settings switch is on or off. Use this to check if a particular setting is enabled."
+},
+"com.ohos.sceneboard/LockScreenOrientation": {
+"reviewed": true,
+"source": "celia",
+"summary": "Locks the screen orientation and turns off auto-rotate. Use this to keep the screen from rotating when you move the phone."
+},
+"com.ohos.sceneboard/OpenFlashlight": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns on the flashlight. Use this to turn on the phone's light."
+},
+"com.ohos.sceneboard/QueryThemes": {
+"reviewed": true,
+"source": "celia",
+"summary": "Looks up the themes that came preinstalled on the device. Ask for this to see the built-in themes available on your phone."
+},
+"com.ohos.sceneboard/SetAllowAppNotifyCategory": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns notification categories on or off for chosen apps, covering social, service, content, customer service and other types. Use it to control which kinds of alerts an app may send."
+},
+"com.ohos.sceneboard/SetAllowAppNotifySwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Switches an app's notifications on or off. Ask for this to allow or block all notifications from a particular app."
+},
+"com.ohos.sceneboard/SetAppNotifyDisplayOnBanner": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns banner notifications on or off for chosen apps. Use it to decide whether an app's alerts pop up briefly at the top of the screen."
+},
+"com.ohos.sceneboard/SetAppNotifyDisplayOnIconMark": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the home screen badge for an app's notifications on or off. Ask for this to show or hide the little dot with a count on the app icon."
+},
+"com.ohos.sceneboard/SetAppNotifyDisplayOnLockScreen": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns lock screen notifications on or off for chosen apps. Use it to control whether an app's alerts appear on the lock screen."
+},
+"com.ohos.sceneboard/SetAppNotifyDisplayOnTop": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns pinned notifications on or off for chosen apps. Ask for this to keep an app's alerts stuck at the top of the notification shade."
+},
+"com.ohos.sceneboard/SetAppNotifyWithRinging": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns the ringtone for an app's notifications on or off. Use it to make a chosen app's alerts play a sound or stay silent."
+},
+"com.ohos.sceneboard/SetAppNotifyWithVibrate": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns an app's notification vibration on or off in phone settings. Use it to make a specific app vibrate for notifications, or to stop it."
+},
+"com.ohos.sceneboard/SetImmersiveLevel": {
+"reviewed": true,
+"source": "celia",
+"summary": "Changes how transparent or frosted the interface looks, choosing a level from strongest to softest or a step stronger or weaker. Use it to adjust the see-through, glassy feel of the screen."
+},
+"com.ohos.sceneboard/SetSettingOption": {
+"reviewed": true,
+"source": "name",
+"summary": "Changes a setting option in the phone's settings. Use it to pick a different value for a setting."
+},
+"com.ohos.sceneboard/SetSettingSwitch": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns a setting on or off in the phone's settings. Use it to enable or disable a setting."
+},
+"com.ohos.sceneboard/SetSpecificThemes": {
+"previous": "Opens a particular theme by its ID. Use it to switch to a theme you want.",
+"reviewed": true,
+"source": "celia",
+"summary": "Switches the phone to a specific theme by its ID. Use it to apply the theme you want."
+},
+"com.ohos.sceneboard/SetSpecificWallpaper": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets a chosen picture from your media library as the wallpaper. Use it to put a specific photo on your home screen."
+},
+"com.ohos.sceneboard/SetTheme": {
+"reviewed": true,
+"source": "celia",
+"summary": "Switches to a theme by name. Use it to change your phone's look to a theme you name."
+},
+"com.ohos.sceneboard/SetWallpaperAndArtSignature": {
+"reviewed": true,
+"source": "celia",
+"summary": "Sets a wallpaper from your media library along with a custom art signature. Use it to put a chosen picture and a signature on your screen."
+},
+"com.ohos.sceneboard/SetWallpaperFromThemeEditor": {
+"reviewed": true,
+"source": "name",
+"summary": "Sets the wallpaper using the current theme editor selection. Use this to apply a theme's wallpaper to the home screen."
+},
+"com.ohos.sceneboard/TurnOffAggregationNotification": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns off grouped notifications so they appear separately. Use this to stop notifications from being bundled together."
+},
+"com.ohos.sceneboard/TurnOffRecommendSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns off the location-based live window reminder switch in notification settings. Use this to stop location-based reminders."
+},
+"com.ohos.sceneboard/TurnOffSingleHandMode": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns off single-hand mode in system settings. Use this to disable one-handed mode."
+},
+"com.ohos.sceneboard/TurnOffSmartNotificationService": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns off the smart notification service. Use this to stop smart notifications."
+},
+"com.ohos.sceneboard/TurnOffStatusBarHmsStyle": {
+"previous": "Turns off the HMS style for the status bar. Use this to change the status bar appearance.",
+"reviewed": true,
+"source": "name",
+"summary": "Turns off the HMS-style status bar. Ask to turn off the HMS status bar style."
+},
+"com.ohos.sceneboard/TurnOnAggregationNotification": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns on grouped notifications so they are bundled together. Use this to group notifications."
+},
+"com.ohos.sceneboard/TurnOnRecommendSwitch": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns on the location-based live window reminder switch in notification settings. Use this to get location-based reminders."
+},
+"com.ohos.sceneboard/TurnOnSingleHandMode": {
+"reviewed": true,
+"source": "celia",
+"summary": "Turns on the single-hand mode switch in the phone's system settings; it does not actually enter single-hand mode. Ask for this to enable the one-handed mode setting."
+},
+"com.ohos.sceneboard/TurnOnSmartNotificationService": {
+"reviewed": true,
+"source": "name",
+"summary": "Turns on the smart notification service in the phone's system settings. Ask for this to switch on smart notifications."
+},
+"com.ohos.sceneboard/TurnOnStatusBarHmsStyle": {
+"previous": "Turns on the HMS-style status bar in the phone's system settings. Ask for this to switch the status bar to that style.",
+"reviewed": true,
+"source": "name",
+"summary": "Turns on the HMS-style status bar. Ask to turn on the HMS status bar style."
+},
+"com.ohos.sceneboard/UnlockScreenOrientation": {
+"reviewed": true,
+"source": "celia",
+"summary": "Unlocks the screen orientation and turns on auto-rotate, so the screen follows how the phone is held. Ask for this to stop the screen being locked upright."
+},
+"com.ohos.sceneboard/ViewSplitScreen": {
+"reviewed": true,
+"source": "celia",
+"summary": "Opens the split-screen view, taking a list of apps to show side by side. Ask for this to see or use two apps in split screen."
+},
+"com.qunar.hos/CheckTrainOrderStatus": {
+"reviewed": true,
+"source": "name",
+"summary": "Checks the status of a train ticket order in the Qunar travel app. Ask for this to see whether a train booking has been confirmed or changed."
+},
+"com.qunar.hos/SearchTrainTicketLocal": {
+"reviewed": true,
+"source": "name",
+"summary": "Searches for train tickets in the Qunar travel app. Ask for this to look up train times and fares for a trip."
+},
+"com.qunar.hos/ViewTrainTicket": {
+"reviewed": true,
+"source": "name",
+"summary": "Shows a train ticket in the Qunar travel app. Ask for this to view the details of a booked train ticket."
+}
+}

@@ -14,6 +14,7 @@ import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { ensureUiEmbeddings } from '../vera/VeraUiIndex'
 import { loadRegistry } from '../vera/VeraIntentRegistry'
+import { loadIntentSummaries } from '../vera/VeraIntentIndex'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { loadSdkIndex } from '../vera/VeraSdkIndex'
 import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL } from '../vera/VeraEmbeddings'
@@ -23,11 +24,11 @@ import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchm
 import { sdkSearchRequested, runSdkSearchProbe } from '../vera/VeraSdkProbe'
 import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
 import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
-import { selectUiForPrompt, UI_SELECT_FULL, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
+import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
-const UI_SELECT_MODE: string = UI_SELECT_FULL
+const UI_SELECT_MODE: string = UI_SELECT_PROMPT
 const MAX_RETRIES: number = 3
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
@@ -290,13 +291,17 @@ struct GeneratePage {
       // reads it through VeraIntentRegistry.registryEntries(); without an
       // address the model would have to invent one, and an invented address
       // fails silently.
-      loadRegistry().then((count: number) => {
+      // Summaries first: the intent pool is built from the registry and the
+      // summaries together, and it is rebuilt when either grows, so order only
+      // saves one rebuild -- but it also keeps the first embedding pass from
+      // embedding every intent twice, once per text.
+      loadIntentSummaries(mgr).then(() => loadRegistry()).then((count: number) => {
         console.info('VERA-REGISTRY ' + count.toString() + ' intents available to find_intent_function')
         // ensureEmbeddingsReady() below races this same read (its own,
         // independent async device call) and can run first -- re-checking
         // here, now that the registry has actually finished, is what picks
         // up the raw entries that were still missing at that point.
-        ensureIntentEmbeddings(getContext(this).filesDir).then(() => {
+        ensureIntentEmbeddings(getContext(this).filesDir, mgr).then(() => {
           console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
         })
       })
@@ -457,7 +462,7 @@ struct GeneratePage {
       console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
     })
     let uiPromise = ensureUiEmbeddings(filesDir)
-    let intentPromise = ensureIntentEmbeddings(filesDir)
+    let intentPromise = ensureIntentEmbeddings(filesDir, getContext(this).resourceManager)
     intentPromise.then(() => {
       console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
     })
@@ -474,7 +479,7 @@ struct GeneratePage {
       // registry read that only finished in between. Only this opt-in
       // path waits at all; an ordinary launch is unaffected.
       await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
-      await ensureIntentEmbeddings(filesDir)
+      await ensureIntentEmbeddings(filesDir, getContext(this).resourceManager)
       await runSearchBenchmark()
     }
     let search = sdkSearchRequested()

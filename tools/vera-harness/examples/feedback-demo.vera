@@ -1,0 +1,31 @@
+import * as ui from "std/ui"
+
+@jsonable
+class AppState {
+  saved: boolean;
+}
+
+function init(): AppState {
+  return { saved: false };
+}
+
+function save(state: AppState, v: int): AppState {
+  return { saved: true };
+}
+
+function dismiss(state: AppState, v: int): AppState {
+  return { saved: false };
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("spacious", [
+      ui.Header("default", "Profile", "", "", ""),
+      ui.Skeleton("default", 200, 20, false),
+      ui.Skeleton("default", 48, 48, true),
+      ui.Spinner("default", "Loading..."),
+      ui.Button("primary", "Save", "save", 0, true),
+      ui.When(state.saved, ui.Snackbar("default", "Saved", "Dismiss", "dismiss"))
+    ])
+  ]);
+}

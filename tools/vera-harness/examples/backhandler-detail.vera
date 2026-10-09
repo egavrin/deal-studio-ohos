@@ -1,0 +1,23 @@
+import * as ui from "std/ui"
+
+@jsonable
+class AppState {
+  screen: string;
+}
+
+function init(): AppState {
+  return { screen: "detail" };
+}
+
+function goBack(state: AppState, _v: int): AppState {
+  return { screen: "list" };
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("spacious", [
+      ui.Text("body", "Detail screen"),
+      ui.BackHandler("goBack")
+    ])
+  ]);
+}

@@ -108,7 +108,7 @@ def main():
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('need')
     ap.add_argument('-k', '--limit', type=int, default=8)
-    ap.add_argument('--index', default='tools/sdk-index.json')
+    ap.add_argument('--index', default='entry/src/main/resources/rawfile/sdk-index.json')
     args = ap.parse_args()
 
     index = json.load(open(args.index, encoding='utf-8'))

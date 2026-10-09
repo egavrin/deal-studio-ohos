@@ -86,6 +86,23 @@ export struct VeraPreview {
    * takes the height it needs and has no scrolling of its own.
    */
   @Prop embedded: boolean = false
+  /**
+   * Bumped by the hosting page's onBackPressed() every time the system back
+   * gesture should be handed to the program. A counter rather than a boolean:
+   * the value itself carries no meaning, only the fact that it changed, so two
+   * back-presses in a row -- the normal case -- are both seen.
+   */
+  @Prop @Watch('onBackPressSignal') backPressSignal: number = 0
+  /**
+   * Told whether a ui.BackHandler is currently part of the tree, so the
+   * hosting page's onBackPress() can return the right thing synchronously --
+   * swallow the gesture and bump backPressSignal, or let the system handle it
+   * (pop the page, in RunnerPage's case) -- without waiting on a dispatch.
+   * A plain field, not @Prop: a callback's identity never changes, so there is
+   * nothing here for ArkUI to watch.
+   */
+  onBackHandlerChanged: (active: boolean) => void = () => {}
+  private backHandlerAction: string = ''
   // The live tree is mutated in place, so it is not @State: its own @Trace
   // fields are what drive the re-render. See VeraLiveTree.
   @State hasRoot: boolean = false
@@ -143,6 +160,14 @@ export struct VeraPreview {
    */
   @State viewportWidth: number = 0
   /**
+   * A ui.Sparkline's own plotting box width, measured directly on its own
+   * Shape (see chartWidth's own comment on why not viewportWidth). @State
+   * for the same reason viewportWidth is: the first frame draws at a guess,
+   * the real area arrives after layout, and the chart redraws at its actual
+   * size once it does.
+   */
+  @State sparklineWidth: number = 0
+  /**
    * The call waiting for the person to allow it, and the calls queued behind it.
    *
    * A generated program may ask the phone to do things it cannot undo, and
@@ -170,7 +195,8 @@ export struct VeraPreview {
     'emptystate', 'stat', 'metricgroup',
     'inttext', 'intstat', 'intfield', 'timefield', 'intlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
-    'timeline', 'timelineitem']
+    'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
+    'table', 'tablerow']
 
   aboutToAppear(): void {
     let missing: string[] = []
@@ -296,6 +322,37 @@ export struct VeraPreview {
     return 0
   }
 
+  /**
+   * Keep backHandlerAction in step with the frame just produced, and tell the
+   * hosting page when a handler starts or stops being there -- not on every
+   * frame, only on that transition, since that is the only thing the page
+   * needs to decide what its own onBackPress() should do next time.
+   */
+  private reconcileBackHandler(root: VeraUiNode | null): void {
+    let action = root !== null ? this.findBackHandlerAction(root!) : ''
+    let had = this.backHandlerAction.length > 0
+    this.backHandlerAction = action
+    let has = action.length > 0
+    if (has !== had) { this.onBackHandlerChanged(has) }
+  }
+
+  /** Last one in the tree wins, matching the catalogue's own stated rule. */
+  private findBackHandlerAction(node: VeraUiNode): string {
+    let found = node.kind === 'backhandler' ? node.action : ''
+    for (let child of node.children) {
+      let childFound = this.findBackHandlerAction(child)
+      if (childFound.length > 0) { found = childFound }
+    }
+    return found
+  }
+
+  /** The system back gesture, relayed by the hosting page via backPressSignal. */
+  onBackPressSignal(): void {
+    if (this.backHandlerAction.length > 0) {
+      this.dispatch(this.backHandlerAction, new VeraIntValue(0))
+    }
+  }
+
   private collectTickers(node: VeraUiNode, wanted: Map<string, number>,
       actions: Map<string, string>): void {
     if (node.kind === 'ticker' && node.checked && node.minimum > 0 &&
@@ -418,6 +475,7 @@ export struct VeraPreview {
       this.revision += 1
       this.reconcileTimers(root)
       this.reconcileSpin(root)
+      this.reconcileBackHandler(root)
     } catch (e) {
       this.error = 'View error: ' + (e as Error).message
     }
@@ -911,6 +969,174 @@ export struct VeraPreview {
     let h = Math.floor(m / 60)
     let mm = m % 60
     return (h < 10 ? '0' : '') + h.toString() + ':' + (mm < 10 ? '0' : '') + mm.toString()
+  }
+
+  /**
+   * ui.Sparkline's own plotting box height, in vp. Width is not a constant --
+   * see chartWidth's own comment -- so every sparkline-drawing method below
+   * takes it as a parameter instead of assuming a fixed square, the way
+   * SPARKLINE_HEIGHT alone would.
+   */
+  private static readonly SPARKLINE_HEIGHT: number = 260
+
+  /**
+   * A ui.Sparkline's series as an SVG path, directly in vp -- x across
+   * 0..width, y across 0..SPARKLINE_HEIGHT. This used to be a fixed 0..100
+   * box mapped onto the real one with Shape.viewPort, the same device every
+   * icon's single, genuinely-square path uses -- measured wrong on device for
+   * a wide, short chart: viewPort scales uniformly to fit a 100x100 square
+   * inside a ~300x200 box, so the content came out squeezed into a sliver at
+   * the left rather than stretched to fill it. Writing real vp coordinates
+   * and dropping viewPort avoids the scaling step (and its aspect-ratio
+   * assumption) entirely, the same way sparklineBarRects now draws one Path
+   * per bar instead of trusting a multi-subpath Path's own measurement.
+   * maximum bounds the vertical scale; a value past it is clamped rather than
+   * drawn off the top, since the program named maximum itself and a point
+   * above it is the program's own figure being wrong, not a reason to redraw
+   * everything else smaller.
+   */
+  private sparklineCommands(node: LiveNode, width: number): string {
+    let series = node.series
+    if (series.length === 0) { return '' }
+    let max = node.maximum > 0 ? node.maximum : 1
+    let h = VeraPreview.SPARKLINE_HEIGHT
+    let n = series.length
+    let cmds: string[] = []
+    for (let i = 0; i < n; i++) {
+      let x = n > 1 ? (i / (n - 1)) * width : width / 2
+      let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
+      let y = h - (v / max) * h
+      cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
+    }
+    return cmds.join(' ')
+  }
+
+  /**
+   * sparklineCommands's own points, closed down to the bottom edge of the
+   * same box and back to the start -- the area a chart's fill reads against,
+   * computed from the line itself rather than left to an implicit close the
+   * way the plain 'path' branch's fill is.
+   */
+  private sparklineAreaCommands(node: LiveNode, width: number): string {
+    let series = node.series
+    if (series.length === 0) { return '' }
+    let max = node.maximum > 0 ? node.maximum : 1
+    let h = VeraPreview.SPARKLINE_HEIGHT
+    let n = series.length
+    let cmds: string[] = []
+    let firstX = 0
+    let lastX = width
+    for (let i = 0; i < n; i++) {
+      let x = n > 1 ? (i / (n - 1)) * width : width / 2
+      let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
+      let y = h - (v / max) * h
+      if (i === 0) { firstX = x }
+      if (i === n - 1) { lastX = x }
+      cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
+    }
+    cmds.push('L ' + lastX.toFixed(2) + ' ' + h.toFixed(2))
+    cmds.push('L ' + firstX.toFixed(2) + ' ' + h.toFixed(2))
+    cmds.push('Z')
+    return cmds.join(' ')
+  }
+
+
+  /**
+   * The real width to draw a ui.Sparkline's path commands in, in vp.
+   *
+   * This used to reuse viewportWidth -- the whole program's own outer content
+   * box, measured once near the root (onAreaChange several screens up from
+   * here) -- on the reasoning that a chart a little too wide would read
+   * better than one squeezed into a sliver. Measured on device: wrong in the
+   * other direction and worse than that reasoning expected. A chart nested
+   * inside a ui.Section sits well inside viewportWidth -- the section's own
+   * padding, plus this preview's own page padding counted on top of it a
+   * second time -- so the bars drew at a small fraction of the real box and
+   * sat flush left in it rather than centred, nowhere near "a little wide".
+   * sparklineWidth is measured on the chart's own Shape instead (see its
+   * own onAreaChange in the 'sparkline' branch), so it needs no guess about
+   * how many padded containers sit between this chart and the page edge.
+   * 300 is a plain guess for the first frame, before any area has been
+   * measured.
+   */
+  private chartWidth(): number {
+    return this.sparklineWidth > 0 ? this.sparklineWidth : 300
+  }
+
+  /**
+   * ui.Sparkline with bars: true -- every value's bar height, in vp, clamped
+   * to maximum the same way sparklineCommands clamps a line's points. Called
+   * once as the 'sparkline' branch's ForEach data source, not from inside
+   * its item builder -- see that branch's own comment for why that distinction
+   * is exactly what makes every bar draw, not only the tallest.
+   */
+  private barHeights(node: LiveNode): number[] {
+    let max = node.maximum > 0 ? node.maximum : 1
+    let heights: number[] = []
+    for (let v of node.series) {
+      let clamped = v < 0 ? 0 : (v > max ? max : v)
+      heights.push((clamped / max) * VeraPreview.SPARKLINE_HEIGHT)
+    }
+    return heights
+  }
+
+  /** ui.Select's current choice, for the trigger row -- '' if it has no options at all. */
+  private selectDisplayText(node: LiveNode): string {
+    let i = node.eventValue
+    if (i >= 0 && i < node.options.length) { return node.options[i] }
+    return node.options.length > 0 ? node.options[0] : ''
+  }
+
+  /** ui.Select's options as the overlay bindMenu opens, one MenuElement each. */
+  private selectMenuItems(node: LiveNode): MenuElement[] {
+    let items: MenuElement[] = []
+    for (let i = 0; i < node.options.length; i++) {
+      let index = i
+      items.push({
+        value: node.options[i],
+        action: () => {
+          if (node.action.length > 0) { this.handleAction(node.action, index) }
+        }
+      })
+    }
+    return items
+  }
+
+  /**
+   * ui.TextField's checks, in a fixed order, as the one message to show under
+   * the field or '' if it currently has none. VERA has no way to refuse a
+   * value once typed, so this never stops anything reaching the handler --
+   * it only tells the person what is wrong, the same thing a host test runs
+   * against the same inputs to confirm before this ever touches ArkUI.
+   */
+  private textFieldIssue(node: LiveNode): string {
+    let v = node.value
+    if (node.required && v.length === 0) {
+      return node.requiredMessage.length > 0 ? node.requiredMessage : 'Required'
+    }
+    if (v.length === 0) { return '' }
+    if (node.minLength > 0 && v.length < node.minLength) {
+      return node.minLengthMessage.length > 0 ? node.minLengthMessage
+        : 'Enter at least ' + node.minLength.toString() + ' characters'
+    }
+    if (node.maxLength >= 0 && v.length > node.maxLength) {
+      return node.maxLengthMessage.length > 0 ? node.maxLengthMessage
+        : 'Enter at most ' + node.maxLength.toString() + ' characters'
+    }
+    if (node.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+      return node.emailMessage.length > 0 ? node.emailMessage : 'Enter a valid email address'
+    }
+    if (node.pattern.length > 0 && !new RegExp(node.pattern).test(v)) {
+      return node.patternMessage.length > 0 ? node.patternMessage : 'Invalid format'
+    }
+    return ''
+  }
+
+  private textFieldKeyboard(node: LiveNode): InputType {
+    if (node.keyboardType === 'number') { return InputType.Number }
+    if (node.keyboardType === 'phone') { return InputType.PhoneNumber }
+    if (node.keyboardType === 'email') { return InputType.Email }
+    return InputType.Normal
   }
 
   /**
@@ -1733,6 +1959,57 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .padding(this.t().padBase)
+    } else if (node.kind === 'table') {
+      // Same one-frame-around-the-collection shape as 'listgroup': the table
+      // owns the border, the radius and the rule between rows, so a row
+      // (below) draws nothing of its own.
+      Column() {
+        if (node.options.length > 0) {
+          Row() {
+            ForEach(node.options, (h: string, index: number) => {
+              Text(h)
+                .fontSize(this.t().sizeCaption)
+                .fontFamily(this.textFamily())
+                .fontWeight(this.t().weightHeading)
+                .fontColor(this.t().inkMuted)
+                .layoutWeight(1)
+            }, (h: string, index: number) => index.toString() + ':' + h)
+          }
+          .width('100%')
+          .padding({ left: this.t().padListX, right: this.t().padListX,
+                     top: this.t().gapBase, bottom: this.t().gapTight })
+        }
+        ForEach(node.children, (child: LiveNode, index: number) => {
+          if (index > 0 && child.kind === 'tablerow') {
+            Divider().strokeWidth(this.t().borderWidth).color(this.t().lineSoft)
+              .margin({ left: this.t().padListX, right: this.t().padListX })
+          }
+          this.renderNode(child, 'table')
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .backgroundColor(this.t().surfaceRaised)
+      .border({ width: this.t().borderWidth, color: this.t().line })
+      .borderRadius(this.t().radiusCard)
+    } else if (node.kind === 'tablerow') {
+      // Each row's own cells (node.options) say how many columns it draws --
+      // not the table's columns prop, which exists for the model to keep
+      // every row and the header the same length, not for the renderer to
+      // enforce at runtime.
+      Row() {
+        ForEach(node.options, (cell: string, index: number) => {
+          Text(cell)
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().ink)
+            .layoutWeight(1)
+        }, (cell: string, index: number) => index.toString() + ':' + cell)
+      }
+      .width('100%')
+      .padding({ left: this.t().padListX, right: this.t().padListX,
+                 top: this.t().padListY, bottom: this.t().padListY })
+      .backgroundColor(toneFill(this.t(), node.style, '#00000000'))
     } else if (node.kind === 'icon') {
       this.drawIcon(node.icon, this.t().sizeHeading,
         toneInk(this.t(), node.style, this.t().inkStrong))
@@ -1775,6 +2052,58 @@ export struct VeraPreview {
                  top: this.t().gapTight - 1, bottom: this.t().gapTight - 1 })
       .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
       .borderRadius(this.t().radiusSmall)
+    } else if (node.kind === 'skeleton') {
+      // width/height/rounded ride minimum/maximum/checked -- the same field
+      // reuse Ticker already does for intervalMs/running, so decode needed
+      // no new case.
+      Column()
+        .width(node.minimum > 0 ? node.minimum : 120)
+        .height(node.maximum > 0 ? node.maximum : 16)
+        .backgroundColor(this.t().surfaceDisabled)
+        .borderRadius(node.checked ? (node.maximum > 0 ? node.maximum : 16) / 2 : this.t().radiusSmall)
+    } else if (node.kind === 'spinner') {
+      // ArkUI's own LoadingProgress animates on its own -- no extra timer or
+      // @Trace angle needed, unlike ui.Path's hand-rolled spin.
+      Row({ space: this.t().gapTight }) {
+        LoadingProgress()
+          .width(this.t().sizeHeading)
+          .height(this.t().sizeHeading)
+          .color(toneInk(this.t(), node.style, this.t().primary))
+        if (node.label.length > 0) {
+          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft)
+        }
+      }
+      .alignItems(VerticalAlign.Center)
+    } else if (node.kind === 'snackbar') {
+      // message/actionText/action ride text/value/action -- the same shape
+      // ui.InsetBanner already uses, so decode needed no new case here
+      // either. Meant to come and go behind ui.When, not to persist like a
+      // banner: see the catalogue guidance.
+      Row({ space: this.t().gapBase }) {
+        Text(node.text)
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .fontColor(toneInk(this.t(), node.style, this.t().onPrimary))
+          .layoutWeight(1)
+        if (node.value.length > 0) {
+          Button(node.value)
+            .height(this.t().chipHeight)
+            .fontSize(this.t().sizeCaption + 1)
+            .fontFamily(this.textFamily())
+            .type(ButtonType.Capsule)
+            .backgroundColor('#00000000')
+            .fontColor(toneInk(this.t(), node.style, this.t().onPrimary))
+            .onClick(() => {
+              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+            })
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding(this.t().padBase)
+      .backgroundColor(toneEdge(this.t(), node.style, this.t().inkStrong))
+      .borderRadius(this.t().radiusControl)
+      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'button') {
       Button(node.text.length === 0 ? ' ' : node.text)
         .height(this.t().controlHeight)
@@ -1831,10 +2160,14 @@ export struct VeraPreview {
           .height(node.style === 'multiline' ? this.t().controlHeight * 2 : this.t().controlHeight)
           .width('100%')
           .enabled(node.enabled)
+          .type(this.textFieldKeyboard(node))
           .onSubmit((_key: EnterKeyType, _event: SubmitEvent) => {})
           .onChange((v: string) => {
             if (node.action.length > 0) { this.handleStringAction(node.action, v) }
           })
+        if (this.textFieldIssue(node).length > 0) {
+          Text(this.textFieldIssue(node)).fontSize(this.t().sizeCaption).fontColor(this.t().danger)
+        }
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
@@ -1875,7 +2208,7 @@ export struct VeraPreview {
         })
           .width('100%')
           .enabled(node.enabled)
-          .selectedColor(this.t().primary)
+          .selectedColor(toneEdge(this.t(), node.style, this.t().primary))
           .onChange((v: number, mode: SliderChangeMode) => {
             // Every position reaches the program, so the thing being controlled
             // follows the thumb instead of jumping when the finger lifts -- a
@@ -1893,22 +2226,29 @@ export struct VeraPreview {
         if (node.label.length > 0) {
           Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
         }
-        Row({ space: this.t().padRow }) {
-          ForEach(node.options, (opt: string, index: number) => {
-            Button(opt)
-              .height(this.t().chipHeight)
-              .fontSize(this.t().sizeCaption + 1)
-              .fontFamily(this.textFamily())
-              .type(ButtonType.Capsule)
-              .enabled(node.enabled)
-              .backgroundColor(index === node.eventValue ? this.t().primary : this.t().secondaryFill)
-              .fontColor(index === node.eventValue ? this.t().onPrimary : this.t().secondaryInk)
-              .onClick(() => {
-                if (node.action.length > 0) { this.handleAction(node.action, index) }
-              })
-          }, (opt: string, index: number) => index.toString() + opt)
+        // A single trigger showing the current choice, with the rest of the
+        // options in a system overlay menu rather than always on screen. The
+        // chip row this replaced drew every option whether or not it was the
+        // one picked, which is what ran a five-plus-option Select off the
+        // right edge before Flex-wrap fixed the overflow -- this removes the
+        // row entirely rather than giving it more room to wrap into.
+        Row({ space: this.t().gapTight }) {
+          Text(this.selectDisplayText(node))
+            .fontSize(this.t().sizeBody)
+            .fontColor(node.enabled ? this.t().ink : this.t().inkMuted)
+            .fontFamily(this.textFamily())
+            .layoutWeight(1)
+          Row() { this.drawIcon('chevron-right', this.t().sizeCaption, this.t().inkSoft) }
+            .rotate({ angle: 90 })
         }
         .width('100%')
+        .height(this.t().controlHeight)
+        .padding({ left: this.t().padRow, right: this.t().padRow })
+        .borderRadius(this.t().radiusControl)
+        .backgroundColor(this.t().secondaryFill)
+        .opacity(node.enabled ? 1 : 0.5)
+        .enabled(node.enabled)
+        .bindMenu(this.selectMenuItems(node))
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
@@ -1977,6 +2317,9 @@ export struct VeraPreview {
     } else if (node.kind === 'ticker') {
       // Draws nothing: it exists so the host will call the program on a timer.
       Blank().height(0).width(0)
+    } else if (node.kind === 'backhandler') {
+      // Draws nothing: see reconcileBackHandler, which is what actually acts on it.
+      Blank().height(0).width(0)
     } else if (node.kind === 'divider') {
       Divider().strokeWidth(this.t().borderWidth).color(this.t().line)
         .margin({ top: this.t().padRow, bottom: this.t().padRow })
@@ -1995,21 +2338,110 @@ export struct VeraPreview {
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'sparkline') {
+      // The path commands are written directly in this box's own real vp
+      // (chartWidth's own comment has the full story on why, and on the
+      // viewPort-based approach this replaced). The renderer does the
+      // normalising -- the program hands raw values and a scale, not a
+      // pre-computed string, which is the point of series travelling as
+      // int[] rather than as text.
+      Column({ space: 4 }) {
+        if (node.label.length > 0) {
+          Text(node.label).fontSize(this.t().sizeBody).fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft).width('100%')
+        }
+        if (node.bars) {
+          // Plain flex layout instead of Shape/Path -- one column per value,
+          // each ui.ListItem/Table cell's own .layoutWeight(1) trick stretches
+          // it to its even share of the row, no path coordinates and no
+          // measured width needed at all. See chartWidth's own comment for
+          // why that measurement is what made the line branch below unsafe
+          // to trust for this: bars do not have to share that risk when
+          // ArkUI's own flex layout already divides the width correctly.
+          Row({ space: 6 }) {
+            // barHeights is called once here, to build the array this
+            // ForEach iterates -- not from inside its item builder. That
+            // distinction is the whole fix: renderNode is @Builder, and
+            // five shapes of this ForEach's item builder reading node.max-
+            // imum itself -- a let before the loop, a @Component method
+            // call, a bare function call, and two hand-written inline
+            // expressions, all reading node.maximum alongside the item's
+            // own v -- each compiled clean but left every bar but the
+            // tallest missing from the render tree on device (confirmed
+            // with uitest dumpLayout each time). Only node.series' own
+            // values, read straight by the ForEach above with nothing
+            // else touched per item, ever drew right. barHeights reads
+            // node.maximum exactly once, outside any item builder, and
+            // hands ForEach the one thing already proven safe inside one:
+            // each item's own plain closure variable.
+            ForEach(this.barHeights(node), (h: number, index: number) => {
+              Column()
+                .layoutWeight(1)
+                .height(h)
+                .borderRadius(2)
+                .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
+            }, (h: number, index: number) => index.toString())
+          }
+          .width('100%')
+          .height(VeraPreview.SPARKLINE_HEIGHT)
+          .alignItems(VerticalAlign.Bottom)
+        } else {
+          Shape() {
+            // The same line, closed down to the bottom edge and filled with
+            // the tone's soft background -- this is why it reads as a chart
+            // rather than a bare line, and unlike the plain 'path' branch
+            // above, the fill traces exactly the points this shape itself
+            // drew, not an open shape closed by accident.
+            Path({ commands: this.sparklineAreaCommands(node, this.chartWidth()) })
+              .fill(toneFill(this.t(), node.style, this.t().primaryFill))
+              .fillOpacity(0.4)
+              .stroke(Color.Transparent)
+            Path({ commands: this.sparklineCommands(node, this.chartWidth()) })
+              .fill(Color.Transparent)
+              .stroke(toneEdge(this.t(), node.style, this.t().primary))
+              .strokeWidth('3px')
+              .strokeLineCap(LineCapStyle.Round)
+              .strokeLineJoin(LineJoinStyle.Round)
+          }
+          .width('100%')
+          .height(VeraPreview.SPARKLINE_HEIGHT)
+          // Measures this chart's own box, the way the whole page measures
+          // its own for viewportWidth two screens up -- see chartWidth's own
+          // comment on why this chart cannot just reuse that one.
+          .onAreaChange((_old: Area, now: Area) => {
+            let w = now.width as number
+            if (Math.abs(w - this.sparklineWidth) >= 1) { this.sparklineWidth = w }
+          })
+        }
+      }
+      .width('100%')
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'canvas') {
       // One shared coordinate field. Every other container divides space between
       // its children; this one hands all of them the same 0..100 box and lets
       // them overlap, which is what a drawing made of several shapes needs. The
       // group is scaled once, as a group, so the distances the model computed
       // between the parts survive.
+      //
+      // A flat per-style constant, not a measured one: a version scaling by
+      // this box's own measured width (canvasSize/100, the same idea that
+      // fixed Sparkline's bars) was tried and reverted. On device it was not
+      // merely imperfect the way the small centred cluster this comment used
+      // to describe was -- one generated program it filled correctly, a
+      // second, structurally similar one it rendered as an empty box with
+      // the simulation still running underneath (confirmed by its own bounce
+      // counter climbing). Nothing about the difference between those two
+      // programs was pinned down before deciding a flat constant, merely
+      // bigger than before, is the safer default until that is understood.
       Column() {
         Stack({ alignContent: Alignment.TopStart }) {
           this.renderChildren(node)
         }
-        .scale({ x: node.style === 'large' ? 3.4 : node.style === 'small' ? 1.8 : 2.6,
-                 y: node.style === 'large' ? 3.4 : node.style === 'small' ? 1.8 : 2.6 })
+        .scale({ x: node.style === 'large' ? 5.0 : node.style === 'small' ? 2.6 : 3.8,
+                 y: node.style === 'large' ? 5.0 : node.style === 'small' ? 2.6 : 3.8 })
       }
       .width('100%')
-      .height(node.style === 'large' ? 360 : node.style === 'small' ? 200 : 280)
+      .height(node.style === 'large' ? 440 : node.style === 'small' ? 240 : 340)
       .alignItems(HorizontalAlign.Center)
       .justifyContent(FlexAlign.Center)
     } else if (node.kind === 'path' && parentKind === 'canvas') {

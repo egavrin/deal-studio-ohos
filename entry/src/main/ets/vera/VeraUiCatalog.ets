@@ -15,7 +15,7 @@ import { iconNames } from './VeraIcons'
 
 export class PropSpec {
   name: string
-  /** 'string' | 'int' | 'boolean' | 'view' | 'view[]' | 'icon' */
+  /** 'string' | 'int' | 'boolean' | 'view' | 'view[]' | 'string[]' | 'int[]' | 'icon' */
   kind: string
   /** Key into STYLE_SETS when this prop is a style name; empty otherwise. */
   styleSet: string
@@ -89,7 +89,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['field', ['default', 'multiline']],
   ['toggle', ['default']],
   ['checkbox', ['default']],
-  ['slider', ['default']],
+  ['slider', ['default', 'accent', 'success', 'warning', 'danger']],
   ['select', ['default']],
   ['divider', ['default']],
   ['progress', ['default', 'accent', 'success', 'warning', 'danger']],
@@ -124,6 +124,16 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['badge', ['default', 'accent', 'success', 'warning', 'danger']],
   ['timeline', ['default', 'compact', 'comfortable']],
   ['timelineitem', ['default', 'accent', 'success', 'warning', 'danger']],
+  ['table', ['default']],
+  ['tablerow', ['default', 'accent', 'success', 'warning', 'danger']],
+
+  // Loading and transient-status feedback. No tone variation yet -- a
+  // one-entry list here means describeCatalogForPrompt leaves the "styles:"
+  // line out, the same way ui.Divider and ui.Scroll already do.
+  ['skeleton', ['default']],
+  ['spinner', ['default', 'accent']],
+  ['snackbar', ['default', 'success', 'warning', 'danger']],
+  ['sparkline', ['default', 'accent', 'success', 'warning', 'danger']],
 ])
 
 export const CATALOG: ComponentSpec[] = [
@@ -156,8 +166,25 @@ export const CATALOG: ComponentSpec[] = [
   // takes that type instead of an int.
   new ComponentSpec('TextField', 'field',
     [style('field'), new PropSpec('label', 'string'), new PropSpec('value', 'string'),
-      new PropSpec('action', 'string')],
-    'text the user types; the handler takes (state, value: string)', 'string'),
+      new PropSpec('action', 'string'),
+      new PropSpec('keyboardType', 'string', '', true),
+      new PropSpec('required', 'boolean', '', true),
+      new PropSpec('requiredMessage', 'string', '', true),
+      new PropSpec('minLength', 'int', '', true),
+      new PropSpec('minLengthMessage', 'string', '', true),
+      new PropSpec('maxLength', 'int', '', true),
+      new PropSpec('maxLengthMessage', 'string', '', true),
+      new PropSpec('pattern', 'string', '', true),
+      new PropSpec('patternMessage', 'string', '', true),
+      new PropSpec('email', 'boolean', '', true),
+      new PropSpec('emailMessage', 'string', '', true)],
+    'text the user types; the handler takes (state, value: string)', 'string',
+    'keyboardType is "", "number", "phone" or "email" and only changes which keys the ' +
+    'on-screen keyboard offers -- it never rejects a character. required, minLength, ' +
+    'maxLength, pattern (a regex) and email each turn on one check, shown under the ' +
+    'field in its own words via the matching ...Message prop (a sensible default is ' +
+    'used if left blank); none of them stop what reaches the handler, since VERA has ' +
+    'no way to refuse a value once typed.'),
   new ComponentSpec('Toggle', 'toggle',
     [style('toggle'), new PropSpec('label', 'string'), new PropSpec('checked', 'boolean'),
       new PropSpec('action', 'string')],
@@ -191,6 +218,10 @@ export const CATALOG: ComponentSpec[] = [
     'draws nothing; calls the handler every intervalMs with the elapsed ms', 'int',
     'Keeps a displayed time or a countdown moving -- never add a refresh button instead. The handler is onTick(state, elapsedMs: int), called every interval; use it to advance a stopwatch, a game or a clock. Accumulate the elapsed value it gives you: do not subtract two clock readings, because time.nowSeconds() only changes once a second. Match intervalMs to the precision shown: 1000 for whole seconds, 50 for hundredths. Example: ui.Ticker("default", "clock", 1000, true, "onTick").'),
   new ComponentSpec('Divider', 'divider', [style('divider')], 'a horizontal rule'),
+  new ComponentSpec('BackHandler', 'backhandler',
+    [new PropSpec('action', 'string')],
+    'draws nothing; calls the handler, with 0, on the system back gesture', 'int',
+    'VERA has no separate navigation stack -- "screens" are just a state.screen-style field and ui.When choosing which View to draw. Add one ui.BackHandler wherever a screen other than the first is showing, so the hardware/system back gesture does something sensible (return to the previous screen, close a dialog) instead of the OS default, which exits the app. Leave it out of the first screen so back still exits normally. Only one should be live at a time; if several are drawn in the same frame the last one decoded wins.'),
   new ComponentSpec('Progress', 'progress',
     [style('progress'), new PropSpec('label', 'string'), new PropSpec('value', 'int'),
       new PropSpec('maximum', 'int')], 'a progress bar'),
@@ -375,6 +406,54 @@ export const CATALOG: ComponentSpec[] = [
     'one labelled fact: label above, value below',
     '',
     'Only inside a ui.KeyValueGroup.'),
+
+  // A real grid of rows and columns, which neither ui.Grid (equal tappable
+  // cells for a keypad or board, one int payload each) nor ui.KeyValueGroup
+  // (facts, two per row, no header) is shaped for.
+  new ComponentSpec('Table', 'table',
+    [style('table'), new PropSpec('headers', 'string[]'), new PropSpec('columns', 'int'),
+      new PropSpec('children', 'view[]')],
+    'rows and columns of text, with an optional header row',
+    '',
+    'For data that genuinely has columns -- a list of orders with date, item and amount; a schedule with time and place. headers names each column and may be an empty array for no header row; columns must match both headers\' length (when given) and every ui.TableRow\'s own cells length. Children are ui.TableRow. Prefer ui.ListGroup when each row is really just a title with a trailing value -- a table is for three or more columns of data read down as well as across.'),
+  new ComponentSpec('TableRow', 'tablerow',
+    [style('tablerow'), new PropSpec('cells', 'string[]')],
+    'one row of a ui.Table: one string per column, in order',
+    '',
+    'Only inside a ui.Table, and always with as many cells as the table has columns. Give it a tone -- accent, success, warning, danger -- to call out one row, a total line or a problem entry, the same way a ui.ListItem can.'),
+
+  // Loading and transient-status feedback. Added because the catalogue had no
+  // way to say "this hasn't loaded yet" or "that just happened" -- a screen
+  // either showed its real content or showed nothing at all while waiting.
+  new ComponentSpec('Skeleton', 'skeleton',
+    [style('skeleton'), new PropSpec('width', 'int'), new PropSpec('height', 'int'),
+      new PropSpec('rounded', 'boolean', '', true)],
+    'a placeholder box the size of the content that has not arrived yet',
+    '',
+    'Put one where real content will appear once it is ready, instead of leaving that space blank or showing a zero. width and height are the box in points; rounded softens the corners for anything that will end up looking like a chip or an avatar.'),
+  new ComponentSpec('Spinner', 'spinner',
+    [style('spinner'), new PropSpec('label', 'string', '', true)],
+    'a small spinning indicator that something is in progress',
+    '',
+    'For a wait with no useful progress number to show -- reach for ui.Progress instead when there is one. label is shown beside it and may be "".'),
+  new ComponentSpec('Snackbar', 'snackbar',
+    [style('snackbar'), new PropSpec('message', 'string'), new PropSpec('actionText', 'string'),
+      new PropSpec('action', 'string')],
+    'a one-line status strip the program raised itself, with one optional action',
+    '',
+    'For something that just happened and does not need to stay on screen -- "Saved", "Undo", a result the person did not have to ask for. Unlike ui.InsetBanner this is not meant to persist: put it behind ui.When(state.showX, ...) and have the handler that triggered it set state.showX true, and whatever dismisses it (a timer, the action button, the next tap) set it back to false. Pass actionText "" and action "" for no action; the handler, if named, is called with 0.'),
+
+  // The one int[] prop in the language -- a chart's raw values travel as
+  // numbers, not as a string the program built with ui.intToString and the
+  // renderer tried to parse back. The renderer does the normalising and the
+  // drawing, the same division of labour ui.IntText already has for a single
+  // number.
+  new ComponentSpec('Sparkline', 'sparkline',
+    [style('sparkline'), new PropSpec('series', 'int[]'), new PropSpec('maximum', 'int'),
+      new PropSpec('label', 'string', '', true), new PropSpec('bars', 'boolean', '', true)],
+    'a line or bar chart of up to a few dozen values',
+    '',
+    'For a trend -- a week of steps, a balance over time, a reading taken repeatedly -- leave bars false for a connected line. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the chart does not jump every time a new point arrives). There is no x-axis label and no legend: say what the numbers are in label or in a ui.Text above it.'),
 ]
 
 /**
@@ -418,6 +497,7 @@ export const CHILD_RULES: ChildRule[] = [
   new ChildRule('MetricGroup', ['Stat', 'IntStat', 'When'], []),
   new ChildRule('KeyValueGroup', ['KeyValueItem', 'When'], []),
   new ChildRule('Timeline', ['TimelineItem', 'ActionBar', 'When'], []),
+  new ChildRule('Table', ['TableRow', 'When'], []),
   new ChildRule('ActionBar', ['Button', 'IconButton', 'Badge', 'When'], []),
   // A card inside a card is the nesting deal-studio calls out by name: two
   // frames, two paddings, and no more meaning than one.
@@ -487,6 +567,7 @@ const COMPANIONS: string[][] = [
   ['Grid', 'Cell'],
   ['Timeline', 'TimelineItem'],
   ['KeyValueGroup', 'KeyValueItem'],
+  ['Table', 'TableRow'],
 ]
 
 /**

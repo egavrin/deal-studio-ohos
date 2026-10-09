@@ -11,6 +11,11 @@ struct RunnerPage {
   // projectId and versionId were already being passed here and ignored; they are
   // what lets a program opened from the library remember its state.
   @State persistKey: string = ''
+  // Whether the running program currently has a ui.BackHandler in its tree,
+  // and the signal that tells VeraPreview to act on the system back gesture.
+  // See VeraPreview's backPressSignal/onBackHandlerChanged for the other half.
+  @State hasBackHandler: boolean = false
+  @State backPressSignal: number = 0
 
   aboutToAppear(): void {
     let params = router.getParams() as Record<string, string>
@@ -27,6 +32,14 @@ struct RunnerPage {
     }
   }
 
+  // The page-level hook for the hardware/system back gesture. If the running
+  // program currently has a ui.BackHandler, hand it to VeraPreview and
+  // swallow the gesture (true); otherwise let the system do its own thing (false).
+  onBackPress(): boolean {
+    if (this.hasBackHandler) { this.backPressSignal += 1; return true }
+    return false
+  }
+
   build() {
     Navigation() {
       Column() {
@@ -39,7 +52,11 @@ struct RunnerPage {
             .backgroundColor('#FFECEC')
         }
         if (this.vbc2.length > 0) {
-          VeraPreview({ vbc2: this.vbc2, persistKey: this.persistKey })
+          VeraPreview({
+            vbc2: this.vbc2, persistKey: this.persistKey,
+            backPressSignal: this.backPressSignal,
+            onBackHandlerChanged: (active: boolean) => { this.hasBackHandler = active },
+          })
         }
       }.width('100%').height('100%')
     }

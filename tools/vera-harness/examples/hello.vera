@@ -1,0 +1,32 @@
+import * as ui from "std/ui"
+
+@jsonable
+class AppState {
+  count: int;
+}
+
+function init(): AppState {
+  return { count: 0 };
+}
+
+function increment(state: AppState, amount: int): AppState {
+  return { count: state.count + amount };
+}
+
+function pick(state: AppState, index: int): AppState {
+  return { count: index };
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("spacious", [
+      ui.Header("default", "Counter", "", "", ""),
+      ui.Text("metric", ui.intToString(state.count)),
+      ui.Row("spacious", [
+        ui.Button("secondary", "-", "increment", -1, true),
+        ui.Button("primary", "+", "increment", 1, true)
+      ]),
+      ui.Select("default", "Pick one", ["a", "b", "c", "d", "e", "f", "g"], 0, "pick")
+    ])
+  ]);
+}

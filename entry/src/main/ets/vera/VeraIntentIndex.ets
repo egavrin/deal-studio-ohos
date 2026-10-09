@@ -37,6 +37,11 @@
 import { INTENT_CATALOG, IntentSpec, IntentParam } from './VeraIntentCatalog'
 import { registryEntries, RegistryEntry, requestWords } from './VeraIntentRegistry'
 import { identifierTokens, needWords } from './VeraSdkIndex'
+import { loadRawfileText } from './LlamaEngine'
+import resourceManager from '@ohos.resourceManager'
+import hilog from '@ohos.hilog'
+
+const DOMAIN = 0x0000
 
 /** One candidate find_intent_function can return. */
 export class IntentEntry {
@@ -51,8 +56,42 @@ export class IntentEntry {
    * real platform values already substituted in -- rather than reconstructing
    * one from a param list. */
   callHint: string = ''
+  /** What the embedding is computed from, ahead of the description: the
+   * intent's own name, not its address. */
+  label: string = ''
+  /** What the intent is for, in plain words, without the appended parameter
+   * list or keywords -- the embedded text, like the SDK's. Empty when no
+   * summary exists, and then the embedding falls back to the description. */
+  summary: string = ''
+  /** bundle/IntentName, the key of intent-summaries.json and of the bundled
+   * intent-embeddings.json; empty for a catalog row. */
+  summaryKey: string = ''
   nameTokens: string[] = []
   descriptionTokens: string[] = []
+}
+
+/**
+ * One or two plain sentences per intent, keyed bundle/IntentName, written by
+ * tools/build-intent-summaries.py from the phone's intent list and the
+ * assistant's own tool catalogue, and bundled as intent-summaries.json. The
+ * registry says an intent exists; this says what it is for, which the registry
+ * almost never does (displayName and keywords are empty on this phone).
+ */
+let summaries: Map<string, string> = new Map<string, string>()
+let summariesLoaded = false
+
+export async function loadIntentSummaries(mgr: resourceManager.ResourceManager): Promise<number> {
+  if (summariesLoaded) { return summaries.size }
+  summariesLoaded = true
+  try {
+    let text = await loadRawfileText(mgr, 'intent-summaries.json')
+    let obj = JSON.parse(text) as Record<string, string>
+    for (let key of Object.keys(obj)) { summaries.set(key, obj[key]) }
+    hilog.info(DOMAIN, 'VERA', 'VERA-INTENT-SUMMARIES loaded ' + summaries.size.toString())
+  } catch (e) {
+    hilog.warn(DOMAIN, 'VERA', 'VERA-INTENT-SUMMARIES unavailable: ' + (e as Error).message)
+  }
+  return summaries.size
 }
 
 /**
@@ -72,6 +111,8 @@ function catalogEntry(spec: IntentSpec): IntentEntry {
   let e = new IntentEntry()
   e.kind = 'catalog'
   e.name = spec.name
+  e.label = spec.name
+  e.summary = spec.summary
   e.domain = spec.domain
   let fields: string[] = []
   let pairs: string[] = []
@@ -105,10 +146,16 @@ function rawEntry(entry: RegistryEntry): IntentEntry {
   e.kind = 'raw'
   e.name = entry.target
   e.domain = entry.domain
-  let bits: string[] = [entry.intentName + ' (' + entry.bundle + ')']
+  let summary = summaries.get(entry.bundle + '/' + entry.intentName)
+  e.summary = summary !== undefined ? summary as string : ''
+  e.summaryKey = entry.bundle + '/' + entry.intentName
+  // With a summary the description is what the intent is for; without one it
+  // is all the registry gave us -- the name and the app it lives in.
+  let bits: string[] = [summary !== undefined ? summary as string : entry.intentName + ' (' + entry.bundle + ')']
   if (entry.params.length > 0) { bits.push('parameters: ' + entry.params.join(' ')) }
   if (entry.words.length > 0) { bits.push(entry.words) }
   e.description = bits.join(', ')
+  e.label = entry.intentName
   let mode = entry.modes.indexOf('background') >= 0 ? 'background' : 'foreground'
   // sdk.call, not intent.call: the two raw escape hatches are unified (see
   // buildStdSdkModule in VeraCompiler.ets). Argument order is (target,
@@ -151,12 +198,14 @@ function scoreEntry(e: IntentEntry, words: string[]): number {
  */
 let cachedEntries: IntentEntry[] | null = null
 let cachedRegistryLength = -1
+let cachedSummariesLength = -1
 
 /** Exported for VeraIntentEmbeddingCache.ets -- the same pool findIntentFunction
  * searches by token, now also searchable by embedding. */
 export function allEntries(): IntentEntry[] {
   let registryLength = registryEntries().length
-  if (cachedEntries !== null && cachedRegistryLength === registryLength) {
+  if (cachedEntries !== null && cachedRegistryLength === registryLength &&
+      cachedSummariesLength === summaries.size) {
     return cachedEntries!
   }
   let entries: IntentEntry[] = []
@@ -164,6 +213,7 @@ export function allEntries(): IntentEntry[] {
   for (let reg of registryEntries()) { entries.push(rawEntry(reg)) }
   cachedEntries = entries
   cachedRegistryLength = registryLength
+  cachedSummariesLength = summaries.size
   return entries
 }
 

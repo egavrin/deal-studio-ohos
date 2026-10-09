@@ -35,3 +35,7 @@ entry/src/main/cpp/build-host/
 # GGUF model weights -- downloaded on first run (LlamaEngine.ets,
 # VeraEmbeddings.ets), never committed.
 *.gguf
+
+# tsc's own output for the host harness (tools/vera-harness) -- regenerate with
+# `tsc -p tools/vera-harness/tsconfig.json`, per tools/vera-harness/README.md.
+tools/vera-harness/out/

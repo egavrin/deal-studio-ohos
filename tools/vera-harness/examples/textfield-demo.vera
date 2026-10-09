@@ -1,0 +1,25 @@
+import * as ui from "std/ui"
+
+@jsonable
+class AppState {
+  email: string;
+}
+
+function init(): AppState {
+  return { email: "" };
+}
+
+function setEmail(state: AppState, v: string): AppState {
+  return { email: v };
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("spacious", [
+      ui.Header("default", "Sign up", "", "", ""),
+      ui.TextField("default", "Email", state.email, "setEmail",
+        "email", true, "We need your email", 0, "", -1, "",
+        "", "", true, "That doesn't look like an email")
+    ])
+  ]);
+}

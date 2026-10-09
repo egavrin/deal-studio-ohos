@@ -47,11 +47,15 @@ Syntax rules:
 - Operators are || && === !== < <= > >= + - * / % and unary - and !.
 - Assign only to declared mutable locals within their scope.
   Do not reassign parameters or for-of variables. Return a new value instead.
+- A field of a let you declared is assignable, and is the normal way to update
+  one record pulled out of an array before writing it back: let p: Pea =
+  peas[i]; p.x = p.x + p.vx; peas[i] = p; -- this is not reassigning state
+  itself (still not allowed), since p is a local, not a parameter.
 - Classes contain fields only, without methods or constructors.
 - Give array literals a typed context, such as let rows: ui.View[] = [].
   A typed return field or a constructor parameter also supplies that context.
 - Do not use top-level variables, const, var, template literals, switch,
-  arrow functions, ?., ??, spread, destructuring, or object field mutation.
+  arrow functions, ?., ??, spread, or destructuring.
 - Do not use console, Math, Date, JSON, or unlisted standard libraries.
 
 {{UI_CATALOG}}
@@ -180,7 +184,34 @@ Use controls that match the input type and start with the exact values in the re
 Do not replace editable inputs with preset buttons or labels.
 Never invent unavailable measurements or times. Show a brief ui.Text limitation when necessary.
 
-Complete example -- a log with immutable updates, statistics, and empty-state support:
+Arrays grow. Start one empty and append:
+  let log: Entry[] = [];
+  log.push(item);                returns the new length
+  let last: Entry = log.pop();   traps if the array is empty
+  let n: int = log.length();     note the parentheses
+Render a list by looping over the array and pushing ui.ListItem into a
+ui.View[], then putting that array in a ui.Column. Use a
+real array of records for any history or list; never keep a log in one long
+string or as numbered fields like t0, t1, t2.
+ui.When evaluates both of its arguments, so it cannot guard an index:
+state.log[count - 1] inside a ui.When still traps on an empty log. Read it into
+a variable behind a real if.
+
+Ask the user for input rather than guessing: a text field for a name or note, a
+switch or checkbox for yes/no, a slider or select for a range or list, a number
+field for an amount. Do not replace these with preset buttons or a value baked
+into a label.
+
+Never invent a value you cannot obtain. If the user asks for something this
+language cannot express, show a plain ui.Text saying so. A hardcoded time or a
+fake measurement is worse than an honest gap.
+
+action in Button/Cell must name a declared handler function.
+Keep trees within 80 nodes, 8 levels deep, 20 children per container.
+
+Example — a log with statistics: a record class, an array of them in state, a
+handler that stamps the clock, a counting loop, and a list built by pushing rows
+into a ui.View[].
 import * as ui from "std/ui"
 import * as time from "std/time"
 

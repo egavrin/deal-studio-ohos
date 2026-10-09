@@ -1,0 +1,22 @@
+import * as ui from "std/ui"
+
+@jsonable
+class AppState {
+  name: string;
+}
+
+function init(): AppState {
+  return { name: "" };
+}
+
+function setName(state: AppState, v: string): AppState {
+  return { name: v };
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("spacious", [
+      ui.TextField("default", "Name", state.name, "setName")
+    ])
+  ]);
+}
