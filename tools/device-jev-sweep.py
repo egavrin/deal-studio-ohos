@@ -26,6 +26,12 @@ def sections_line():
     return (int(m.group(1)), m.group(2).strip()) if m else None
 
 
+def raw_line():
+    out = hdc('shell', 'hilog -x | grep "VERA-SECTIONS raw" | tail -1')
+    m = re.search(r'VERA-SECTIONS raw (.*)$', out.strip())
+    return m.group(1).strip() if m else ''
+
+
 def clean(prompt, limit):
     text = re.sub(r"[^\x20-\x7e]", ' ', prompt).replace("'", '').replace('"', '').replace('`', '')
     return re.sub(r'\s+', ' ', text).strip()[:limit]
@@ -61,7 +67,7 @@ def run_one(prompt, limit, wait):
     else:
         time.sleep(8)  # composed: let the content fill finish so the page is idle again
     time.sleep(1)
-    return found
+    return found + (raw_line(),)
 
 
 if __name__ == '__main__':
@@ -79,7 +85,7 @@ if __name__ == '__main__':
     results = []
     for r in rows:
         got = run_one(r['prompt'], args.limit, args.wait)
-        res = {'id': r['id'], 'label': r.get('label'), 'ms': got[0] if got else None, 'picked': got[1] if got else 'NO ANSWER'}
+        res = {'id': r['id'], 'label': r.get('label'), 'ms': got[0] if got else None, 'picked': got[1] if got else 'NO ANSWER', 'raw': got[2] if got else ''}
         results.append(res)
         print(res['id'], '|', res['label'], '|', res['picked'], '|', res['ms'], flush=True)
         json.dump(results, open(args.out, 'w'), indent=1)

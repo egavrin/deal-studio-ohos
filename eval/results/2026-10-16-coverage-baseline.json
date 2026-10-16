@@ -1,0 +1,3869 @@
+{
+ "date": "2026-10-16",
+ "method": "phone sweep (device-jev-sweep.py); outcome is projected from the Jev note, not a pipeline run",
+ "rows": 180,
+ "no_answer": [],
+ "overall_positive": {
+  "n": 156,
+  "template": 0.244,
+  "complete": 0.237,
+  "scratch": 0.519
+ },
+ "by_split_positive": {
+  "dev": {
+   "n": 105,
+   "template": 0.248,
+   "complete": 0.248,
+   "scratch": 0.505
+  },
+  "heldout": {
+   "n": 51,
+   "template": 0.235,
+   "complete": 0.216,
+   "scratch": 0.549
+  }
+ },
+ "by_domain_dev": {
+  "education/learning": {
+   "n": 12,
+   "template": 0.25,
+   "complete": 0.083,
+   "scratch": 0.667
+  },
+  "games/scores": {
+   "n": 9,
+   "template": 0.333,
+   "complete": 0.0,
+   "scratch": 0.667
+  },
+  "health/fitness": {
+   "n": 12,
+   "template": 0.0,
+   "complete": 0.5,
+   "scratch": 0.5
+  },
+  "home/chores": {
+   "n": 9,
+   "template": 0.333,
+   "complete": 0.333,
+   "scratch": 0.333
+  },
+  "personal finance": {
+   "n": 12,
+   "template": 0.583,
+   "complete": 0.167,
+   "scratch": 0.25
+  },
+  "productivity/tasks": {
+   "n": 9,
+   "template": 0.0,
+   "complete": 0.222,
+   "scratch": 0.778
+  },
+  "shopping/inventory": {
+   "n": 12,
+   "template": 0.083,
+   "complete": 0.417,
+   "scratch": 0.5
+  },
+  "social/contacts": {
+   "n": 9,
+   "template": 0.111,
+   "complete": 0.111,
+   "scratch": 0.778
+  },
+  "time/scheduling": {
+   "n": 12,
+   "template": 0.333,
+   "complete": 0.417,
+   "scratch": 0.25
+  },
+  "travel/places": {
+   "n": 9,
+   "template": 0.444,
+   "complete": 0.111,
+   "scratch": 0.444
+  }
+ },
+ "false_accept": {
+  "negatives": 24,
+  "accepted": [
+   "pt-04-terse",
+   "hc-04-computation",
+   "el-06-computation",
+   "gs-04-descriptive",
+   "gs-04-computation",
+   "sc-04-computation"
+  ],
+  "rate": 0.25
+ },
+ "expected_vs_projected_positive": {
+  "('template', 'complete')": 15,
+  "('template', 'scratch')": 45,
+  "('complete', 'complete')": 22,
+  "('complete', 'scratch')": 36,
+  "('template', 'template')": 21,
+  "('complete', 'template')": 17
+ },
+ "missing_role_table_dev": [
+  {
+   "id": "hf-01-terse",
+   "prompt": "Track my glasses of water against a daily goal.",
+   "wants": [
+    "source:counters",
+    "reader:progress"
+   ],
+   "got": [
+    "progress_goal"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "hf-01-descriptive",
+   "prompt": "Let me add or undo each glass I drink, set my daily water goal, and see how much remains.",
+   "wants": [
+    "source:counters",
+    "reader:progress"
+   ],
+   "got": [
+    "progress_goal"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "hf-01-computation",
+   "prompt": "My goal is eight glasses of water. After logging five, show three remaining and 62.5% of my goal.",
+   "wants": [
+    "source:counters",
+    "reader:progress"
+   ],
+   "got": [
+    "progress_goal"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "hf-02-terse",
+   "prompt": "Keep my workout minutes and graph them by activity.",
+   "wants": [
+    "source:records",
+    "reader:chart",
+    "reader:summary"
+   ],
+   "got": [
+    "series_chart"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "hf-02-descriptive",
+   "prompt": "I want to enter each workout's date, activity, and minutes, then compare activity totals in a chart and see total exercise time.",
+   "wants": [
+    "source:records",
+    "reader:chart",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hf-02-computation",
+   "prompt": "I walked for 20 and 35 minutes and cycled for 40. Show 55 walking minutes, 40 cycling minutes, and 95 overall.",
+   "wants": [
+    "source:records",
+    "reader:chart",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hf-03-terse",
+   "prompt": "Calculate BMI from my height and weight.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [
+    "key_facts"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "hf-03-descriptive",
+   "prompt": "Let me enter weight in kilograms and height in centimetres and see my BMI, updating whenever either measurement changes.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [
+    "key_facts"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "hf-03-computation",
+   "prompt": "Divide weight in kilograms by height in metres squared. At 72 kg and 180 cm, my BMI should read 22.2.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hf-04-terse",
+   "prompt": "Help me keep track of how I'm doing.",
+   "wants": [
+    "source:records",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hf-04-descriptive",
+   "prompt": "I'd like somewhere to jot how I feel each day and see how many check-ins I've made. Nothing medical, just my own words.",
+   "wants": [
+    "source:records",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hf-04-computation",
+   "prompt": "Keep my daily wellbeing entries. If I've written on four days and add today's entry, show five check-ins without interpreting my symptoms.",
+   "wants": [
+    "source:records",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pf-01-computation",
+   "prompt": "I spent $12 and $18 on food and $25 on transport. Show food at $30, transport at $25, and $55 spent overall.",
+   "wants": [
+    "source:records",
+    "reader:chart",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pf-02-terse",
+   "prompt": "Estimate how long it'll take me to save for a deposit.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pf-02-descriptive",
+   "prompt": "I'll enter my deposit target, current savings, and monthly contribution. Estimate whole months needed without interest, rounding up partial months.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [
+    "key_facts"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "pf-04-descriptive",
+   "prompt": "Keep a list of bills with due-date notes. Let me mark each unpaid or paid and see how many still need attention.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [
+    "checklist",
+    "list_summary"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "pf-04-computation",
+   "prompt": "I have six bills and have paid four. Show two unpaid, and update that count when I mark another bill paid.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pt-01-terse",
+   "prompt": "Move my work tasks from planned to doing to finished.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pt-01-descriptive",
+   "prompt": "Give each task a short description and a planned, doing, or finished status. Let me move tasks between stages and see counts for each.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pt-01-computation",
+   "prompt": "Of eight tasks, three are planned, two doing, and three finished. Moving one doing task to finished should show four finished and one doing.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [
+    "list_summary"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "pt-02-terse",
+   "prompt": "Rank my tasks by payoff per minute.",
+   "wants": [
+    "source:records",
+    "algorithm:ranking",
+    "reader:ranked-list"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pt-02-descriptive",
+   "prompt": "I'll give each task a benefit score and estimated minutes. Put the highest benefit per minute first so I can choose worthwhile quick wins.",
+   "wants": [
+    "source:records",
+    "algorithm:ranking",
+    "reader:ranked-list"
+   ],
+   "got": [
+    "data_table"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "pt-02-computation",
+   "prompt": "Task A offers benefit 8 in 20 minutes; B offers 6 in 10. Rank B's 0.6 benefit per minute above A's 0.4.",
+   "wants": [
+    "source:records",
+    "algorithm:ranking",
+    "reader:ranked-list"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pt-03-terse",
+   "prompt": "Give me somewhere for all the things in my head.",
+   "wants": [
+    "source:records",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pt-03-descriptive",
+   "prompt": "I need an inbox for stray thoughts and ideas. Let me add, edit, or delete short entries and see how many I've saved.",
+   "wants": [
+    "source:records",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "pt-03-computation",
+   "prompt": "Keep my idea inbox. If it has seven thoughts, I add two and delete one, the saved-entry count should become eight.",
+   "wants": [
+    "source:records",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hc-02-terse",
+   "prompt": "Scale a recipe's ingredients for a different number of servings.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hc-02-descriptive",
+   "prompt": "I'll enter the original serving count and ingredient quantities. Let me choose a new serving count and see proportionally adjusted amounts in the same units.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [
+    "data_table"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "hc-02-computation",
+   "prompt": "A recipe for four uses 300 g rice and 600 ml water. For six servings show 450 g rice and 900 ml water.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hc-03-terse",
+   "prompt": "Keep a history of repairs around my house.",
+   "wants": [
+    "source:records",
+    "reader:details",
+    "reader:summary"
+   ],
+   "got": [
+    "timeline"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "hc-03-descriptive",
+   "prompt": "Save each home repair with its date, appliance, cost, and notes. Let me open an entry's details and see how much repairs have cost altogether.",
+   "wants": [
+    "source:records",
+    "reader:details",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "hc-03-computation",
+   "prompt": "Record a $90 tap repair and a $140 oven repair, keeping dates and notes. Show $230 spent and let me inspect either repair.",
+   "wants": [
+    "source:records",
+    "reader:details",
+    "reader:summary"
+   ],
+   "got": [
+    "log_entries"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "tp-01-terse",
+   "prompt": "Save places I want to visit and search my notes about them.",
+   "wants": [
+    "source:catalog",
+    "reader:search",
+    "reader:details",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "tp-01-descriptive",
+   "prompt": "Keep my own place wishlist with names, towns, and notes. Search the saved entries, open their details, and show how many match, without online lookup.",
+   "wants": [
+    "source:catalog",
+    "reader:search",
+    "reader:details",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "tp-01-computation",
+   "prompt": "Of eight saved places, three mention Kyoto. Searching Kyoto should show those three results, with each place's notes available when selected.",
+   "wants": [
+    "source:catalog",
+    "reader:search",
+    "reader:details",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "tp-02-descriptive",
+   "prompt": "I'll enter the places and visit times for a day out. Show them in time order, let me mark each visited, and show progress without routing.",
+   "wants": [
+    "source:schedule",
+    "reader:ordered-list",
+    "reader:progress"
+   ],
+   "got": [
+    "itinerary"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "tp-03-terse",
+   "prompt": "Convert my trip costs into my home currency using rates I enter.",
+   "wants": [
+    "source:records",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-01-terse",
+   "prompt": "Track books I plan to read, am reading, or have finished.",
+   "wants": [
+    "source:staged-items",
+    "reader:progress"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-01-descriptive",
+   "prompt": "Keep a reading list with titles and short notes. Move books between planned, reading, and finished, and show how many I've finished out of the list.",
+   "wants": [
+    "source:staged-items",
+    "reader:progress"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-02-terse",
+   "prompt": "Drill me on vocabulary cards and count the words I know.",
+   "wants": [
+    "source:questions",
+    "algorithm:scoring",
+    "reader:progress"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-02-descriptive",
+   "prompt": "Use a small vocabulary deck, one word at a time. Reveal its meaning, let me mark knew it or didn't know it, and show my score before restarting.",
+   "wants": [
+    "source:questions",
+    "algorithm:scoring",
+    "reader:progress"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-02-computation",
+   "prompt": "In a ten-word vocabulary drill, I mark seven known and three unknown. Show seven of ten, or 70%, and reset the score when I restart.",
+   "wants": [
+    "source:questions",
+    "algorithm:scoring",
+    "reader:progress"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-03-terse",
+   "prompt": "Calculate my course grade with weighted assessments.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-03-computation",
+   "prompt": "Coursework scored 80% with weight 40%, and the exam scored 65% with weight 60%. Calculate an overall grade of 71%.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-04-descriptive",
+   "prompt": "After studying, I'll enter the subject, date, and minutes. Show total study time and a chart of how those minutes are distributed across subjects.",
+   "wants": [
+    "source:records",
+    "reader:chart",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "el-04-computation",
+   "prompt": "I studied maths for 25 and 35 minutes and history for 40. Chart 60 maths minutes and 40 history minutes, with 100 minutes overall.",
+   "wants": [
+    "source:records",
+    "reader:chart",
+    "reader:summary"
+   ],
+   "got": [
+    "bar_chart"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "gs-01-terse",
+   "prompt": "Keep two players' darts scores as we count down from 301.",
+   "wants": [
+    "source:counters",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "gs-01-descriptive",
+   "prompt": "Give each darts player a starting score of 301. Let us subtract manually agreed points, undo mistakes, and reset for another game; don't enforce bust rules.",
+   "wants": [
+    "source:counters",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "gs-01-computation",
+   "prompt": "Starting at 301 each, subtract 60 then 45 for Lee and 80 for Sam. Show Lee on 196 and Sam on 221, with manual corrections.",
+   "wants": [
+    "source:counters",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "gs-03-terse",
+   "prompt": "Make a short geography trivia game with a final score.",
+   "wants": [
+    "source:questions",
+    "algorithm:scoring",
+    "reader:progress"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "gs-03-descriptive",
+   "prompt": "Give me ten multiple-choice geography questions, one at a time. Award one point per correct answer, show progress and the final score, and allow a replay.",
+   "wants": [
+    "source:questions",
+    "algorithm:scoring",
+    "reader:progress"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "gs-03-computation",
+   "prompt": "In a ten-question geography game with one point per correct answer, six correct answers should give six points and 60%, with a fresh score on replay.",
+   "wants": [
+    "source:questions",
+    "algorithm:scoring",
+    "reader:progress"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "sc-01-descriptive",
+   "prompt": "I'll enter club members' names, phone numbers, and notes myself. Search my directory, show how many names match, and open a person's details without importing contacts.",
+   "wants": [
+    "source:catalog",
+    "reader:search",
+    "reader:details",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "sc-01-computation",
+   "prompt": "My directory has 20 members, three named Alex. Searching Alex should show three matches and let me open each member's phone number and notes.",
+   "wants": [
+    "source:catalog",
+    "reader:search",
+    "reader:details",
+    "reader:summary"
+   ],
+   "got": [
+    "search_list"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "sc-02-terse",
+   "prompt": "Track people I need to call back.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "sc-02-descriptive",
+   "prompt": "List people with a short reason to call. Mark each waiting, tried, or reached and show counts for each status; I'll make the calls myself.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "sc-02-computation",
+   "prompt": "Of nine people to call, four are waiting, two tried, and three reached. Marking one waiting person reached should show three waiting and four reached.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "sc-03-terse",
+   "prompt": "Keep track of who's coming to my dinner.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "sc-03-descriptive",
+   "prompt": "Maintain my dinner guest list with attending, declined, or unanswered replies. I'll update replies manually and want a headcount for each group.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "sc-03-computation",
+   "prompt": "Ten dinner guests include six attending, one declined, and three unanswered. If two unanswered guests accept, show eight attending and one still unanswered.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "si-01-descriptive",
+   "prompt": "Add grocery items with quantity notes, mark them bought or still needed, and show how many entries remain while I'm shopping.",
+   "wants": [
+    "source:staged-items",
+    "reader:progress"
+   ],
+   "got": [
+    "list_summary"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "si-01-computation",
+   "prompt": "My grocery list has 15 entries and I've bought nine. Show six entries left and 60% complete, counting entries rather than individual units.",
+   "wants": [
+    "source:staged-items",
+    "reader:progress"
+   ],
+   "got": [
+    "list_summary"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "si-02-terse",
+   "prompt": "Keep counts of the tins and packets in my pantry.",
+   "wants": [
+    "source:counters",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "si-02-descriptive",
+   "prompt": "Give each pantry product a quantity. Let me add purchases, subtract what I use, correct mistakes, and see quantities per product and total units.",
+   "wants": [
+    "source:counters",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "si-02-computation",
+   "prompt": "I have six bean tins and four pasta packets. Use two tins and add three packets; show four tins, seven packets, and 11 units altogether.",
+   "wants": [
+    "source:counters",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "si-03-terse",
+   "prompt": "Compare package prices per kilogram to find the better deal.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:comparison"
+   ],
+   "got": [
+    "data_table"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "si-03-descriptive",
+   "prompt": "Enter prices and package weights in grams for two products. Convert both to price per kilogram and identify the cheaper option, without looking up shop prices.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:comparison"
+   ],
+   "got": [
+    "data_table"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "si-03-computation",
+   "prompt": "Compare 750 g for $3 with 1.2 kg for $4.20. Show $4/kg versus $3.50/kg, so the second package is cheaper per kilogram.",
+   "wants": [
+    "source:numeric-inputs",
+    "algorithm:formula",
+    "reader:comparison"
+   ],
+   "got": [
+    "data_table"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "si-04-terse",
+   "prompt": "Track which of my tools are lent out or back home.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "si-04-descriptive",
+   "prompt": "List my tools with a borrower note. Mark each available or lent out, change it when returned, and show how many are away and available.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "si-04-computation",
+   "prompt": "Of ten tools, three are lent out. Returning the drill should leave two away and eight available, preserving the borrower notes for tools still out.",
+   "wants": [
+    "source:staged-items",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "ts-01-descriptive",
+   "prompt": "Let me set focus minutes, break minutes, and rounds. Run alternating countdowns while the app stays open, allow pausing, and omit a break after the last round.",
+   "wants": [
+    "source:duration",
+    "algorithm:interval-sequence",
+    "reader:progress"
+   ],
+   "got": [
+    "timer"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "ts-02-terse",
+   "prompt": "Count the days until a date I'm looking forward to.",
+   "wants": [
+    "source:dated-event",
+    "algorithm:time-arithmetic",
+    "reader:summary"
+   ],
+   "got": [
+    "timer"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "ts-02-descriptive",
+   "prompt": "Enter an event name and date. Show whole calendar days from today until it, display today on the date itself, and say days ago afterward.",
+   "wants": [
+    "source:dated-event",
+    "algorithm:time-arithmetic",
+    "reader:summary"
+   ],
+   "got": [
+    "calendar_event",
+    "timeline"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "ts-02-computation",
+   "prompt": "If today is April 10 and my event is April 15, show five days to go. On April 16, show one day ago.",
+   "wants": [
+    "source:dated-event",
+    "algorithm:time-arithmetic",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "ts-03-descriptive",
+   "prompt": "Give me a simple place to enter today's appointments and their times. Put them in time order and show how many I've planned, without connecting my calendar.",
+   "wants": [
+    "source:schedule",
+    "reader:ordered-list",
+    "reader:summary"
+   ],
+   "got": [
+    "timeline"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "ts-03-computation",
+   "prompt": "I enter appointments at 14:00, 09:00, and 11:30. Show them as 09:00, 11:30, 14:00 and report three appointments in my day plan.",
+   "wants": [
+    "source:schedule",
+    "reader:ordered-list",
+    "reader:summary"
+   ],
+   "got": [
+    "timeline"
+   ],
+   "outcome": "complete"
+  },
+  {
+   "id": "ts-04-terse",
+   "prompt": "Calculate paid hours and earnings for shifts crossing midnight.",
+   "wants": [
+    "source:records",
+    "algorithm:time-arithmetic",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  },
+  {
+   "id": "ts-04-descriptive",
+   "prompt": "Enter each shift's start and end date and time, unpaid break minutes, and hourly rate. Show paid hours and earnings, including overnight shifts, without tax calculations.",
+   "wants": [
+    "source:records",
+    "algorithm:time-arithmetic",
+    "algorithm:formula",
+    "reader:summary"
+   ],
+   "got": [],
+   "outcome": "scratch"
+  }
+ ],
+ "rows_detail": [
+  {
+   "id": "hf-01-terse",
+   "intentId": "hf-01",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Track my glasses of water against a daily goal.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "progress_goal"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 708,
+   "picked": "section1=progress_goal section2=none(duplicate progress_goal) section3=none section4=none section5=none section6=none logic=needs_logic=0.87",
+   "raw": "s1=progress_goal@0.93 s2=progress_goal@0.64 s3=progress_goal@0.36 s4=none@0.29 s5=none@0.38 s6=none@0.42 +master_list@0.13 +detail_view@0.09 +record_log@0.08 +number_strip@0.12 +breakdown_table@0.06 +series_chart@0.07 +progress_line@0.27 +list_summary@0.24 +checklist@0.57 layout=progress_list@0.56"
+  },
+  {
+   "id": "hf-01-descriptive",
+   "intentId": "hf-01",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Let me add or undo each glass I drink, set my daily water goal, and see how much remains.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "progress_goal"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 920,
+   "picked": "section1=progress_goal section2=none(duplicate progress_goal) section3=none section4=none section5=none section6=none logic=needs_logic=0.93",
+   "raw": "s1=progress_goal@0.71 s2=progress_goal@0.51 s3=progress_goal@0.40 s4=progress_goal@0.35 s5=progress_goal@0.33 s6=progress_goal@0.31 +master_list@0.11 +detail_view@0.09 +number_strip@0.09 +progress_line@0.28 +list_summary@0.35 +checklist@0.61 layout=progress_list@0.44"
+  },
+  {
+   "id": "hf-01-computation",
+   "intentId": "hf-01",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "My goal is eight glasses of water. After logging five, show three remaining and 62.5% of my goal.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "progress_goal"
+   ],
+   "layout": "progress_list",
+   "outcome": "complete",
+   "ms": 725,
+   "picked": "section1=progress_goal section2=none section3=none section4=none section5=none section6=none layout=progress_list +list_summary +checklist logic=needs_logic=0.96",
+   "raw": "s1=progress_goal@0.55 s2=progress_goal@0.26 s3=progress_goal@0.21 s4=none@0.40 s5=none@0.31 s6=none@0.49 +number_strip@0.08 +progress_line@0.24 +list_summary@0.67 +checklist@0.12 layout=progress_list@0.95"
+  },
+  {
+   "id": "hf-02-terse",
+   "intentId": "hf-02",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Keep my workout minutes and graph them by activity.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "series_chart"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 754,
+   "picked": "section1=none section2=none section3=series_chart section4=none section5=none(duplicate series_chart) section6=none logic=needs_integration=0.34,needs_multiple_counters=0.82,needs_logic=0.90",
+   "raw": "s1=record_log@0.28 s2=series_chart@0.46 s3=series_chart@0.61 s4=series_chart@0.46 s5=series_chart@0.54 s6=series_chart@0.49 +filter_box@0.10 +master_list@0.26 +detail_view@0.11 +record_log@0.10 +number_strip@0.21 +breakdown_table@0.10 +series_chart@0.60 +checklist@0.12 layout=none@0.32"
+  },
+  {
+   "id": "hf-02-descriptive",
+   "intentId": "hf-02",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I want to enter each workout's date, activity, and minutes, then compare activity totals in a chart and see total exercise time.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 1343,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=log_entries@0.40 s2=bar_chart@0.29 s3=bar_chart@0.38 s4=bar_chart@0.37 s5=bar_chart@0.31 s6=bar_chart@0.34 +filter_box@0.07 +master_list@0.24 +detail_view@0.11 +record_log@0.06 +number_strip@0.41 +breakdown_table@0.24 +series_chart@0.71 +checklist@0.13 layout=log_report@0.66"
+  },
+  {
+   "id": "hf-02-computation",
+   "intentId": "hf-02",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "I walked for 20 and 35 minutes and cycled for 40. Show 55 walking minutes, 40 cycling minutes, and 95 overall.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 720,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=number_strip@0.25 s2=number_strip@0.28 s3=number_strip@0.37 s4=number_strip@0.37 s5=number_strip@0.34 s6=number_strip@0.33 +master_list@0.07 +number_strip@0.28 layout=log_report@0.63"
+  },
+  {
+   "id": "hf-03-terse",
+   "intentId": "hf-03",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Calculate BMI from my height and weight.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "key_facts"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 551,
+   "picked": "section1=none section2=none section3=key_facts section4=none section5=none section6=none logic=needs_logic=0.98",
+   "raw": "s1=none@0.47 s2=key_facts@0.49 s3=key_facts@0.56 s4=key_facts@0.44 s5=none@0.64 s6=none@0.55 layout=none@0.70"
+  },
+  {
+   "id": "hf-03-descriptive",
+   "intentId": "hf-03",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Let me enter weight in kilograms and height in centimetres and see my BMI, updating whenever either measurement changes.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "key_facts"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 603,
+   "picked": "section1=none section2=key_facts section3=none(duplicate key_facts) section4=none section5=none section6=none logic=needs_search_or_form=0.83,needs_logic=0.98",
+   "raw": "s1=none@0.32 s2=key_facts@0.62 s3=key_facts@0.53 s4=none@0.51 s5=none@0.64 s6=none@0.60 layout=none@0.66"
+  },
+  {
+   "id": "hf-03-computation",
+   "intentId": "hf-03",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Divide weight in kilograms by height in metres squared. At 72 kg and 180 cm, my BMI should read 22.2.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 576,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=key_facts@0.34 s2=key_facts@0.46 s3=none@0.46 s4=none@0.62 s5=none@0.61 s6=none@0.53 layout=none@0.66"
+  },
+  {
+   "id": "hf-04-terse",
+   "intentId": "hf-04",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Help me keep track of how I'm doing.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 1714,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.29 s2=none@0.43 s3=none@0.47 s4=none@0.56 s5=none@0.63 s6=none@0.61 +filter_box@0.09 +master_list@0.24 +detail_view@0.12 +record_log@0.27 +number_strip@0.22 +breakdown_table@0.16 +series_chart@0.12 +settle_up@0.09 +itinerary@0.19 +progress_line@0.39 +list_summary@0.40 +checklist@0.54 layout=progress_list@0.47"
+  },
+  {
+   "id": "hf-04-descriptive",
+   "intentId": "hf-04",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I'd like somewhere to jot how I feel each day and see how many check-ins I've made. Nothing medical, just my own words.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 911,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=note@0.46 s2=note@0.20 s3=none@0.24 s4=none@0.27 s5=none@0.34 s6=none@0.32 +master_list@0.27 +detail_view@0.20 +number_strip@0.29 +breakdown_table@0.06 +series_chart@0.09 +progress_line@0.33 +list_summary@0.41 +checklist@0.42 layout=progress_list@0.54"
+  },
+  {
+   "id": "hf-04-computation",
+   "intentId": "hf-04",
+   "domain": "health/fitness",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Keep my daily wellbeing entries. If I've written on four days and add today's entry, show five check-ins without interpreting my symptoms.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 1172,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist",
+   "raw": "s1=note@0.18 s2=list_summary@0.16 s3=none@0.21 s4=none@0.31 s5=none@0.32 s6=none@0.34 +master_list@0.21 +detail_view@0.07 +number_strip@0.21 +progress_line@0.23 +list_summary@0.48 +checklist@0.40 layout=progress_list@0.89"
+  },
+  {
+   "id": "pf-01-terse",
+   "intentId": "pf-01",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Log my spending and chart it by category.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "record_log",
+    "bar_chart"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 2320,
+   "picked": "section1=record_log section2=none section3=bar_chart section4=none section5=none section6=none(duplicate bar_chart)",
+   "raw": "s1=record_log@0.66 s2=bar_chart@0.28 s3=bar_chart@0.59 s4=bar_chart@0.49 s5=bar_chart@0.47 s6=bar_chart@0.52 +filter_box@0.11 +master_list@0.34 +detail_view@0.10 +record_log@0.41 +number_strip@0.29 +breakdown_table@0.26 +series_chart@0.73 +checklist@0.20 layout=log_report@0.72"
+  },
+  {
+   "id": "pf-01-descriptive",
+   "intentId": "pf-01",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Let me enter purchases with an amount and category, correct mistakes, and see a category spending chart plus my overall total.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "record_log"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 2513,
+   "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none",
+   "raw": "s1=record_log@0.82 s2=record_log@0.40 s3=bar_chart@0.41 s4=bar_chart@0.39 s5=bar_chart@0.32 s6=bar_chart@0.34 +filter_box@0.06 +master_list@0.15 +detail_view@0.15 +record_log@0.39 +number_strip@0.37 +breakdown_table@0.14 +series_chart@0.90 +checklist@0.11 layout=log_report@0.56"
+  },
+  {
+   "id": "pf-01-computation",
+   "intentId": "pf-01",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "I spent $12 and $18 on food and $25 on transport. Show food at $30, transport at $25, and $55 spent overall.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "log_report",
+   "outcome": "scratch",
+   "ms": 580,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+   "raw": "s1=record_log@0.21 s2=bar_chart@0.28 s3=number_strip@0.44 s4=number_strip@0.33 s5=none@0.28 s6=number_strip@0.27 +master_list@0.11 +record_log@0.13 +number_strip@0.31 +breakdown_table@0.08 +series_chart@0.16 +checklist@0.07 layout=log_report@0.83"
+  },
+  {
+   "id": "pf-02-terse",
+   "intentId": "pf-02",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Estimate how long it'll take me to save for a deposit.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 1151,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.37 s2=none@0.45 s3=none@0.42 s4=none@0.43 s5=none@0.49 s6=none@0.52 +filter_box@0.06 +number_strip@0.07 +checklist@0.06 layout=none@0.89"
+  },
+  {
+   "id": "pf-02-descriptive",
+   "intentId": "pf-02",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I'll enter my deposit target, current savings, and monthly contribution. Estimate whole months needed without interest, rounding up partial months.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "key_facts"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 523,
+   "picked": "section1=none section2=none section3=key_facts section4=none section5=none section6=none logic=needs_search_or_form=0.89,needs_logic=0.98",
+   "raw": "s1=none@0.37 s2=key_facts@0.43 s3=key_facts@0.56 s4=key_facts@0.49 s5=key_facts@0.45 s6=key_facts@0.41 layout=stack@0.51"
+  },
+  {
+   "id": "pf-02-computation",
+   "intentId": "pf-02",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "For a $5,000 deposit with $1,100 saved and $400 added monthly, show $3,900 left and ten months needed, ignoring interest.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "key_facts"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 796,
+   "picked": "section1=none section2=key_facts section3=none(duplicate key_facts) section4=none(duplicate key_facts) section5=none(duplicate key_facts) section6=none(duplicate key_facts)",
+   "raw": "s1=key_facts@0.48 s2=key_facts@0.62 s3=key_facts@0.61 s4=key_facts@0.53 s5=key_facts@0.53 s6=key_facts@0.55 +number_strip@0.06 layout=stack@0.39"
+  },
+  {
+   "id": "pf-03-terse",
+   "intentId": "pf-03",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Work out who owes whom after our shared expenses.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:settlement",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "record_log",
+    "settle_up"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 599,
+   "picked": "section1=record_log section2=none section3=settle_up section4=none(duplicate settle_up) section5=none(duplicate settle_up) section6=none(duplicate settle_up) layout=log_report needs_real_data=0.55",
+   "raw": "s1=record_log@0.62 s2=settle_up@0.43 s3=settle_up@0.84 s4=settle_up@0.88 s5=settle_up@0.89 s6=settle_up@0.87 +filter_box@0.07 +master_list@0.13 +detail_view@0.07 +record_log@0.31 +number_strip@0.23 +breakdown_table@0.36 +series_chart@0.14 +settle_up@0.87 +checklist@0.14 layout=log_report@0.99"
+  },
+  {
+   "id": "pf-03-descriptive",
+   "intentId": "pf-03",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Record which friend paid each group expense, divide all costs equally, and suggest transfers that settle everyone's balance.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:settlement",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "record_log",
+    "settle_up"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 498,
+   "picked": "section1=record_log section2=none section3=settle_up section4=none(duplicate settle_up) section5=none(duplicate settle_up) section6=none(duplicate settle_up) layout=log_report needs_real_data=0.38",
+   "raw": "s1=record_log@0.91 s2=settle_up@0.28 s3=settle_up@0.92 s4=settle_up@0.89 s5=settle_up@0.88 s6=settle_up@0.87 +filter_box@0.06 +master_list@0.17 +detail_view@0.09 +record_log@0.65 +number_strip@0.64 +breakdown_table@0.58 +series_chart@0.12 +settle_up@0.87 +checklist@0.18 layout=log_report@1.00"
+  },
+  {
+   "id": "pf-03-computation",
+   "intentId": "pf-03",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "For three friends, Ana paid $60 and Bo paid $30. Split equally: Bo owes nothing, and Cy should send Ana $30.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:settlement",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "settle_up"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 499,
+   "picked": "section1=none section2=settle_up section3=none(duplicate settle_up) section4=none(duplicate settle_up) section5=none(duplicate settle_up) section6=none(duplicate settle_up) layout=log_report +record_log",
+   "raw": "s1=record_log@0.43 s2=settle_up@0.65 s3=settle_up@0.79 s4=settle_up@0.79 s5=settle_up@0.74 s6=settle_up@0.75 +filter_box@0.06 +master_list@0.10 +detail_view@0.06 +record_log@0.28 +number_strip@0.29 +breakdown_table@0.22 +series_chart@0.15 +settle_up@0.47 +progress_line@0.06 +checklist@0.08 layout=log_report@0.98"
+  },
+  {
+   "id": "pf-04-terse",
+   "intentId": "pf-04",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Keep track of which bills I've paid.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "checklist"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 933,
+   "picked": "section1=checklist section2=none section3=none section4=none section5=none section6=none needs_real_data=0.48",
+   "raw": "s1=checklist@0.57 s2=checklist@0.46 s3=none@0.37 s4=none@0.41 s5=none@0.49 s6=none@0.49 +filter_box@0.15 +master_list@0.50 +detail_view@0.24 +record_log@0.20 +number_strip@0.13 +breakdown_table@0.08 +series_chart@0.06 +progress_line@0.16 +list_summary@0.14 +checklist@0.81 layout=progress_list@0.56"
+  },
+  {
+   "id": "pf-04-descriptive",
+   "intentId": "pf-04",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Keep a list of bills with due-date notes. Let me mark each unpaid or paid and see how many still need attention.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "checklist",
+    "list_summary"
+   ],
+   "layout": "progress_list",
+   "outcome": "complete",
+   "ms": 606,
+   "picked": "section1=checklist section2=none section3=list_summary section4=none(duplicate list_summary) section5=none(duplicate list_summary) section6=none(duplicate list_summary) layout=progress_list logic=needs_search_or_form=0.71",
+   "raw": "s1=checklist@0.70 s2=checklist@0.45 s3=list_summary@0.62 s4=list_summary@0.57 s5=list_summary@0.56 s6=list_summary@0.55 +filter_box@0.13 +master_list@0.63 +detail_view@0.19 +record_log@0.07 +number_strip@0.30 +breakdown_table@0.08 +progress_line@0.45 +list_summary@0.84 +checklist@0.95 layout=progress_list@1.00"
+  },
+  {
+   "id": "pf-04-computation",
+   "intentId": "pf-04",
+   "domain": "personal finance",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "I have six bills and have paid four. Show two unpaid, and update that count when I mark another bill paid.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 951,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +list_summary +checklist",
+   "raw": "s1=list_summary@0.39 s2=checklist@0.45 s3=checklist@0.32 s4=none@0.34 s5=none@0.38 s6=none@0.39 +master_list@0.10 +detail_view@0.08 +number_strip@0.10 +progress_line@0.19 +list_summary@0.78 +checklist@0.58 layout=progress_list@1.00"
+  },
+  {
+   "id": "pt-01-terse",
+   "intentId": "pt-01",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Move my work tasks from planned to doing to finished.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 1284,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.37 s2=none@0.45 s3=none@0.51 s4=none@0.66 s5=none@0.73 s6=none@0.72 +filter_box@0.06 +master_list@0.27 +detail_view@0.18 +progress_line@0.07 +checklist@0.63 layout=progress_list@0.47"
+  },
+  {
+   "id": "pt-01-descriptive",
+   "intentId": "pt-01",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Give each task a short description and a planned, doing, or finished status. Let me move tasks between stages and see counts for each.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 460,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +list_summary +checklist logic=needs_search_or_form=0.93",
+   "raw": "s1=metrics@0.37 s2=list_summary@0.34 s3=list_summary@0.35 s4=metrics@0.33 s5=list_summary@0.32 s6=list_summary@0.29 +filter_box@0.08 +master_list@0.38 +detail_view@0.13 +number_strip@0.28 +series_chart@0.07 +progress_line@0.15 +list_summary@0.73 +checklist@0.69 layout=progress_list@1.00"
+  },
+  {
+   "id": "pt-01-computation",
+   "intentId": "pt-01",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Of eight tasks, three are planned, two doing, and three finished. Moving one doing task to finished should show four finished and one doing.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "list_summary"
+   ],
+   "layout": "progress_list",
+   "outcome": "complete",
+   "ms": 906,
+   "picked": "section1=list_summary section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist logic=needs_multiple_counters=0.71,needs_logic=0.81",
+   "raw": "s1=list_summary@0.54 s2=list_summary@0.44 s3=list_summary@0.44 s4=list_summary@0.43 s5=list_summary@0.44 s6=list_summary@0.49 +master_list@0.10 +detail_view@0.06 +number_strip@0.15 +breakdown_table@0.06 +series_chart@0.07 +progress_line@0.11 +list_summary@0.66 +checklist@0.25 layout=progress_list@0.99"
+  },
+  {
+   "id": "pt-02-terse",
+   "intentId": "pt-02",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Rank my tasks by payoff per minute.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:ranking",
+     "reader:ranked-list"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 536,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.26 s2=none@0.26 s3=none@0.33 s4=none@0.45 s5=none@0.57 s6=none@0.57 +filter_box@0.10 +master_list@0.33 +detail_view@0.13 +number_strip@0.12 +breakdown_table@0.07 +series_chart@0.06 +itinerary@0.09 +checklist@0.36 layout=none@0.71"
+  },
+  {
+   "id": "pt-02-descriptive",
+   "intentId": "pt-02",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I'll give each task a benefit score and estimated minutes. Put the highest benefit per minute first so I can choose worthwhile quick wins.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:ranking",
+     "reader:ranked-list"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "data_table"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 505,
+   "picked": "section1=none section2=data_table section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.91,needs_logic=0.95",
+   "raw": "s1=data_table@0.43 s2=data_table@0.52 s3=data_table@0.49 s4=data_table@0.44 s5=none@0.42 s6=none@0.46 +master_list@0.27 +detail_view@0.09 +number_strip@0.08 +itinerary@0.12 +checklist@0.30 layout=none@0.41"
+  },
+  {
+   "id": "pt-02-computation",
+   "intentId": "pt-02",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Task A offers benefit 8 in 20 minutes; B offers 6 in 10. Rank B's 0.6 benefit per minute above A's 0.4.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:ranking",
+     "reader:ranked-list"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 480,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=key_facts@0.19 s2=none@0.24 s3=none@0.26 s4=none@0.37 s5=none@0.40 s6=none@0.39 +master_list@0.06 +number_strip@0.09 +breakdown_table@0.09 +series_chart@0.08 +progress_line@0.06 +checklist@0.07 layout=none@0.29"
+  },
+  {
+   "id": "pt-03-terse",
+   "intentId": "pt-03",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Give me somewhere for all the things in my head.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 625,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=note@0.49 s2=none@0.38 s3=none@0.50 s4=none@0.61 s5=none@0.65 s6=none@0.65 +filter_box@0.10 +master_list@0.28 +detail_view@0.07 +record_log@0.17 +settle_up@0.06 +itinerary@0.13 +list_summary@0.07 +checklist@0.49 layout=none@0.89"
+  },
+  {
+   "id": "pt-03-descriptive",
+   "intentId": "pt-03",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I need an inbox for stray thoughts and ideas. Let me add, edit, or delete short entries and see how many I've saved.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 459,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=note@0.27 s2=number_strip@0.14 s3=none@0.19 s4=none@0.39 s5=none@0.40 s6=none@0.45 +filter_box@0.07 +master_list@0.53 +detail_view@0.24 +number_strip@0.29 +list_summary@0.13 +checklist@0.24 layout=master_detail@0.17"
+  },
+  {
+   "id": "pt-03-computation",
+   "intentId": "pt-03",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Keep my idea inbox. If it has seven thoughts, I add two and delete one, the saved-entry count should become eight.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 2615,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.25 s2=none@0.42 s3=none@0.48 s4=none@0.57 s5=none@0.62 s6=none@0.60 +filter_box@0.06 +master_list@0.27 +detail_view@0.07 +number_strip@0.06 +list_summary@0.07 +checklist@0.20 layout=none@0.71"
+  },
+  {
+   "id": "pt-04-terse",
+   "intentId": "pt-04",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": true,
+   "prompt": "Play my downloaded focus music with a reorderable playlist.",
+   "expect": {
+    "roles": [
+     "source:media-queue",
+     "capability:audio-playback",
+     "reader:summary"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [
+    "master_list"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 1415,
+   "picked": "section1=master_list section2=none(duplicate master_list) section3=none section4=none section5=none section6=none logic=needs_integration=0.78",
+   "raw": "s1=master_list@0.55 s2=master_list@0.51 s3=none@0.45 s4=none@0.59 s5=none@0.59 s6=none@0.63 +filter_box@0.12 +master_list@0.60 +detail_view@0.25 +checklist@0.33 layout=none@0.40"
+  },
+  {
+   "id": "pt-04-descriptive",
+   "intentId": "pt-04",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": true,
+   "prompt": "Make a focus music player for audio files on my phone, with play, pause, skip, playlist reordering, and remaining listening time.",
+   "expect": {
+    "roles": [
+     "source:media-queue",
+     "capability:audio-playback",
+     "reader:summary"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 1600,
+   "picked": "vetoed needs_integration=0.90",
+   "raw": "s1=master_list@0.27 s2=none@0.25 s3=none@0.23 s4=none@0.31 s5=none@0.36 s6=none@0.44 +master_list@0.67 +detail_view@0.31 +checklist@0.33 layout=master_detail@0.48"
+  },
+  {
+   "id": "pt-04-computation",
+   "intentId": "pt-04",
+   "domain": "productivity/tasks",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": true,
+   "prompt": "Play three downloaded focus tracks lasting four, six, and five minutes. With two minutes played, show 13 minutes remaining and allow skipping.",
+   "expect": {
+    "roles": [
+     "source:media-queue",
+     "capability:audio-playback",
+     "reader:summary"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 691,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=timer@0.49 s2=timer@0.38 s3=actions@0.26 s4=none@0.36 s5=none@0.41 s6=none@0.41 +master_list@0.23 +detail_view@0.19 +progress_line@0.08 +list_summary@0.06 +checklist@0.17 layout=none@0.22"
+  },
+  {
+   "id": "hc-01-terse",
+   "intentId": "hc-01",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Help us keep on top of the housework.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "checklist"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 1844,
+   "picked": "section1=checklist section2=none section3=none section4=none section5=none section6=none",
+   "raw": "s1=checklist@0.52 s2=none@0.48 s3=none@0.57 s4=none@0.71 s5=none@0.69 s6=none@0.72 +filter_box@0.09 +master_list@0.23 +detail_view@0.06 +record_log@0.09 +number_strip@0.08 +breakdown_table@0.08 +series_chart@0.07 +itinerary@0.10 +progress_line@0.15 +list_summary@0.18 +checklist@0.48 layout=none@0.68"
+  },
+  {
+   "id": "hc-01-descriptive",
+   "intentId": "hc-01",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Keep a shared-looking household chore list on this phone. We can add chores, mark them done, and see how much is left, without account syncing.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "list_summary"
+   ],
+   "layout": "progress_list",
+   "outcome": "template",
+   "ms": 468,
+   "picked": "section1=none section2=none section3=list_summary section4=none(duplicate list_summary) section5=none section6=none layout=progress_list +checklist",
+   "raw": "s1=list_summary@0.47 s2=list_summary@0.43 s3=list_summary@0.52 s4=list_summary@0.50 s5=list_summary@0.41 s6=list_summary@0.44 +filter_box@0.09 +master_list@0.44 +detail_view@0.21 +number_strip@0.33 +breakdown_table@0.06 +series_chart@0.10 +progress_line@0.55 +list_summary@0.83 +checklist@0.94 layout=progress_list@1.00"
+  },
+  {
+   "id": "hc-01-computation",
+   "intentId": "hc-01",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Our housework list has ten chores. After we finish seven, show three left and 70% complete, updating when a chore is reopened.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "list_summary"
+   ],
+   "layout": "progress_list",
+   "outcome": "template",
+   "ms": 942,
+   "picked": "section1=list_summary section2=none(duplicate list_summary) section3=none section4=none section5=none section6=none layout=progress_list +checklist",
+   "raw": "s1=list_summary@0.54 s2=list_summary@0.55 s3=list_summary@0.46 s4=list_summary@0.39 s5=list_summary@0.35 s6=list_summary@0.39 +master_list@0.36 +detail_view@0.13 +number_strip@0.15 +progress_line@0.58 +list_summary@0.93 +checklist@0.83 layout=progress_list@1.00"
+  },
+  {
+   "id": "hc-02-terse",
+   "intentId": "hc-02",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Scale a recipe's ingredients for a different number of servings.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 565,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.51 s2=data_table@0.46 s3=data_table@0.48 s4=none@0.54 s5=none@0.64 s6=none@0.69 +master_list@0.12 +detail_view@0.09 +number_strip@0.07 +checklist@0.09 layout=none@0.69"
+  },
+  {
+   "id": "hc-02-descriptive",
+   "intentId": "hc-02",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I'll enter the original serving count and ingredient quantities. Let me choose a new serving count and see proportionally adjusted amounts in the same units.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "data_table"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 1483,
+   "picked": "section1=none section2=data_table section3=none(duplicate data_table) section4=none section5=none section6=none logic=needs_logic=0.98",
+   "raw": "s1=none@0.29 s2=data_table@0.55 s3=data_table@0.53 s4=data_table@0.45 s5=none@0.46 s6=none@0.51 +filter_box@0.06 +master_list@0.10 +detail_view@0.11 +number_strip@0.09 +checklist@0.06 layout=none@0.66"
+  },
+  {
+   "id": "hc-02-computation",
+   "intentId": "hc-02",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "A recipe for four uses 300 g rice and 600 ml water. For six servings show 450 g rice and 900 ml water.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 592,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.40 s2=none@0.39 s3=none@0.55 s4=none@0.63 s5=none@0.70 s6=none@0.61 +number_strip@0.06 layout=stack@0.53"
+  },
+  {
+   "id": "hc-03-terse",
+   "intentId": "hc-03",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Keep a history of repairs around my house.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "timeline"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 1001,
+   "picked": "section1=timeline section2=none(duplicate timeline) section3=none(duplicate timeline) section4=none(duplicate timeline) section5=none(duplicate timeline) section6=none(duplicate timeline) logic=needs_search_or_form=0.86",
+   "raw": "s1=timeline@0.65 s2=timeline@0.56 s3=timeline@0.62 s4=timeline@0.60 s5=timeline@0.52 s6=timeline@0.51 +filter_box@0.11 +master_list@0.44 +detail_view@0.19 +record_log@0.10 +number_strip@0.12 +breakdown_table@0.07 +list_summary@0.06 +checklist@0.33 layout=none@0.41"
+  },
+  {
+   "id": "hc-03-descriptive",
+   "intentId": "hc-03",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Save each home repair with its date, appliance, cost, and notes. Let me open an entry's details and see how much repairs have cost altogether.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 462,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=master_list@0.27 s2=number_strip@0.25 s3=number_strip@0.34 s4=number_strip@0.40 s5=number_strip@0.36 s6=number_strip@0.34 +filter_box@0.10 +master_list@0.84 +detail_view@0.78 +record_log@0.16 +number_strip@0.62 +breakdown_table@0.15 +series_chart@0.10 +checklist@0.33 layout=master_detail@0.50"
+  },
+  {
+   "id": "hc-03-computation",
+   "intentId": "hc-03",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Record a $90 tap repair and a $140 oven repair, keeping dates and notes. Show $230 spent and let me inspect either repair.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "log_entries"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 499,
+   "picked": "section1=log_entries section2=none section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.91,needs_logic=0.86",
+   "raw": "s1=log_entries@0.50 s2=number_strip@0.21 s3=number_strip@0.21 s4=detail_view@0.18 s5=detail_view@0.17 s6=detail_view@0.20 +filter_box@0.09 +master_list@0.70 +detail_view@0.62 +record_log@0.21 +number_strip@0.36 +breakdown_table@0.06 +list_summary@0.06 +checklist@0.39 layout=master_detail@0.44"
+  },
+  {
+   "id": "hc-04-terse",
+   "intentId": "hc-04",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": true,
+   "prompt": "Use my phone as a security camera with live remote viewing.",
+   "expect": {
+    "roles": [
+     "capability:camera-capture",
+     "capability:live-streaming",
+     "algorithm:media-estimation"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 473,
+   "picked": "vetoed needs_integration=0.98",
+   "raw": "s1=none@0.88 s2=none@0.92 s3=none@0.93 s4=none@0.94 s5=none@0.95 s6=none@0.96 +master_list@0.08 +checklist@0.07 layout=none@0.96"
+  },
+  {
+   "id": "hc-04-descriptive",
+   "intentId": "hc-04",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": true,
+   "prompt": "Stream my phone's camera to another device while I'm away, with quality settings and an estimate of hourly mobile data use.",
+   "expect": {
+    "roles": [
+     "capability:camera-capture",
+     "capability:live-streaming",
+     "algorithm:media-estimation"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 566,
+   "picked": "vetoed needs_integration=0.93",
+   "raw": "s1=none@0.47 s2=key_facts@0.35 s3=key_facts@0.50 s4=key_facts@0.40 s5=none@0.44 s6=none@0.47 +master_list@0.11 +checklist@0.08 layout=none@0.66"
+  },
+  {
+   "id": "hc-04-computation",
+   "intentId": "hc-04",
+   "domain": "home/chores",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": true,
+   "prompt": "Stream the security camera at 2 megabits per second. Estimate about 900 MB per hour, excluding overhead, while letting me watch remotely.",
+   "expect": {
+    "roles": [
+     "capability:camera-capture",
+     "capability:live-streaming",
+     "algorithm:media-estimation"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [
+    "key_facts"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 689,
+   "picked": "section1=key_facts section2=none section3=none section4=none section5=none section6=none logic=needs_integration=0.87",
+   "raw": "s1=key_facts@0.53 s2=none@0.60 s3=none@0.57 s4=none@0.64 s5=none@0.66 s6=none@0.67 layout=none@0.86"
+  },
+  {
+   "id": "tp-01-terse",
+   "intentId": "tp-01",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Save places I want to visit and search my notes about them.",
+   "expect": {
+    "roles": [
+     "source:catalog",
+     "reader:search",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 540,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=search_list@0.41 s2=search_list@0.35 s3=none@0.38 s4=none@0.44 s5=none@0.49 s6=none@0.55 +filter_box@0.72 +master_list@0.67 +detail_view@0.21 +itinerary@0.10 +checklist@0.36 layout=master_detail@0.47"
+  },
+  {
+   "id": "tp-01-descriptive",
+   "intentId": "tp-01",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Keep my own place wishlist with names, towns, and notes. Search the saved entries, open their details, and show how many match, without online lookup.",
+   "expect": {
+    "roles": [
+     "source:catalog",
+     "reader:search",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "master_detail",
+   "outcome": "scratch",
+   "ms": 624,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=master_detail +master_list +filter_box +detail_view",
+   "raw": "s1=master_list@0.34 s2=search_list@0.32 s3=detail_view@0.33 s4=none@0.31 s5=none@0.38 s6=none@0.41 +filter_box@0.82 +master_list@0.86 +detail_view@0.80 +number_strip@0.22 +progress_line@0.06 +list_summary@0.10 +checklist@0.32 layout=master_detail@0.98"
+  },
+  {
+   "id": "tp-01-computation",
+   "intentId": "tp-01",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Of eight saved places, three mention Kyoto. Searching Kyoto should show those three results, with each place's notes available when selected.",
+   "expect": {
+    "roles": [
+     "source:catalog",
+     "reader:search",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "master_detail",
+   "outcome": "scratch",
+   "ms": 529,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=master_detail +master_list +detail_view needs_real_data=0.49 logic=needs_search_or_form=0.84",
+   "raw": "s1=search_list@0.37 s2=master_list@0.43 s3=detail_view@0.36 s4=detail_view@0.35 s5=none@0.29 s6=none@0.31 +filter_box@0.61 +master_list@0.87 +detail_view@0.85 +checklist@0.27 layout=master_detail@0.98"
+  },
+  {
+   "id": "tp-02-terse",
+   "intentId": "tp-02",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Keep my sightseeing day in order and tick off stops.",
+   "expect": {
+    "roles": [
+     "source:schedule",
+     "reader:ordered-list",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "itinerary"
+   ],
+   "layout": "itinerary_day",
+   "outcome": "template",
+   "ms": 507,
+   "picked": "section1=itinerary section2=none(duplicate itinerary) section3=none section4=none section5=none section6=none layout=itinerary_day needs_real_data=0.51",
+   "raw": "s1=itinerary@0.78 s2=itinerary@0.53 s3=itinerary@0.42 s4=itinerary@0.40 s5=itinerary@0.38 s6=itinerary@0.42 +filter_box@0.12 +master_list@0.48 +detail_view@0.19 +itinerary@0.83 +progress_line@0.29 +list_summary@0.20 +checklist@0.90 layout=itinerary_day@1.00"
+  },
+  {
+   "id": "tp-02-descriptive",
+   "intentId": "tp-02",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I'll enter the places and visit times for a day out. Show them in time order, let me mark each visited, and show progress without routing.",
+   "expect": {
+    "roles": [
+     "source:schedule",
+     "reader:ordered-list",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "itinerary"
+   ],
+   "layout": "itinerary_day",
+   "outcome": "complete",
+   "ms": 494,
+   "picked": "section1=itinerary section2=none section3=none section4=none section5=none section6=none layout=itinerary_day +progress_line logic=needs_search_or_form=0.85",
+   "raw": "s1=itinerary@0.66 s2=itinerary@0.40 s3=progress_line@0.34 s4=itinerary@0.25 s5=itinerary@0.24 s6=itinerary@0.25 +filter_box@0.09 +master_list@0.33 +detail_view@0.24 +number_strip@0.13 +itinerary@0.76 +progress_line@0.78 +list_summary@0.75 +checklist@0.93 layout=itinerary_day@0.96"
+  },
+  {
+   "id": "tp-02-computation",
+   "intentId": "tp-02",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Plan five timed sightseeing stops. After I mark two visited, show three remaining and 40% complete, keeping the stops in scheduled order.",
+   "expect": {
+    "roles": [
+     "source:schedule",
+     "reader:ordered-list",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "itinerary"
+   ],
+   "layout": "itinerary_day",
+   "outcome": "template",
+   "ms": 534,
+   "picked": "section1=itinerary section2=none section3=none section4=none section5=none section6=none layout=itinerary_day +list_summary needs_real_data=0.47",
+   "raw": "s1=itinerary@0.78 s2=itinerary@0.36 s3=itinerary@0.43 s4=itinerary@0.37 s5=itinerary@0.42 s6=none@0.35 +master_list@0.33 +detail_view@0.10 +number_strip@0.11 +itinerary@0.85 +progress_line@0.58 +list_summary@0.88 +checklist@0.82 layout=itinerary_day@0.81"
+  },
+  {
+   "id": "tp-03-terse",
+   "intentId": "tp-03",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Convert my trip costs into my home currency using rates I enter.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 470,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.33 s2=none@0.28 s3=number_strip@0.38 s4=number_strip@0.35 s5=none@0.46 s6=none@0.45 +filter_box@0.06 +master_list@0.12 +detail_view@0.08 +record_log@0.09 +number_strip@0.18 +breakdown_table@0.09 +checklist@0.09 layout=log_report@0.41"
+  },
+  {
+   "id": "tp-03-descriptive",
+   "intentId": "tp-03",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Let me enter travel purchases in different currencies and supply each exchange rate myself. Convert them to my home currency and total the trip spending.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "number_strip"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 455,
+   "picked": "section1=none section2=none section3=number_strip section4=none(duplicate number_strip) section5=none(duplicate number_strip) section6=none(duplicate number_strip) layout=log_report +record_log",
+   "raw": "s1=log_entries@0.34 s2=number_strip@0.29 s3=number_strip@0.60 s4=number_strip@0.55 s5=number_strip@0.54 s6=number_strip@0.52 +filter_box@0.06 +master_list@0.13 +detail_view@0.09 +record_log@0.09 +number_strip@0.45 +breakdown_table@0.09 +checklist@0.12 layout=log_report@0.82"
+  },
+  {
+   "id": "tp-03-computation",
+   "intentId": "tp-03",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Using my rates, convert EUR 50 at USD 1.10 per euro and JPY 3,000 at USD 0.006 per yen. Show USD 73 total.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "number_strip"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 471,
+   "picked": "section1=none section2=none section3=number_strip section4=none section5=none section6=none",
+   "raw": "s1=none@0.24 s2=number_strip@0.40 s3=number_strip@0.50 s4=none@0.39 s5=none@0.43 s6=none@0.40 +number_strip@0.20 layout=log_report@0.24"
+  },
+  {
+   "id": "tp-04-terse",
+   "intentId": "tp-04",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": true,
+   "prompt": "Navigate me around traffic with live turn-by-turn directions.",
+   "expect": {
+    "roles": [
+     "capability:live-location",
+     "capability:traffic-routing",
+     "reader:map"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 611,
+   "picked": "vetoed needs_integration=0.98 needs_real_data=0.92",
+   "raw": "s1=none@0.69 s2=none@0.66 s3=none@0.70 s4=none@0.77 s5=none@0.77 s6=none@0.76 +master_list@0.06 +itinerary@0.09 layout=none@0.75"
+  },
+  {
+   "id": "tp-04-descriptive",
+   "intentId": "tp-04",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": true,
+   "prompt": "Show a moving map while I drive, fetch current congestion, reroute around delays, and continuously update spoken turns and arrival time.",
+   "expect": {
+    "roles": [
+     "capability:live-location",
+     "capability:traffic-routing",
+     "reader:map"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 493,
+   "picked": "vetoed needs_integration=0.98 needs_real_data=0.93",
+   "raw": "s1=none@0.38 s2=key_facts@0.31 s3=none@0.36 s4=none@0.40 s5=none@0.47 s6=none@0.46 +master_list@0.06 +itinerary@0.09 layout=none@0.65"
+  },
+  {
+   "id": "tp-04-computation",
+   "intentId": "tp-04",
+   "domain": "travel/places",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": true,
+   "prompt": "During live navigation, if a 25-minute route gains 12 minutes of traffic delay, compare it with a current 30-minute alternative and reroute to save seven minutes.",
+   "expect": {
+    "roles": [
+     "capability:live-location",
+     "capability:traffic-routing",
+     "reader:map"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 590,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=key_facts@0.37 s2=key_facts@0.28 s3=none@0.38 s4=none@0.52 s5=none@0.57 s6=none@0.57 +master_list@0.07 +detail_view@0.07 +itinerary@0.07 +checklist@0.06 layout=none@0.71"
+  },
+  {
+   "id": "el-01-terse",
+   "intentId": "el-01",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Track books I plan to read, am reading, or have finished.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 589,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=master_list@0.23 s2=none@0.33 s3=none@0.39 s4=none@0.48 s5=none@0.55 s6=none@0.57 +filter_box@0.14 +master_list@0.58 +detail_view@0.17 +number_strip@0.09 +breakdown_table@0.06 +series_chart@0.07 +progress_line@0.12 +list_summary@0.12 +checklist@0.72 layout=none@0.29"
+  },
+  {
+   "id": "el-01-descriptive",
+   "intentId": "el-01",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Keep a reading list with titles and short notes. Move books between planned, reading, and finished, and show how many I've finished out of the list.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 463,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist +list_summary logic=needs_search_or_form=0.91,needs_logic=0.82",
+   "raw": "s1=list_summary@0.46 s2=list_summary@0.42 s3=list_summary@0.49 s4=list_summary@0.47 s5=list_summary@0.38 s6=list_summary@0.34 +filter_box@0.09 +master_list@0.63 +detail_view@0.15 +number_strip@0.28 +progress_line@0.75 +list_summary@0.77 +checklist@0.83 layout=progress_list@0.99"
+  },
+  {
+   "id": "el-01-computation",
+   "intentId": "el-01",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "My reading list has 12 books, four finished. When I finish another, show five of 12 completed and seven still unfinished.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "list_summary"
+   ],
+   "layout": "progress_list",
+   "outcome": "template",
+   "ms": 647,
+   "picked": "section1=list_summary section2=none(duplicate list_summary) section3=none(duplicate list_summary) section4=none(duplicate list_summary) section5=none(duplicate list_summary) section6=none(duplicate list_summary) layout=progress_list +checklist",
+   "raw": "s1=list_summary@0.66 s2=list_summary@0.66 s3=list_summary@0.66 s4=list_summary@0.50 s5=list_summary@0.54 s6=list_summary@0.54 +filter_box@0.06 +master_list@0.35 +detail_view@0.08 +number_strip@0.22 +series_chart@0.06 +progress_line@0.63 +list_summary@0.89 +checklist@0.73 layout=progress_list@1.00"
+  },
+  {
+   "id": "el-02-terse",
+   "intentId": "el-02",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Drill me on vocabulary cards and count the words I know.",
+   "expect": {
+    "roles": [
+     "source:questions",
+     "algorithm:scoring",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 501,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.25 s2=none@0.25 s3=none@0.29 s4=none@0.41 s5=none@0.48 s6=none@0.50 +filter_box@0.09 +master_list@0.30 +detail_view@0.11 +number_strip@0.16 +progress_line@0.27 +list_summary@0.23 +checklist@0.54 layout=none@0.41"
+  },
+  {
+   "id": "el-02-descriptive",
+   "intentId": "el-02",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Use a small vocabulary deck, one word at a time. Reveal its meaning, let me mark knew it or didn't know it, and show my score before restarting.",
+   "expect": {
+    "roles": [
+     "source:questions",
+     "algorithm:scoring",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 507,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.36 s2=none@0.24 s3=metrics@0.26 s4=none@0.35 s5=none@0.44 s6=none@0.52 +master_list@0.18 +detail_view@0.22 +number_strip@0.18 +progress_line@0.08 +list_summary@0.21 +checklist@0.43 layout=progress_list@0.38"
+  },
+  {
+   "id": "el-02-computation",
+   "intentId": "el-02",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "In a ten-word vocabulary drill, I mark seven known and three unknown. Show seven of ten, or 70%, and reset the score when I restart.",
+   "expect": {
+    "roles": [
+     "source:questions",
+     "algorithm:scoring",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 1603,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +list_summary +checklist",
+   "raw": "s1=list_summary@0.26 s2=list_summary@0.25 s3=none@0.21 s4=none@0.40 s5=none@0.47 s6=none@0.46 +master_list@0.20 +detail_view@0.08 +number_strip@0.17 +progress_line@0.39 +list_summary@0.69 +checklist@0.62 layout=progress_list@0.95"
+  },
+  {
+   "id": "el-03-terse",
+   "intentId": "el-03",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Calculate my course grade with weighted assessments.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 500,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=data_table@0.36 s2=data_table@0.35 s3=none@0.27 s4=none@0.36 s5=none@0.40 s6=none@0.41 +master_list@0.15 +detail_view@0.08 +number_strip@0.23 +breakdown_table@0.09 +checklist@0.12 layout=log_report@0.44"
+  },
+  {
+   "id": "el-03-descriptive",
+   "intentId": "el-03",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I'll enter assessment percentage scores and their percentage weights. Show the weighted overall grade and warn me if the weights don't total 100%.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "data_table"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 730,
+   "picked": "section1=data_table section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+   "raw": "s1=data_table@0.62 s2=data_table@0.24 s3=key_facts@0.35 s4=key_facts@0.27 s5=key_facts@0.29 s6=none@0.32 +master_list@0.13 +detail_view@0.08 +number_strip@0.19 +breakdown_table@0.07 +checklist@0.10 layout=log_report@0.82"
+  },
+  {
+   "id": "el-03-computation",
+   "intentId": "el-03",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Coursework scored 80% with weight 40%, and the exam scored 65% with weight 60%. Calculate an overall grade of 71%.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 687,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=data_table@0.32 s2=none@0.37 s3=key_facts@0.34 s4=none@0.39 s5=none@0.48 s6=none@0.51 +number_strip@0.06 layout=none@0.32"
+  },
+  {
+   "id": "el-04-terse",
+   "intentId": "el-04",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Log study minutes and compare subjects in a chart.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "record_log",
+    "series_chart"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 1241,
+   "picked": "section1=record_log section2=none section3=series_chart section4=none(duplicate series_chart) section5=none(duplicate series_chart) section6=none(duplicate series_chart) layout=log_report",
+   "raw": "s1=record_log@0.69 s2=series_chart@0.45 s3=series_chart@0.67 s4=series_chart@0.67 s5=series_chart@0.66 s6=series_chart@0.62 +filter_box@0.09 +master_list@0.25 +detail_view@0.09 +record_log@0.44 +number_strip@0.29 +breakdown_table@0.43 +series_chart@0.75 +checklist@0.17 layout=log_report@0.95"
+  },
+  {
+   "id": "el-04-descriptive",
+   "intentId": "el-04",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "After studying, I'll enter the subject, date, and minutes. Show total study time and a chart of how those minutes are distributed across subjects.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "log_report",
+   "outcome": "scratch",
+   "ms": 1334,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +series_chart +record_log",
+   "raw": "s1=record_log@0.40 s2=bar_chart@0.22 s3=bar_chart@0.43 s4=bar_chart@0.44 s5=bar_chart@0.49 s6=bar_chart@0.48 +master_list@0.19 +detail_view@0.12 +record_log@0.08 +number_strip@0.45 +breakdown_table@0.17 +series_chart@0.74 +checklist@0.12 layout=log_report@0.92"
+  },
+  {
+   "id": "el-04-computation",
+   "intentId": "el-04",
+   "domain": "education/learning",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "I studied maths for 25 and 35 minutes and history for 40. Chart 60 maths minutes and 40 history minutes, with 100 minutes overall.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "bar_chart"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 648,
+   "picked": "section1=none section2=none section3=bar_chart section4=none section5=none section6=none logic=needs_multiple_counters=0.82,needs_logic=0.90",
+   "raw": "s1=log_entries@0.27 s2=bar_chart@0.46 s3=bar_chart@0.60 s4=bar_chart@0.46 s5=bar_chart@0.36 s6=bar_chart@0.41 +filter_box@0.06 +master_list@0.11 +detail_view@0.06 +record_log@0.09 +number_strip@0.25 +breakdown_table@0.12 +series_chart@0.32 +checklist@0.11 layout=log_report@0.70"
+  },
+  {
+   "id": "gs-01-terse",
+   "intentId": "gs-01",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Keep two players' darts scores as we count down from 301.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 636,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=key_facts@0.21 s2=breakdown_table@0.19 s3=none@0.36 s4=none@0.51 s5=none@0.59 s6=none@0.60 +number_strip@0.06 +checklist@0.07 layout=log_report@0.42"
+  },
+  {
+   "id": "gs-01-descriptive",
+   "intentId": "gs-01",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Give each darts player a starting score of 301. Let us subtract manually agreed points, undo mistakes, and reset for another game; don't enforce bust rules.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 730,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.22 s2=none@0.32 s3=none@0.38 s4=none@0.48 s5=none@0.51 s6=none@0.57 +master_list@0.07 +number_strip@0.08 +breakdown_table@0.06 +checklist@0.10 layout=log_report@0.53"
+  },
+  {
+   "id": "gs-01-computation",
+   "intentId": "gs-01",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Starting at 301 each, subtract 60 then 45 for Lee and 80 for Sam. Show Lee on 196 and Sam on 221, with manual corrections.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "log_report",
+   "outcome": "scratch",
+   "ms": 495,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+   "raw": "s1=breakdown_table@0.32 s2=breakdown_table@0.44 s3=breakdown_table@0.43 s4=breakdown_table@0.37 s5=breakdown_table@0.35 s6=breakdown_table@0.36 +master_list@0.07 +detail_view@0.07 +record_log@0.06 +number_strip@0.07 +breakdown_table@0.06 +series_chart@0.06 +checklist@0.06 layout=log_report@0.81"
+  },
+  {
+   "id": "gs-02-terse",
+   "intentId": "gs-02",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Record our card-game rounds and chart each player's total points.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "record_log",
+    "series_chart"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 584,
+   "picked": "section1=record_log section2=series_chart section3=none(duplicate series_chart) section4=none(duplicate series_chart) section5=none(duplicate series_chart) section6=none(duplicate series_chart) layout=log_report",
+   "raw": "s1=record_log@0.52 s2=series_chart@0.60 s3=series_chart@0.76 s4=series_chart@0.72 s5=series_chart@0.72 s6=series_chart@0.71 +filter_box@0.06 +master_list@0.18 +detail_view@0.09 +record_log@0.37 +number_strip@0.50 +breakdown_table@0.32 +series_chart@0.75 +checklist@0.18 layout=log_report@1.00"
+  },
+  {
+   "id": "gs-02-descriptive",
+   "intentId": "gs-02",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "After each card-game round, enter the points each player earned. Keep the round history and show each player's running total in a comparison chart.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "series_chart"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 662,
+   "picked": "section1=none section2=series_chart section3=none(duplicate series_chart) section4=none(duplicate series_chart) section5=none(duplicate series_chart) section6=none(duplicate series_chart) layout=log_report +record_log",
+   "raw": "s1=record_log@0.48 s2=series_chart@0.52 s3=series_chart@0.75 s4=series_chart@0.69 s5=series_chart@0.66 s6=series_chart@0.64 +master_list@0.11 +detail_view@0.06 +record_log@0.18 +number_strip@0.27 +breakdown_table@0.23 +series_chart@0.78 +checklist@0.10 layout=log_report@1.00"
+  },
+  {
+   "id": "gs-02-computation",
+   "intentId": "gs-02",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Across two rounds, Jo scores 12 then 8 and Kit scores 9 then 15. Show totals of 20 and 24 in the score chart.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "reader:chart",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "breakdown_table"
+   ],
+   "layout": "log_report",
+   "outcome": "template",
+   "ms": 475,
+   "picked": "section1=none section2=breakdown_table section3=none(duplicate breakdown_table) section4=none(duplicate breakdown_table) section5=none(duplicate breakdown_table) section6=none(duplicate breakdown_table) layout=log_report +record_log",
+   "raw": "s1=breakdown_table@0.46 s2=breakdown_table@0.57 s3=breakdown_table@0.59 s4=breakdown_table@0.52 s5=breakdown_table@0.55 s6=breakdown_table@0.51 +master_list@0.06 +record_log@0.08 +number_strip@0.44 +breakdown_table@0.23 +series_chart@0.16 layout=log_report@1.00"
+  },
+  {
+   "id": "gs-03-terse",
+   "intentId": "gs-03",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Make a short geography trivia game with a final score.",
+   "expect": {
+    "roles": [
+     "source:questions",
+     "algorithm:scoring",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 825,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.43 s2=none@0.40 s3=none@0.37 s4=none@0.46 s5=none@0.50 s6=none@0.57 +master_list@0.10 +detail_view@0.06 +number_strip@0.07 +progress_line@0.09 +checklist@0.15 layout=none@0.47"
+  },
+  {
+   "id": "gs-03-descriptive",
+   "intentId": "gs-03",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Give me ten multiple-choice geography questions, one at a time. Award one point per correct answer, show progress and the final score, and allow a replay.",
+   "expect": {
+    "roles": [
+     "source:questions",
+     "algorithm:scoring",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 536,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=progress_line@0.40 s2=progress_line@0.45 s3=none@0.29 s4=none@0.42 s5=none@0.51 s6=none@0.48 +master_list@0.17 +number_strip@0.08 +progress_line@0.20 +list_summary@0.23 +checklist@0.20 layout=none@0.34"
+  },
+  {
+   "id": "gs-03-computation",
+   "intentId": "gs-03",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "In a ten-question geography game with one point per correct answer, six correct answers should give six points and 60%, with a fresh score on replay.",
+   "expect": {
+    "roles": [
+     "source:questions",
+     "algorithm:scoring",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 495,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.28 s2=none@0.35 s3=none@0.42 s4=none@0.52 s5=none@0.57 s6=none@0.49 +master_list@0.09 +detail_view@0.06 +number_strip@0.10 +progress_line@0.09 +list_summary@0.19 +checklist@0.13 layout=progress_list@0.42"
+  },
+  {
+   "id": "gs-04-terse",
+   "intentId": "gs-04",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": true,
+   "prompt": "Let me play live online chess against a friend.",
+   "expect": {
+    "roles": [
+     "source:game-state",
+     "algorithm:game-rules",
+     "capability:multiplayer-sync",
+     "reader:game-board"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 497,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.70 s2=none@0.75 s3=none@0.81 s4=none@0.85 s5=none@0.85 s6=none@0.88 +filter_box@0.07 +master_list@0.11 +checklist@0.06 layout=none@0.96"
+  },
+  {
+   "id": "gs-04-descriptive",
+   "intentId": "gs-04",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": true,
+   "prompt": "Build a chessboard for two friends on different phones, enforce legal moves, sync turns live, and show a clock for each player.",
+   "expect": {
+    "roles": [
+     "source:game-state",
+     "algorithm:game-rules",
+     "capability:multiplayer-sync",
+     "reader:game-board"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [
+    "timer"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 615,
+   "picked": "section1=timer section2=none(duplicate timer) section3=none(duplicate timer) section4=none(duplicate timer) section5=none(duplicate timer) section6=none logic=needs_integration=0.40,needs_live_ticking=0.84,needs_multiple_counters=0.77,needs_logic=0.89",
+   "raw": "s1=timer@0.76 s2=timer@0.73 s3=timer@0.71 s4=timer@0.64 s5=timer@0.50 s6=timer@0.46 layout=none@0.76"
+  },
+  {
+   "id": "gs-04-computation",
+   "intentId": "gs-04",
+   "domain": "games/scores",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": true,
+   "prompt": "For live online chess, start each player with five minutes. After my 20-second move, show 4:40 on my clock and sync the legal move to my friend.",
+   "expect": {
+    "roles": [
+     "source:game-state",
+     "algorithm:game-rules",
+     "capability:multiplayer-sync",
+     "reader:game-board"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [
+    "timer"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 468,
+   "picked": "section1=timer section2=none(duplicate timer) section3=none section4=none section5=none section6=none logic=needs_logic=0.91",
+   "raw": "s1=timer@0.85 s2=timer@0.65 s3=timer@0.45 s4=none@0.60 s5=none@0.71 s6=none@0.68 layout=none@0.68"
+  },
+  {
+   "id": "sc-01-terse",
+   "intentId": "sc-01",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Keep a searchable directory of my club members.",
+   "expect": {
+    "roles": [
+     "source:catalog",
+     "reader:search",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "search_list"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 551,
+   "picked": "section1=search_list section2=none section3=none section4=none section5=none section6=none needs_real_data=0.63",
+   "raw": "s1=search_list@0.61 s2=search_list@0.44 s3=search_list@0.31 s4=none@0.46 s5=none@0.49 s6=none@0.54 +filter_box@0.77 +master_list@0.69 +detail_view@0.18 +checklist@0.16 layout=master_detail@0.64"
+  },
+  {
+   "id": "sc-01-descriptive",
+   "intentId": "sc-01",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "I'll enter club members' names, phone numbers, and notes myself. Search my directory, show how many names match, and open a person's details without importing contacts.",
+   "expect": {
+    "roles": [
+     "source:catalog",
+     "reader:search",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "master_detail",
+   "outcome": "scratch",
+   "ms": 1166,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=master_detail +master_list +filter_box +detail_view needs_real_data=0.39",
+   "raw": "s1=search_list@0.31 s2=search_list@0.31 s3=detail_view@0.40 s4=detail_view@0.40 s5=none@0.39 s6=none@0.40 +filter_box@0.83 +master_list@0.87 +detail_view@0.74 +number_strip@0.22 +checklist@0.23 layout=master_detail@0.89"
+  },
+  {
+   "id": "sc-01-computation",
+   "intentId": "sc-01",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "My directory has 20 members, three named Alex. Searching Alex should show three matches and let me open each member's phone number and notes.",
+   "expect": {
+    "roles": [
+     "source:catalog",
+     "reader:search",
+     "reader:details",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "search_list"
+   ],
+   "layout": "master_detail",
+   "outcome": "complete",
+   "ms": 456,
+   "picked": "section1=search_list section2=none section3=none section4=none section5=none section6=none layout=master_detail +filter_box +master_list +detail_view needs_real_data=0.56 logic=needs_integration=0.42",
+   "raw": "s1=search_list@0.77 s2=master_list@0.43 s3=detail_view@0.47 s4=detail_view@0.41 s5=none@0.37 s6=none@0.44 +filter_box@0.72 +master_list@0.89 +detail_view@0.66 +checklist@0.46 layout=master_detail@0.99"
+  },
+  {
+   "id": "sc-02-terse",
+   "intentId": "sc-02",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Track people I need to call back.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 1198,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=checklist@0.40 s2=none@0.38 s3=none@0.45 s4=none@0.55 s5=none@0.61 s6=none@0.67 +filter_box@0.16 +master_list@0.60 +detail_view@0.16 +number_strip@0.07 +progress_line@0.11 +list_summary@0.11 +checklist@0.76 layout=none@0.65"
+  },
+  {
+   "id": "sc-02-descriptive",
+   "intentId": "sc-02",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "List people with a short reason to call. Mark each waiting, tried, or reached and show counts for each status; I'll make the calls myself.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 714,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist needs_real_data=0.67 logic=needs_search_or_form=0.90,needs_multiple_counters=0.71",
+   "raw": "s1=metrics@0.35 s2=metrics@0.31 s3=metrics@0.40 s4=metrics@0.37 s5=metrics@0.34 s6=metrics@0.28 +filter_box@0.10 +master_list@0.39 +detail_view@0.13 +number_strip@0.27 +breakdown_table@0.12 +series_chart@0.06 +progress_line@0.29 +list_summary@0.64 +checklist@0.89 layout=progress_list@0.96"
+  },
+  {
+   "id": "sc-02-computation",
+   "intentId": "sc-02",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Of nine people to call, four are waiting, two tried, and three reached. Marking one waiting person reached should show three waiting and four reached.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 601,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist logic=needs_logic=0.82",
+   "raw": "s1=metrics@0.32 s2=checklist@0.26 s3=list_summary@0.26 s4=list_summary@0.25 s5=list_summary@0.25 s6=list_summary@0.25 +master_list@0.18 +detail_view@0.09 +number_strip@0.27 +breakdown_table@0.08 +series_chart@0.09 +itinerary@0.06 +progress_line@0.13 +list_summary@0.63 +checklist@0.51 layout=progress_list@0.93"
+  },
+  {
+   "id": "sc-03-terse",
+   "intentId": "sc-03",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Keep track of who's coming to my dinner.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 595,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.25 s2=none@0.31 s3=none@0.50 s4=none@0.59 s5=none@0.64 s6=none@0.65 +filter_box@0.15 +master_list@0.48 +detail_view@0.18 +number_strip@0.10 +breakdown_table@0.07 +series_chart@0.07 +progress_line@0.08 +list_summary@0.08 +checklist@0.64 layout=none@0.51"
+  },
+  {
+   "id": "sc-03-descriptive",
+   "intentId": "sc-03",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Maintain my dinner guest list with attending, declined, or unanswered replies. I'll update replies manually and want a headcount for each group.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 960,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=metrics@0.46 s2=metrics@0.31 s3=metrics@0.44 s4=metrics@0.37 s5=metrics@0.34 s6=metrics@0.31 +filter_box@0.11 +master_list@0.62 +detail_view@0.16 +number_strip@0.55 +breakdown_table@0.24 +series_chart@0.16 +progress_line@0.11 +list_summary@0.44 +checklist@0.76 layout=log_report@0.44"
+  },
+  {
+   "id": "sc-03-computation",
+   "intentId": "sc-03",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Ten dinner guests include six attending, one declined, and three unanswered. If two unanswered guests accept, show eight attending and one still unanswered.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 651,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=metrics@0.29 s2=none@0.23 s3=none@0.26 s4=none@0.36 s5=none@0.41 s6=none@0.35 +number_strip@0.12 +series_chart@0.06 +progress_line@0.08 +list_summary@0.30 +checklist@0.14 layout=progress_list@0.57"
+  },
+  {
+   "id": "sc-04-terse",
+   "intentId": "sc-04",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": true,
+   "prompt": "Let me video-call my family in a group.",
+   "expect": {
+    "roles": [
+     "capability:camera-capture",
+     "capability:audio-capture",
+     "capability:live-streaming",
+     "source:participants",
+     "reader:summary"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 550,
+   "picked": "vetoed needs_integration=0.94 needs_real_data=0.63",
+   "raw": "s1=none@0.83 s2=none@0.82 s3=none@0.89 s4=none@0.93 s5=none@0.94 s6=none@0.95 +filter_box@0.07 +master_list@0.16 +checklist@0.08 layout=none@0.94"
+  },
+  {
+   "id": "sc-04-descriptive",
+   "intentId": "sc-04",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": true,
+   "prompt": "Make a group video-calling app where relatives join from different devices, see and hear one another, mute themselves, and see how long the call has lasted.",
+   "expect": {
+    "roles": [
+     "capability:camera-capture",
+     "capability:audio-capture",
+     "capability:live-streaming",
+     "source:participants",
+     "reader:summary"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 441,
+   "picked": "vetoed needs_integration=0.94",
+   "raw": "s1=timer@0.62 s2=timer@0.59 s3=timer@0.67 s4=timer@0.63 s5=timer@0.60 s6=timer@0.51 +master_list@0.07 layout=none@0.54"
+  },
+  {
+   "id": "sc-04-computation",
+   "intentId": "sc-04",
+   "domain": "social/contacts",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": true,
+   "prompt": "In our live family video call, if five relatives join and two leave, keep the remaining three connected and display three participants plus elapsed call minutes.",
+   "expect": {
+    "roles": [
+     "capability:camera-capture",
+     "capability:audio-capture",
+     "capability:live-streaming",
+     "source:participants",
+     "reader:summary"
+    ],
+    "outcome": "scratch"
+   },
+   "blocks": [
+    "timer"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 534,
+   "picked": "section1=timer section2=none(duplicate timer) section3=none(duplicate timer) section4=none(duplicate timer) section5=none(duplicate timer) section6=none(duplicate timer) logic=needs_integration=0.49,needs_logic=0.87",
+   "raw": "s1=timer@0.65 s2=timer@0.80 s3=timer@0.79 s4=timer@0.78 s5=timer@0.55 s6=timer@0.63 +number_strip@0.06 layout=stack@0.63"
+  },
+  {
+   "id": "si-01-terse",
+   "intentId": "si-01",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Make a grocery list I can tick off at the shop.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "checklist"
+   ],
+   "layout": "progress_list",
+   "outcome": "template",
+   "ms": 500,
+   "picked": "section1=checklist section2=none(duplicate checklist) section3=none section4=none section5=none section6=none layout=progress_list",
+   "raw": "s1=checklist@0.85 s2=checklist@0.57 s3=none@0.44 s4=none@0.51 s5=none@0.50 s6=none@0.59 +filter_box@0.06 +master_list@0.27 +detail_view@0.06 +progress_line@0.09 +list_summary@0.08 +checklist@0.93 layout=progress_list@0.93"
+  },
+  {
+   "id": "si-01-descriptive",
+   "intentId": "si-01",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Add grocery items with quantity notes, mark them bought or still needed, and show how many entries remain while I'm shopping.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "list_summary"
+   ],
+   "layout": "progress_list",
+   "outcome": "complete",
+   "ms": 745,
+   "picked": "section1=none section2=none section3=list_summary section4=none(duplicate list_summary) section5=none(duplicate list_summary) section6=none(duplicate list_summary) layout=progress_list +checklist logic=needs_search_or_form=0.82",
+   "raw": "s1=list_summary@0.37 s2=checklist@0.48 s3=list_summary@0.79 s4=list_summary@0.73 s5=list_summary@0.70 s6=list_summary@0.70 +filter_box@0.09 +master_list@0.32 +detail_view@0.17 +number_strip@0.30 +progress_line@0.37 +list_summary@0.79 +checklist@0.91 layout=progress_list@1.00"
+  },
+  {
+   "id": "si-01-computation",
+   "intentId": "si-01",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "My grocery list has 15 entries and I've bought nine. Show six entries left and 60% complete, counting entries rather than individual units.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:progress"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "list_summary"
+   ],
+   "layout": "progress_list",
+   "outcome": "complete",
+   "ms": 489,
+   "picked": "section1=list_summary section2=none(duplicate list_summary) section3=none(duplicate list_summary) section4=none section5=none(duplicate list_summary) section6=none(duplicate list_summary) layout=progress_list +checklist logic=needs_logic=0.92",
+   "raw": "s1=list_summary@0.57 s2=list_summary@0.56 s3=list_summary@0.62 s4=list_summary@0.46 s5=list_summary@0.54 s6=list_summary@0.53 +master_list@0.15 +number_strip@0.18 +progress_line@0.34 +list_summary@0.88 +checklist@0.26 layout=progress_list@1.00"
+  },
+  {
+   "id": "si-02-terse",
+   "intentId": "si-02",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Keep counts of the tins and packets in my pantry.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 887,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=data_table@0.29 s2=data_table@0.40 s3=data_table@0.37 s4=none@0.44 s5=none@0.51 s6=none@0.52 +filter_box@0.12 +master_list@0.43 +detail_view@0.14 +record_log@0.10 +number_strip@0.25 +breakdown_table@0.12 +series_chart@0.12 +progress_line@0.19 +list_summary@0.24 +checklist@0.62 layout=none@0.57"
+  },
+  {
+   "id": "si-02-descriptive",
+   "intentId": "si-02",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Give each pantry product a quantity. Let me add purchases, subtract what I use, correct mistakes, and see quantities per product and total units.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 463,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=data_table@0.24 s2=data_table@0.31 s3=data_table@0.39 s4=data_table@0.27 s5=none@0.23 s6=none@0.31 +filter_box@0.10 +master_list@0.52 +detail_view@0.18 +record_log@0.11 +number_strip@0.39 +breakdown_table@0.12 +list_summary@0.07 +checklist@0.28 layout=log_report@0.50"
+  },
+  {
+   "id": "si-02-computation",
+   "intentId": "si-02",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "I have six bean tins and four pasta packets. Use two tins and add three packets; show four tins, seven packets, and 11 units altogether.",
+   "expect": {
+    "roles": [
+     "source:counters",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 471,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=none@0.27 s2=none@0.29 s3=none@0.32 s4=none@0.41 s5=none@0.49 s6=none@0.50 +master_list@0.06 +number_strip@0.12 +list_summary@0.08 +checklist@0.08 layout=none@0.57"
+  },
+  {
+   "id": "si-03-terse",
+   "intentId": "si-03",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Compare package prices per kilogram to find the better deal.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:comparison"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "data_table"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 483,
+   "picked": "section1=data_table section2=none(duplicate data_table) section3=none section4=none section5=none section6=none logic=needs_logic=0.96",
+   "raw": "s1=data_table@0.60 s2=data_table@0.52 s3=data_table@0.38 s4=data_table@0.29 s5=none@0.35 s6=none@0.43 +filter_box@0.06 +master_list@0.10 +detail_view@0.11 +number_strip@0.10 +checklist@0.11 layout=none@0.52"
+  },
+  {
+   "id": "si-03-descriptive",
+   "intentId": "si-03",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Enter prices and package weights in grams for two products. Convert both to price per kilogram and identify the cheaper option, without looking up shop prices.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:comparison"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "data_table"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 504,
+   "picked": "section1=data_table section2=none section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.78,needs_logic=0.99",
+   "raw": "s1=data_table@0.60 s2=breakdown_table@0.26 s3=key_facts@0.27 s4=key_facts@0.25 s5=none@0.28 s6=none@0.34 +master_list@0.06 +number_strip@0.07 layout=none@0.26"
+  },
+  {
+   "id": "si-03-computation",
+   "intentId": "si-03",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Compare 750 g for $3 with 1.2 kg for $4.20. Show $4/kg versus $3.50/kg, so the second package is cheaper per kilogram.",
+   "expect": {
+    "roles": [
+     "source:numeric-inputs",
+     "algorithm:formula",
+     "reader:comparison"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "data_table"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 569,
+   "picked": "section1=data_table section2=none section3=none section4=none section5=none section6=none logic=needs_logic=0.95",
+   "raw": "s1=data_table@0.62 s2=data_table@0.37 s3=key_facts@0.25 s4=none@0.38 s5=none@0.42 s6=none@0.46 layout=stack@0.52"
+  },
+  {
+   "id": "si-04-terse",
+   "intentId": "si-04",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Track which of my tools are lent out or back home.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 562,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=checklist@0.24 s2=checklist@0.39 s3=none@0.38 s4=none@0.51 s5=none@0.50 s6=none@0.56 +filter_box@0.20 +master_list@0.58 +detail_view@0.27 +number_strip@0.12 +breakdown_table@0.08 +series_chart@0.07 +progress_line@0.11 +list_summary@0.11 +checklist@0.75 layout=none@0.21"
+  },
+  {
+   "id": "si-04-descriptive",
+   "intentId": "si-04",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "List my tools with a borrower note. Mark each available or lent out, change it when returned, and show how many are away and available.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 493,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist logic=needs_search_or_form=0.85,needs_logic=0.84",
+   "raw": "s1=metrics@0.40 s2=checklist@0.26 s3=metrics@0.35 s4=metrics@0.41 s5=metrics@0.34 s6=metrics@0.32 +filter_box@0.09 +master_list@0.39 +detail_view@0.14 +number_strip@0.29 +breakdown_table@0.06 +progress_line@0.13 +list_summary@0.28 +checklist@0.84 layout=progress_list@0.92"
+  },
+  {
+   "id": "si-04-computation",
+   "intentId": "si-04",
+   "domain": "shopping/inventory",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Of ten tools, three are lent out. Returning the drill should leave two away and eight available, preserving the borrower notes for tools still out.",
+   "expect": {
+    "roles": [
+     "source:staged-items",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [],
+   "layout": "progress_list",
+   "outcome": "scratch",
+   "ms": 510,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist logic=needs_search_or_form=0.83,needs_logic=0.82",
+   "raw": "s1=none@0.36 s2=none@0.49 s3=none@0.57 s4=none@0.66 s5=none@0.70 s6=none@0.69 +filter_box@0.17 +master_list@0.25 +detail_view@0.17 +record_log@0.14 +number_strip@0.18 +breakdown_table@0.11 +series_chart@0.11 +settle_up@0.13 +itinerary@0.07 +progress_line@0.20 +list_summary@0.29 +checklist@0.23 layout=progress_list@0.38"
+  },
+  {
+   "id": "ts-01-terse",
+   "intentId": "ts-01",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Alternate focus and break countdowns for a set number of rounds.",
+   "expect": {
+    "roles": [
+     "source:duration",
+     "algorithm:interval-sequence",
+     "reader:progress"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "timer"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 549,
+   "picked": "section1=timer section2=none(duplicate timer) section3=none(duplicate timer) section4=none section5=none section6=none",
+   "raw": "s1=timer@0.77 s2=timer@0.67 s3=timer@0.50 s4=timer@0.46 s5=none@0.41 s6=timer@0.43 +itinerary@0.09 +progress_line@0.08 +checklist@0.13 layout=none@0.27"
+  },
+  {
+   "id": "ts-01-descriptive",
+   "intentId": "ts-01",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Let me set focus minutes, break minutes, and rounds. Run alternating countdowns while the app stays open, allow pausing, and omit a break after the last round.",
+   "expect": {
+    "roles": [
+     "source:duration",
+     "algorithm:interval-sequence",
+     "reader:progress"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "timer"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 480,
+   "picked": "section1=timer section2=none(duplicate timer) section3=none(duplicate timer) section4=none section5=none(duplicate timer) section6=none logic=needs_search_or_form=0.72",
+   "raw": "s1=timer@0.69 s2=timer@0.79 s3=timer@0.70 s4=timer@0.49 s5=timer@0.50 s6=none@0.45 layout=none@0.39"
+  },
+  {
+   "id": "ts-01-computation",
+   "intentId": "ts-01",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "Run three 25-minute focus periods with five-minute breaks only between them. Show 85 minutes total and advance through each countdown, with pause and resume.",
+   "expect": {
+    "roles": [
+     "source:duration",
+     "algorithm:interval-sequence",
+     "reader:progress"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "timer"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 479,
+   "picked": "section1=timer section2=none section3=none section4=none section5=none section6=none",
+   "raw": "s1=timer@0.82 s2=timer@0.43 s3=timer@0.43 s4=none@0.53 s5=none@0.59 s6=none@0.56 +itinerary@0.12 +progress_line@0.10 +checklist@0.08 layout=itinerary_day@0.42"
+  },
+  {
+   "id": "ts-02-terse",
+   "intentId": "ts-02",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Count the days until a date I'm looking forward to.",
+   "expect": {
+    "roles": [
+     "source:dated-event",
+     "algorithm:time-arithmetic",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "timer"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 501,
+   "picked": "section1=timer section2=none(duplicate timer) section3=none section4=none section5=none section6=none needs_real_data=0.72 logic=needs_logic=0.97",
+   "raw": "s1=timer@0.53 s2=timer@0.54 s3=timer@0.46 s4=none@0.54 s5=none@0.51 s6=none@0.60 +master_list@0.08 +detail_view@0.07 layout=none@0.62"
+  },
+  {
+   "id": "ts-02-descriptive",
+   "intentId": "ts-02",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Enter an event name and date. Show whole calendar days from today until it, display today on the date itself, and say days ago afterward.",
+   "expect": {
+    "roles": [
+     "source:dated-event",
+     "algorithm:time-arithmetic",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "calendar_event",
+    "timeline"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 459,
+   "picked": "section1=calendar_event section2=timeline section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.85,needs_logic=0.94",
+   "raw": "s1=calendar_event@0.60 s2=timeline@0.67 s3=timeline@0.46 s4=key_facts@0.33 s5=key_facts@0.35 s6=key_facts@0.32 +filter_box@0.07 +master_list@0.08 +checklist@0.13 layout=stack@0.30"
+  },
+  {
+   "id": "ts-02-computation",
+   "intentId": "ts-02",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "If today is April 10 and my event is April 15, show five days to go. On April 16, show one day ago.",
+   "expect": {
+    "roles": [
+     "source:dated-event",
+     "algorithm:time-arithmetic",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 1228,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=timer@0.44 s2=none@0.40 s3=none@0.56 s4=none@0.66 s5=none@0.70 s6=none@0.73 layout=none@0.70"
+  },
+  {
+   "id": "ts-03-terse",
+   "intentId": "ts-03",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Help me make sense of my day.",
+   "expect": {
+    "roles": [
+     "source:schedule",
+     "reader:ordered-list",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "timeline"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 491,
+   "picked": "section1=timeline section2=none section3=none section4=none section5=none section6=none",
+   "raw": "s1=timeline@0.55 s2=timeline@0.46 s3=none@0.47 s4=none@0.62 s5=none@0.60 s6=none@0.62 +filter_box@0.07 +master_list@0.10 +detail_view@0.06 +record_log@0.11 +itinerary@0.15 +list_summary@0.06 +checklist@0.13 layout=none@0.65"
+  },
+  {
+   "id": "ts-03-descriptive",
+   "intentId": "ts-03",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Give me a simple place to enter today's appointments and their times. Put them in time order and show how many I've planned, without connecting my calendar.",
+   "expect": {
+    "roles": [
+     "source:schedule",
+     "reader:ordered-list",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "timeline"
+   ],
+   "layout": null,
+   "outcome": "complete",
+   "ms": 511,
+   "picked": "section1=none section2=timeline section3=none(duplicate timeline) section4=none section5=none section6=none logic=needs_search_or_form=0.92,needs_logic=0.88",
+   "raw": "s1=timeline@0.37 s2=timeline@0.77 s3=timeline@0.53 s4=none@0.28 s5=none@0.38 s6=none@0.47 +filter_box@0.06 +master_list@0.22 +detail_view@0.10 +number_strip@0.42 +itinerary@0.09 +progress_line@0.07 +list_summary@0.16 +checklist@0.18 layout=itinerary_day@0.29"
+  },
+  {
+   "id": "ts-03-computation",
+   "intentId": "ts-03",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "I enter appointments at 14:00, 09:00, and 11:30. Show them as 09:00, 11:30, 14:00 and report three appointments in my day plan.",
+   "expect": {
+    "roles": [
+     "source:schedule",
+     "reader:ordered-list",
+     "reader:summary"
+    ],
+    "outcome": "template"
+   },
+   "blocks": [
+    "timeline"
+   ],
+   "layout": "itinerary_day",
+   "outcome": "complete",
+   "ms": 1430,
+   "picked": "section1=timeline section2=none(duplicate timeline) section3=none(duplicate timeline) section4=none section5=none section6=none(duplicate timeline) layout=itinerary_day +itinerary logic=needs_search_or_form=0.81",
+   "raw": "s1=timeline@0.76 s2=timeline@0.72 s3=timeline@0.52 s4=timeline@0.42 s5=timeline@0.45 s6=timeline@0.52 +master_list@0.26 +detail_view@0.06 +number_strip@0.11 +itinerary@0.26 +checklist@0.19 layout=itinerary_day@0.96"
+  },
+  {
+   "id": "ts-04-terse",
+   "intentId": "ts-04",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "terse",
+   "negative": false,
+   "prompt": "Calculate paid hours and earnings for shifts crossing midnight.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:time-arithmetic",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": null,
+   "outcome": "scratch",
+   "ms": 799,
+   "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+   "raw": "s1=log_entries@0.22 s2=number_strip@0.29 s3=number_strip@0.36 s4=number_strip@0.31 s5=none@0.35 s6=none@0.36 +master_list@0.06 +detail_view@0.06 +number_strip@0.19 +breakdown_table@0.11 +checklist@0.06 layout=log_report@0.57"
+  },
+  {
+   "id": "ts-04-descriptive",
+   "intentId": "ts-04",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "descriptive",
+   "negative": false,
+   "prompt": "Enter each shift's start and end date and time, unpaid break minutes, and hourly rate. Show paid hours and earnings, including overnight shifts, without tax calculations.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:time-arithmetic",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [],
+   "layout": "log_report",
+   "outcome": "scratch",
+   "ms": 489,
+   "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+   "raw": "s1=log_entries@0.32 s2=number_strip@0.22 s3=number_strip@0.35 s4=number_strip@0.36 s5=number_strip@0.39 s6=number_strip@0.40 +master_list@0.08 +detail_view@0.08 +number_strip@0.24 +breakdown_table@0.12 +checklist@0.07 layout=log_report@0.88"
+  },
+  {
+   "id": "ts-04-computation",
+   "intentId": "ts-04",
+   "domain": "time/scheduling",
+   "split": "dev",
+   "phrasing": "computation",
+   "negative": false,
+   "prompt": "A shift runs 22:00 to 06:00 the next day, with a 30-minute unpaid break at $16/hour. Show 7.5 paid hours and $120 earnings.",
+   "expect": {
+    "roles": [
+     "source:records",
+     "algorithm:time-arithmetic",
+     "algorithm:formula",
+     "reader:summary"
+    ],
+    "outcome": "complete"
+   },
+   "blocks": [
+    "key_facts"
+   ],
+   "layout": null,
+   "outcome": "template",
+   "ms": 659,
+   "picked": "section1=none section2=key_facts section3=none section4=none section5=none section6=none",
+   "raw": "s1=key_facts@0.49 s2=key_facts@0.51 s3=key_facts@0.48 s4=key_facts@0.41 s5=none@0.38 s6=none@0.40 +number_strip@0.08 layout=stack@0.36"
+  }
+ ]
+}
