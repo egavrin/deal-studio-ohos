@@ -566,7 +566,14 @@ struct GeneratePage {
     let run = this.runId
     let build: TemplateBuild = await buildFromTemplates(userPrompt, this.mode,
       (s: string): void => { if (run === this.runId) { this.status = s } },
-      (): boolean => run !== this.runId || this.cancelRequested)
+      (): boolean => run !== this.runId || this.cancelRequested,
+      (preview: TemplateBuild): void => {
+        // The default-text screen while the fill runs; a Stop leaves it as the result.
+        if (run !== this.runId || this.cancelRequested) { return }
+        this.templateKinds = preview.kinds
+        this.showTemplate(preview)
+        this.generating = true
+      })
     if (run !== this.runId) { return }
     this.fastJevMs = build.jevMs
     this.fastPathRan = true
@@ -588,6 +595,10 @@ struct GeneratePage {
       this.startAttemptOne(userPrompt, 'Completing template')
       return
     }
+    this.showTemplate(build)
+  }
+
+  private showTemplate(build: TemplateBuild): void {
     this.generatedSource = build.source
     this.compiledVbc2 = build.vbc2
     this.compiledSource = build.source

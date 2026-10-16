@@ -804,7 +804,12 @@ struct ChatPage {
   private async tryTemplateSelectForChat(msg: ChatMessage, context: WidgetBuildContext): Promise<string> {
     let prompt = context.brief.length > 0 ? context.brief : context.currentRequest
     let build: TemplateBuild = await buildFromTemplates(prompt, 'deepseek', (s: string): void => { this.status = s },
-      (): boolean => false)
+      (): boolean => false, (preview: TemplateBuild): void => {
+        // The streaming-preview slot: the default-text screen shows while the fill runs.
+        if (msg.appState !== APP_BUILDING) { return }
+        msg.previewVbc2 = preview.vbc2
+        msg.buildStatus = preview.status
+      })
     if (build.action === BUILD_SCRATCH || build.action === BUILD_CANCELLED) {
       msg.templatePick = build.note + ' (generated normally)'
       return 'none'
@@ -824,6 +829,9 @@ struct ChatPage {
     msg.originalRequest = context.originalRequest
     msg.parentMessageId = context.parentMessageId
     msg.appState = APP_READY
+    // After appState: the renderer has already been handed the finished program.
+    msg.previewVbc2 = ''
+    msg.buildStatus = ''
     msg.attempts = []
     this.status = build.status
     return 'done'

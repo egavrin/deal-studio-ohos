@@ -15,6 +15,11 @@
  *   cancelled  the caller asked to stop while this ran.
  *
  * Never throws: every failure ends as `scratch` with the reason in `note`.
+ *
+ * Render first, fill after: when the result will be `template`, `onPreview` gets the same screen with the
+ * blocks' default text as soon as Jev answers, before the search and the content fill. The final answer
+ * then replaces it. When the filled program fails to compile or run, the default-text program is the
+ * result instead of `scratch`.
  */
 
 import { settings } from './SettingsStore'
@@ -63,6 +68,64 @@ function mergeHoleValues(values: Map<string, string>[], extra: Map<string, strin
   return out
 }
 
+/**
+ * Composes, compiles and smoke-runs into `build` (source, vbc2, composition). `baseValues` are stored
+ * in the record and `holeBodies` beside them; `instanceValues` are what is composed. Answers '' or
+ * the reason it failed.
+ */
+function composeInto(build: TemplateBuild, prompt: string, globalValues: Map<string, string>,
+    instanceValues: Map<string, string>[], baseValues: Map<string, string>[], holeBodies: Map<string, string>): string {
+  let source = composeProgram(build.kinds, globalValues, instanceValues)
+  let vbc2 = ''
+  try {
+    vbc2 = compileVeraSource(source).vbc2
+  } catch (_e) {
+    return 'failed to compile'
+  }
+  let smoke: SmokeResult = smokeRun(vbc2)
+  if (!smoke.ok) { return 'did not run (' + smoke.error + ')' }
+  build.source = source
+  build.vbc2 = vbc2
+  let record = new Composition()
+  record.layout = build.layout
+  record.prompt = prompt
+  globalValues.forEach((v: string, k: string) => { record.globals.set(k, v) })
+  let bodiesBySlot = holeBodiesBySlot(build.kinds, holeBodies)
+  for (let i = 0; i < build.kinds.length; i++) { record.blocks.push(new Block(build.kinds[i], baseValues[i], bodiesBySlot[i])) }
+  build.composition = compositionToJson(record)
+  return ''
+}
+
+/** Jev's values with every content field, list and hole at its default: the screen before the fill answers. */
+async function defaultTextBuild(prompt: string, outcome: SectionPickOutcome, sections: SectionPick[],
+    build: TemplateBuild): Promise<TemplateBuild | null> {
+  let preview = new TemplateBuild()
+  preview.action = BUILD_TEMPLATE
+  preview.kinds = build.kinds
+  preview.layout = build.layout
+  preview.jevMs = build.jevMs
+  // 'server' mode makes no call: it answers every field's fallback and the lists' fallback rows.
+  let defaults = await fillSectionsContent(build.kinds, prompt, 'server')
+  let globalValues: Map<string, string> = new Map<string, string>()
+  outcome.globalValues.forEach((v: string, k: string) => { globalValues.set(k, v) })
+  defaults.globalValues.forEach((v: string, k: string) => { globalValues.set(k, v) })
+  let values = mergeHoleValues(sections.map((p: SectionPick): Map<string, string> => p.slotValues), defaults.instanceValues)
+  let error = composeInto(preview, prompt, globalValues, values, values, new Map<string, string>())
+  if (error.length > 0) { return null }
+  preview.note = outcome.note + ' content=pending'
+  preview.status = 'Composed ' + build.kinds.join('+') + ', filling in the text...'
+  return preview
+}
+
+/** The screen already shown stays the result, with the timings of the run that failed after it. */
+function keepPreview(build: TemplateBuild, preview: TemplateBuild, reason: string): TemplateBuild {
+  preview.searchMs = build.searchMs
+  preview.contentMs = build.contentMs
+  preview.note = preview.note.replace(' content=pending', '') + ' ' + reason + '; kept the default text'
+  preview.status = 'Composed ' + preview.kinds.join('+') + ' with its default text'
+  return preview
+}
+
 function scratch(note: string, status: string, build: TemplateBuild): TemplateBuild {
   build.action = BUILD_SCRATCH
   build.note = note
@@ -76,8 +139,9 @@ function scratch(note: string, status: string, build: TemplateBuild): TemplateBu
  * real data goes to scratch there.
  */
 export async function buildFromTemplates(prompt: string, mode: string, onStatus: (status: string) => void,
-    isCancelled: () => boolean): Promise<TemplateBuild> {
+    isCancelled: () => boolean, onPreview?: (preview: TemplateBuild) => void): Promise<TemplateBuild> {
   let build = new TemplateBuild()
+  let preview: TemplateBuild | null = null
   try {
     onStatus('Checking for a canned template...')
     let jevStart = Date.now()
@@ -103,6 +167,13 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     let canGround = needsGrounding && mode !== 'server' && settings.hasExaKey()
     if (needsGrounding && !canGround) {
       return scratch(outcome.note + ' (needs real data, no search available; generating normally)', '', build)
+    }
+    // Only a screen that will be the result is shown early: a `complete` base is handed to the model next.
+    let willBeTemplate = !outcome.needsLogic && !sections.every((p: SectionPick): boolean => p.kind === 'actions')
+    if (onPreview !== undefined && willBeTemplate) {
+      preview = await defaultTextBuild(prompt, outcome, sections, build)
+      if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+      if (preview !== null) { onPreview(preview) }
     }
     let searchText = ''
     if (needsGrounding) {
@@ -156,28 +227,12 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
         note = note + ' holes=default(' + mode + ')'
       }
     }
-    let source = composeProgram(build.kinds, globalValues, instanceValues)
-    let vbc2 = ''
-    try {
-      vbc2 = compileVeraSource(source).vbc2
-    } catch (_e) {
-      return scratch('composed ' + shown + ' but it failed to compile; generated normally',
-        'Template pick failed to compile, generating normally...', build)
+    let error = composeInto(build, prompt, globalValues, instanceValues, baseValues, holeBodies)
+    if (error.length > 0) {
+      if (preview !== null) { return keepPreview(build, preview, 'the filled screen ' + error) }
+      return scratch('composed ' + shown + ' but it ' + error + '; generated normally',
+        'Template pick ' + error.replace(/ \(.*$/, '') + ', generating normally...', build)
     }
-    let smoke: SmokeResult = smokeRun(vbc2)
-    if (!smoke.ok) {
-      return scratch('composed ' + shown + ' but it did not run (' + smoke.error + '); generated normally',
-        'Template pick did not run, generating normally...', build)
-    }
-    build.source = source
-    build.vbc2 = vbc2
-    let record = new Composition()
-    record.layout = build.layout
-    record.prompt = prompt
-    globalValues.forEach((v: string, k: string) => { record.globals.set(k, v) })
-    let bodiesBySlot = holeBodiesBySlot(build.kinds, holeBodies)
-    for (let i = 0; i < build.kinds.length; i++) { record.blocks.push(new Block(build.kinds[i], baseValues[i], bodiesBySlot[i])) }
-    build.composition = compositionToJson(record)
 
     if (outcome.needsLogic) {
       build.action = BUILD_COMPLETE
@@ -198,6 +253,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     build.status = 'Composed ' + shown + ': ' + note.replace(' content:', ' | content:')
     return build
   } catch (e) {
+    if (preview !== null) { return keepPreview(build, preview, 'template path failed (' + (e as Error).message + ')') }
     return scratch('template path failed (' + (e as Error).message + '); generated normally', '', build)
   }
 }
