@@ -3,7 +3,9 @@
 'use strict'
 const assert = require('node:assert/strict')
 const {loadVera} = require('./source-loader')
-const {readSectionPick} = loadVera('VeraSectionCompose')
+const {readSectionPick, buildSectionRequest} = loadVera('VeraSectionCompose')
+const {layoutKinds} = loadVera('VeraLayouts')
+const {fragments} = loadVera('VeraTemplates')
 const {readVerifyAnswer, buildVerifyUser} = loadVera('VeraPickVerify')
 
 function body(sections, vetoes = {}, extra = {}) {
@@ -52,4 +54,28 @@ assert.equal(readVerifyAnswer('{"confirm": [], "missing": ' + JSON.stringify('x'
 // the question names the request and each candidate's criteria text
 const user = buildVerifyUser('List for 10 people for birthday cake', ['checklist', 'nonsense'])
 assert.match(user, /^Request: List for 10 people for birthday cake/); assert.match(user, /- checklist: /); assert.doesNotMatch(user, /nonsense/)
+
+// the yes/no "does the request ask for this block" rescue: nothing cleared a section bar, one block clears its own question
+const yes = p => ({noul: p})
+let r = readSectionPick(body([['checklist', 0.30]], {}, {'include.checklist': yes(0.6)}))
+assert.deepEqual(kinds(r), ['checklist']); assert.match(r.note, /section1=checklist\(wanted 0\.60\)/); assert.deepEqual(r.weakKinds, [])
+r = readSectionPick(body([['none', 0.5]], {}, {'want.timer': yes(0.7)}))
+assert.deepEqual(kinds(r), ['timer'], 'a kind outside every layout is asked as want.*')
+r = readSectionPick(body([['none', 0.5]], {}, {'include.checklist': yes(0.55), 'want.timer': yes(0.7), 'include.record_log': yes(0.6)}))
+assert.deepEqual(kinds(r), ['timer'], 'the likeliest block wins')
+assert.equal(readSectionPick(body([['none', 0.5]], {}, {'include.checklist': yes(0.45)})).sections, null, 'below the bar')
+assert.equal(readSectionPick(body([['none', 0.5]], {}, {'include.number_strip': yes(0.95), 'include.progress_line': yes(0.9)})).sections, null, 'a reader does not stand alone')
+r = readSectionPick(body([['timeline', 0.8]], {}, {'include.checklist': yes(0.9)}))
+assert.deepEqual(kinds(r), ['timeline'], 'a section pick is left alone')
+r = readSectionPick(body([['none', 0.5]], {needs_logic: 0.9}, {'include.checklist': yes(0.6)}))
+assert.deepEqual(kinds(r), ['checklist']); assert.equal(r.needsLogic, true, 'soft veto: composed, then finished by the model')
+r = readSectionPick(body([['none', 0.5]], {needs_integration: 0.95}, {'include.checklist': yes(0.6)}))
+assert.equal(r.sections, null, 'a hard veto still rejects a rescued block'); assert.match(r.note, /vetoed needs_integration/)
+// the request: every kind is asked once, as include.* for layout kinds and want.* for the others
+const asked = Object.keys(JSON.parse(buildSectionRequest('x')).questions)
+const inLayout = layoutKinds()
+for (const spec of fragments()) {
+  assert.equal(asked.includes('include.' + spec.kind), inLayout.includes(spec.kind), spec.kind + ' include')
+  assert.equal(asked.includes('want.' + spec.kind), !inLayout.includes(spec.kind), spec.kind + ' want')
+}
 console.log('verify-check ok')

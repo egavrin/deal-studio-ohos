@@ -49,6 +49,13 @@ const SECTION_COUNT: number = 6
 const SECTION_PICK_ABOVE: number = 0.5
 /** A section answer below SECTION_PICK_ABOVE but at or above this is a weak candidate: reported, and may be confirmed by VeraPickVerify.ets. */
 const WEAK_FROM: number = 0.25
+/**
+ * When no section cleared its bar, the one block (that can stand alone) whose own yes/no question "does the request ask for this
+ * part" is answered above this is built. Each kind has such a question, independent of the others: a 26-way section choice
+ * splits its probability between the kinds, so an obvious plain list scored 0.3 as a section pick and 0.5 to 0.6 as a yes/no.
+ * Provisional: calibrated on one prompt so far (see eval/results/2026-10-19-*want*).
+ */
+const WANT_ABOVE: number = 0.5
 /** Per-slot cosmetic bar, same role as VeraTemplateSelect.ets's SLOT_PICK_ABOVE. */
 const SLOT_PICK_ABOVE: number = 0.25
 /**
@@ -234,6 +241,16 @@ export function buildSectionRequest(prompt: string): string {
     questions['include.' + kind] = includeQuestion
   }
 
+  let asked: string[] = layoutKinds()
+  for (let spec of specs) {
+    if (asked.indexOf(spec.kind) >= 0) { continue }
+    let wantQuestion: Record<string, Object> = {}
+    wantQuestion['type'] = 'noul'
+    wantQuestion['instructions'] = 'Does the request ask for this part of the screen: ' + spec.criteria + '?'
+    wantQuestion['criteria'] = criteriaRecord(includeCriteria)
+    questions['want.' + spec.kind] = wantQuestion
+  }
+
   let layoutCriteria: Record<string, Object> = {}
   for (let layout of layouts()) { layoutCriteria[layout.id] = layout.criteria }
   layoutCriteria[LAYOUT_NONE] = 'no particular arrangement'
@@ -302,6 +319,18 @@ function readNoulProbability(answers: Record<string, Object>, key: string): numb
   let value = (raw as Record<string, Object>)['noul']
   if (value === null || value === undefined || typeof value !== 'number') { return 0 }
   return value as number
+}
+
+/** The yes/no answer to "does the request ask for this block": the include question for a layout kind, else the want question. */
+function wantProbability(answers: Record<string, Object>, kind: string): number {
+  let include = readNoulProbability(answers, 'include.' + kind)
+  return include > 0 ? include : readNoulProbability(answers, 'want.' + kind)
+}
+
+/** A block that makes sense on its own: it takes no value from another block. */
+function standsAlone(spec: FragmentSpec): boolean {
+  for (let port of spec.ports) { if (port.dir === 'reads') { return false } }
+  return true
 }
 
 function readNoulValue(answers: Record<string, Object>, key: string, above: number): boolean {
@@ -454,6 +483,25 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
     picks.push(new SectionPick(kind, slotValues))
     if (coverNote.length > 0) { weakPicks.push(picks[picks.length - 1]); weakNoteAt.push(notes.length) }
     notes.push('section' + i.toString() + '=' + kind + coverNote)
+  }
+
+  let anyPicked = false
+  for (let pick of picks) { if (pick.kind !== 'none') { anyPicked = true } }
+  if (!anyPicked) {
+    let bestKind = ''
+    let best = WANT_ABOVE
+    for (let spec of specs) {
+      if (!standsAlone(spec)) { continue }
+      let p = wantProbability(answers, spec.kind)
+      if (p > best) { best = p; bestKind = spec.kind }
+    }
+    let wanted = findFragment(specs, bestKind)
+    if (wanted !== null) {
+      let wantedValues: Map<string, string> = new Map<string, string>()
+      for (let slot of wanted.slots) { wantedValues.set(slot.token, readSlotValue(answers, 1, wanted.kind, slot)) }
+      picks[0] = new SectionPick(wanted.kind, wantedValues)
+      notes[0] = 'section1=' + wanted.kind + '(wanted ' + best.toFixed(2) + ')'
+    }
   }
 
   let layoutIds: string[] = [LAYOUT_NONE]
@@ -792,6 +840,12 @@ function rawAnswers(body: string): string {
       let inc = answers['include.' + kind] as Record<string, Object>
       if (inc !== undefined && inc !== null && typeof inc['noul'] === 'number' && (inc['noul'] as number) > 0.05) {
         parts.push('+' + kind + '@' + (inc['noul'] as number).toFixed(2))
+      }
+    }
+    for (let spec of fragments()) {
+      let want = answers['want.' + spec.kind] as Record<string, Object>
+      if (want !== undefined && want !== null && typeof want['noul'] === 'number' && (want['noul'] as number) > 0.05) {
+        parts.push('?' + spec.kind + '@' + (want['noul'] as number).toFixed(2))
       }
     }
     let layout = answers['__LAYOUT__'] as Record<string, Object>
