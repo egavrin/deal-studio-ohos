@@ -26,7 +26,7 @@ import { fillSectionsContent } from './VeraTemplateContent'
 import { compileVeraSource } from './VeraCompiler'
 import { smokeRun, SmokeResult } from './VeraSmokeRun'
 import { webSearch } from './VeraWebSearch'
-import { deepseek } from './DeepSeekEngine'
+import { deepseek, discoveryToolResult } from './DeepSeekEngine'
 import { holesOf, holeValues, holeBodiesBySlot, fillHoles, HoleFill, HoleInstance } from './VeraHoles'
 import { Composition, Block, compositionToJson } from './VeraComposition'
 import { fillIntentRows, IntentRowsFill } from './VeraIntentPanel'
@@ -189,13 +189,23 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     // against the compiler. Defaults apply when the model cannot or the mode has no model to ask.
     let baseValues = instanceValues
     let holeBodies: Map<string, string> = new Map<string, string>()
-    if (holesOf(build.kinds).some((h: HoleInstance): boolean => h.spec.byModel)) {
+    if (holesOf(build.kinds, instanceValues).some((h: HoleInstance): boolean => h.spec.byModel)) {
       if (mode === 'deepseek') {
         onStatus('Writing the details...')
         let kinds = build.kinds
+        // A hole that may call the phone is shown the SDK functions found for the request, the same lookup the model's own
+        // find_sdk_function tool makes, so it copies a real target instead of guessing one.
+        let sdkContext = ''
+        for (let hole of holesOf(kinds, instanceValues)) {
+          if (hole.spec.usesSdk) {
+            sdkContext = (await discoveryToolResult('find_sdk_function', prompt.substring(0, 300), 0)).substring(0, 2500)
+            break
+          }
+        }
         let fill: HoleFill = await fillHoles(prompt, kinds,
           (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 500, 'Function bodies for the blocks'),
-          (bodies: Map<string, string>): string => composeProgram(kinds, globalValues, mergeHoleValues(instanceValues, holeValues(kinds, bodies))))
+          (bodies: Map<string, string>): string => composeProgram(kinds, globalValues, mergeHoleValues(instanceValues, holeValues(kinds, bodies))),
+          instanceValues, sdkContext)
         if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
         holeBodies = fill.bodies
         build.route.holes = fill.bodies.size > 0

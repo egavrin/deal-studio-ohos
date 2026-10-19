@@ -378,7 +378,7 @@ export class ListFieldSpec {
   numericColumns: number[]
   /**
    * Per column, a value check applied before splicing: '' none, 'lat' and 'lon' (a decimal within the range of a
-   * latitude / longitude, else the cell becomes empty), 'minutes' (a whole number 5 to 600, else 60).
+   * latitude / longitude, else the cell becomes empty), 'minutes' (a whole number 5 to 600, else 60), 'seconds' (a whole number 5 to 86400, else 60).
    */
   columnChecks: string[]
   constructor(token: string, key: string, hint: string, columnHints: string[], columnMax: number[], rowTemplate: string,
@@ -421,8 +421,12 @@ export class HoleSpec {
   when: string
   /** false for a hole the host fills from data it checked (the intent panel's rows): the model is never asked for it. */
   byModel: boolean
+  /** True when the body may call the phone through sdk.call: the model is then shown the SDK functions found for the request. */
+  usesSdk: boolean
+  /** A slot token of this fragment that must have come out 'true' for the model to be asked ('' asks whatever the slots say). */
+  slot: string
   constructor(key: string, token: string, signature: string, purpose: string, defaultBody: string, when: string = '',
-      byModel: boolean = true) {
+      byModel: boolean = true, usesSdk: boolean = false, slot: string = '') {
     this.key = key
     this.token = token
     this.signature = signature
@@ -430,6 +434,8 @@ export class HoleSpec {
     this.defaultBody = defaultBody
     this.when = when
     this.byModel = byModel
+    this.usesSdk = usesSdk
+    this.slot = slot
   }
 }
 
@@ -671,46 +677,128 @@ function resetIDX(state: AppState, ignored: number): AppState {
 }
 
 /**
- * No device capability at all -- ui.Ticker/onTick is a pure in-app clock (VeraPreview.ets drives
- * it with a real setInterval), the same safety class as checklist/metrics. Target duration is a
- * fixed 25 minutes rather than a content-filled or slot-chosen value, kept deliberately simple for
- * this first version (see the plan's non-goals).
+ * A countdown. ui.Ticker/onTick is a pure in-app clock (VeraPreview.ets drives it with a real setInterval). The duration is one
+ * fixed time or a short list of named presets (soft / medium / hard, tea strengths, work and rest); with several presets a chooser
+ * appears and picking one resets the clock. When the countdown reaches zero the `whenFinished` hole runs once: the default does
+ * nothing, and when the request asks for the phone to do something then (vibrate, notify, make a sound) the model writes the
+ * body, which may call a phone function through sdk.call. The SDK functions it may use are the ones found for the request, and
+ * the compiler rejects a target that does not exist. Answers follow docs/intent-call-contract.md: only "declined..." and
+ * "error..." are failures.
  */
 function timerFragment(): FragmentSpec {
   return new FragmentSpec(
     'timer',
-    'A countdown or stopwatch that ticks by itself, with a start/pause toggle and a reset',
-    '',
-    [new StateFieldSpec('elapsedMsIDX', 'number'), new StateFieldSpec('runningIDX', 'boolean')],
-    '',
-    `elapsedMsIDX: 0, runningIDX: true`,
-    `function onTickIDX(state: AppState, elapsedMs: number): AppState {
-  return {elapsedMsIDX: state.elapsedMsIDX + elapsedMs, runningIDX: state.runningIDX__PASSTHROUGH__};
+    'A countdown or stopwatch that ticks by itself, with a start/pause toggle and a reset; the duration is one fixed time or a short list of named presets, and the phone can vibrate or notify when it ends',
+    `@jsonable
+class TimerPreset {
+  name: string;
+  seconds: number;
+}`,
+    [new StateFieldSpec('presetsIDX', 'TimerPreset[]'), new StateFieldSpec('pickIDX', 'number'),
+     new StateFieldSpec('elapsedMsIDX', 'number'), new StateFieldSpec('runningIDX', 'boolean'), new StateFieldSpec('timerNoteIDX', 'string')],
+    `  let presetsIDX: TimerPreset[] = [__PRESETS_IDX__];`,
+    `presetsIDX: presetsIDX, pickIDX: 0, elapsedMsIDX: 0, runningIDX: false, timerNoteIDX: ""`,
+    `function rebuildTimerIDX(state: AppState, pick: number, elapsedMs: number, running: boolean, note: string): AppState {
+  return {presetsIDX: state.presetsIDX, pickIDX: pick, elapsedMsIDX: elapsedMs, runningIDX: running, timerNoteIDX: note__PASSTHROUGH__};
+}
+
+function limitMsIDX(state: AppState): number {
+  let at: number = state.pickIDX;
+  if (at < 0 || at >= state.presetsIDX.length()) { at = 0; }
+  return state.presetsIDX[at].seconds * 1000;
+}
+
+function whenFinishedIDX(pick: number): number {
+__HOLE_WHENFINISHED_IDX__
+}
+
+function onTickIDX(state: AppState, elapsedMs: number): AppState {
+  if (!state.runningIDX) { return state; }
+  let limit: number = limitMsIDX(state);
+  let next: number = state.elapsedMsIDX + elapsedMs;
+  if (next >= limit) {
+    let ignored: number = whenFinishedIDX(state.pickIDX);
+    return rebuildTimerIDX(state, state.pickIDX, limit, false, state.timerNoteIDX);
+  }
+  return rebuildTimerIDX(state, state.pickIDX, next, true, state.timerNoteIDX);
 }
 
 function toggleRunningIDX(state: AppState, value: boolean): AppState {
-  return {elapsedMsIDX: state.elapsedMsIDX, runningIDX: value__PASSTHROUGH__};
+  if (value && state.elapsedMsIDX >= limitMsIDX(state)) { return rebuildTimerIDX(state, state.pickIDX, 0, true, ""); }
+  return rebuildTimerIDX(state, state.pickIDX, state.elapsedMsIDX, value, state.timerNoteIDX);
 }
 
 function resetTimerIDX(state: AppState, ignored: number): AppState {
-  return {elapsedMsIDX: 0, runningIDX: state.runningIDX__PASSTHROUGH__};
+  return rebuildTimerIDX(state, state.pickIDX, 0, false, "");
+}
+
+function choosePresetIDX(state: AppState, index: number): AppState {
+  return rebuildTimerIDX(state, index, 0, false, "");
+}
+
+function onFinishedAnswerIDX(state: AppState, value: string): AppState {
+  let note: string = "";
+  if (strings.startsWith(value, "declined") || strings.startsWith(value, "error")) { note = value; }
+  return rebuildTimerIDX(state, state.pickIDX, state.elapsedMsIDX, state.runningIDX, note);
 }`,
     `{
-    let remainingMs: number = 1500000 - state.elapsedMsIDX;
-    if (remainingMs < 0) { remainingMs = 0; }
-    let remainingSec: number = remainingMs / 1000;
-    sections.push(ui.Section("content", "", "", [
-      ui.Ticker("default", "timerIDX", 1000, state.runningIDX, "onTickIDX"),
-      ui.NumberText("display", remainingSec, "", "s left", 1),
-      ui.Toggle("default", "__TIMER_LABEL_IDX__", state.runningIDX, "toggleRunningIDX"),
-      ui.ActionBar("spread", [
-        ui.Button("secondary", "Reset", "resetTimerIDX", 0, true)
-      ])
+    let limitSec: number = limitMsIDX(state) / 1000;
+    let elapsedSec: number = state.elapsedMsIDX / 1000;
+    let remainingSec: number = limitSec - elapsedSec;
+    if (remainingSec < 0) { remainingSec = 0; }
+    let presetNames: string[] = [];
+    for (let p: TimerPreset of state.presetsIDX) { presetNames.push(p.name); }
+    let chosen: string = "";
+    if (state.pickIDX >= 0 && state.pickIDX < presetNames.length()) { chosen = presetNames[state.pickIDX]; }
+    let clock: ui.View[] = [];
+    clock.push(ui.Ticker("default", "timerIDX", 1000, state.runningIDX, "onTickIDX"));
+    clock.push(ui.NumberText("display", remainingSec, "", "s left", 1));
+    clock.push(ui.Progress("accent", chosen, elapsedSec, limitSec));
+    clock.push(ui.When(remainingSec <= 0, ui.InsetBanner("success", "Time is up", "The countdown has finished.", "", "", "check")));
+    sections.push(ui.Section("content", "", "", clock));
+    let controls: ui.View[] = [];
+    if (presetNames.length() > 1) {
+      controls.push(ui.Select("default", "__PRESET_LABEL_IDX__", presetNames, state.pickIDX, "choosePresetIDX"));
+    }
+    controls.push(ui.Toggle("default", "__TIMER_LABEL_IDX__", state.runningIDX, "toggleRunningIDX"));
+    controls.push(ui.ActionBar("spread", [
+      ui.Button("secondary", "Reset", "resetTimerIDX", 0, true)
+    ]));
+    sections.push(ui.Section("content", "", "", controls));
+    sections.push(ui.Section("supporting", "", "", [
+      ui.When(state.timerNoteIDX !== "", ui.InsetBanner("danger", "The phone said no", state.timerNoteIDX, "", "", "info"))
     ]));
   }`,
+    [new SlotSpec('__FINISH_ACTION_IDX__', ['false', 'true'], 'noul',
+      'Does the request ask for the phone to do something when the countdown ends, such as vibrate, play a sound or show a notification?',
+      timerFinishCriteria(), 0.6)],
+    [
+      new ContentFieldSpec('__TIMER_LABEL_IDX__', 'timer_label', 'Running', 'Label of the start/pause switch (1-3 words, such as Running or Start the timer)', 24),
+      new ContentFieldSpec('__PRESET_LABEL_IDX__', 'preset_label', 'Preset', 'Label of the choice of preset (1-3 words, e.g. Doneness)', 20)
+    ],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"'],
+    [new ListFieldSpec('__PRESETS_IDX__', 'presets',
+      'The durations to choose from (1 to 6): a short name and its length in seconds. One row when the request names one duration or none (use 1500 seconds then).',
+      ['name of the preset (1-3 words)', 'length in seconds, a whole number'], [20, 6],
+      '{name: "{0}", seconds: {1}}', ',\n    ', 1, 6,
+      [['Timer', '1500']], [1], ['', 'seconds'])],
     [],
-    [new ContentFieldSpec('__TIMER_LABEL_IDX__', 'timer_label', 'Running', 'Short label for what is being timed (1-3 words)', 24)]
+    [new HoleSpec('whenFinished', '__HOLE_WHENFINISHED_IDX__',
+      'whenFinished(pick: number): number',
+      'Runs once when the countdown reaches zero; pick is the index of the chosen preset (0 for the first). Do what the request asks to happen ' +
+      'at that moment by calling the phone: sdk.call("<target>", ["<name>", "<value>", ...], "onFinishedAnswerIDX"), where <target> is one of the ' +
+      'SDK functions listed below and the parameter names and values come from its description. Then return 0. Do nothing else.',
+      '  return 0;', '', true, true, '__FINISH_ACTION_IDX__')],
+    [],
+    ['needs_integration=__FINISH_ACTION_IDX__']
   )
+}
+
+function timerFinishCriteria(): Map<string, string> {
+  let m: Map<string, string> = new Map<string, string>()
+  m.set('true', 'yes, something happens on the phone when it ends')
+  m.set('false', 'no, the countdown only shows that time is up')
+  return m
 }
 
 /**

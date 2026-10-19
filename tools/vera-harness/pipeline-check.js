@@ -107,6 +107,31 @@ const run = async (outcome, opts = {}) => {
     reg.registryEntries = savedReg
   }
 
+  // a timer whose finish action the model writes: it is shown the SDK functions found for the request, the body is settled against the
+  // compiler, and the route says the model wrote function bodies
+  {
+    const engine = loadVera('DeepSeekEngine'), saved = deepseek.extractTemplateContent, savedDiscovery = engine.discoveryToolResult
+    const seen = []
+    engine.discoveryToolResult = async (name, need) => { seen.push([name, need]); return '{"found":[{"call":"SensorServiceKit.vibrator.vibrate"}]}' }
+    let hole = null
+    deepseek.extractTemplateContent = async (system, user) => {
+      if (/Functions to write/.test(user)) { hole = {system, user}; return JSON.stringify({holes: {whenFinished1: 'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "1500"], "onFinishedAnswerIDX");\nreturn 0;'}}) }
+      return JSON.stringify({title: 'Egg', section1_presets: [['Soft', '360'], ['Hard', '600']]})
+    }
+    const timerJev = slot => compose.readSectionPick(JSON.stringify({answers: Object.assign({section1: {choice: 'timer', confidence: 0.9},
+      'section1.timer.finish_action': {noul: slot}}, Object.fromEntries(['needs_integration', 'needs_real_data', 'needs_search_or_form',
+      'needs_live_ticking', 'needs_multiple_counters', 'needs_logic'].map(k => ['veto.' + k, {noul: k === 'needs_integration' ? 0.82 : 0}])))}))
+    ;({build} = await run(timerJev(0.9), 0.9))
+    assert.equal(build.action, 'template', 'the finish action is covered by the hole: no model rewrite'); assert.equal(build.route.holes, true)
+    assert.match(build.source, /sdk\.call\("SensorServiceKit\.vibrator\.vibrate"/); assert.match(build.source, /"onFinishedAnswer1"/)
+    assert.deepEqual(seen, [['find_sdk_function', 'grocery']]); assert.match(hole.user, /SensorServiceKit\.vibrator\.vibrate/)
+    // no finish action asked for: no lookup, no hole call, and the integration veto still decides
+    seen.length = 0; hole = null
+    ;({build} = await run(timerJev(0.1), 0.9))
+    assert.equal(build.action, 'complete'); assert.equal(seen.length, 0); assert.equal(hole, null)
+    deepseek.extractTemplateContent = saved; engine.discoveryToolResult = savedDiscovery
+  }
+
   // the route: what Jev said, whether a second look was taken, and which way the request went
   const verify = loadVera('VeraPickVerify')
   const weakBody = extra => JSON.stringify({answers: Object.assign({section1: {choice: 'checklist', confidence: 0.3}, section2: {choice: 'none', confidence: 0.6},

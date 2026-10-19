@@ -133,6 +133,11 @@ function renderCell(spec: ListFieldSpec, column: number, cell: string): string {
     let n = parseInt(digits)
     return (n >= 5 && n <= 600) ? n.toString() : '60'
   }
+  if (check === 'seconds') {
+    let digits = sanitizeVeraInt(cell, '60')
+    let n = parseInt(digits)
+    return (n >= 5 && n <= 86400) ? n.toString() : '60'
+  }
   if (spec.numericColumns.indexOf(column) >= 0) { return sanitizeVeraInt(cell, '0') }
   return escapeListCell(cell, spec.columnMax[column])
 }

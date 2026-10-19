@@ -663,7 +663,8 @@ function resolveInstanceText(text: string, idx: string, values: Map<string, stri
  * 1-based number, the same one "IDX" resolves to.
  */
 export function markedHole(key: string, instance: string, body: string): string {
-  return '//@hole ' + key + instance + ' begin\n' + body + '\n//@hole ' + key + instance + ' end'
+  // A body may name a handler of its own block as "...IDX"; the number is settled here, so a stored body survives the block moving.
+  return '//@hole ' + key + instance + ' begin\n' + body.split('IDX').join(instance) + '\n//@hole ' + key + instance + ' end'
 }
 
 /** instanceValues for one slot plus the default body of every hole the caller left unfilled. */
