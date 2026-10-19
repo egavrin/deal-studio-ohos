@@ -164,6 +164,9 @@ export class SectionPickOutcome {
   weakKinds: string[] = []
   /** Jev's answer body as received, so the weak candidates can be re-read once confirmed. */
   rawBody: string = ''
+  /** The block built from its own yes/no question because no section cleared its bar ('' when none), and that question's answer. */
+  wanted: string = ''
+  wantedP: number = 0
   constructor(sections: SectionPick[] | null, globalValues: Map<string, string>, note: string, needsRealData: boolean = false,
       needsLogic: boolean = false) {
     this.sections = sections
@@ -486,6 +489,8 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
   }
 
   let anyPicked = false
+  let rescuedKind = ''
+  let rescuedP = 0
   for (let pick of picks) { if (pick.kind !== 'none') { anyPicked = true } }
   if (!anyPicked) {
     let bestKind = ''
@@ -501,6 +506,8 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
       for (let slot of wanted.slots) { wantedValues.set(slot.token, readSlotValue(answers, 1, wanted.kind, slot)) }
       picks[0] = new SectionPick(wanted.kind, wantedValues)
       notes[0] = 'section1=' + wanted.kind + '(wanted ' + best.toFixed(2) + ')'
+      rescuedKind = wanted.kind
+      rescuedP = best
     }
   }
 
@@ -615,6 +622,8 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
   if (logicNotes.length > 0) { note = note + ' logic=' + logicNotes.join(',') }
   let outcome = new SectionPickOutcome(placed, globals, note, needsRealData, logicNotes.length > 0)
   outcome.layout = usedLayout
+  outcome.wanted = rescuedKind
+  outcome.wantedP = rescuedP
   return outcome
 }
 

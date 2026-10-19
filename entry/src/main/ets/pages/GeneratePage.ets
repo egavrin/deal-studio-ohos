@@ -28,6 +28,7 @@ import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } fro
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 import { buildFromTemplates, TemplateBuild, BUILD_CANCELLED, BUILD_SCRATCH, BUILD_COMPLETE } from '../vera/VeraTemplatePipeline'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
+import { RouteInfo, routeLabel, routeShort, jevLabel, checkLabel, checkShort, routeWhy, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED } from '../vera/VeraRoute'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
@@ -227,6 +228,12 @@ struct GeneratePage {
    * against the current one.
    */
   @State lastTemplatePick: string = ''
+  /** Which way the request went (VeraRoute.ets): shown under the status line and on the Metrics tab. */
+  @State routeInfo: RouteInfo = new RouteInfo()
+  @State routeKnown: boolean = false
+  @State routeVerifyMs: number = 0
+  /** Set when the model's step failed and the blocks are shown without it. */
+  @State routeFallback: string = ''
   @State compiledVbc2: string = ''
   @State compiledSource: string = ''
   @State refinePrompt: string = ''
@@ -511,6 +518,9 @@ struct GeneratePage {
     this.fastJevMs = 0
     this.fastSearchMs = -1
     this.fastContentMs = 0
+    this.routeKnown = false
+    this.routeVerifyMs = 0
+    this.routeFallback = ''
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
@@ -572,6 +582,9 @@ struct GeneratePage {
     this.fastPathRan = true
     this.fastSearchMs = build.searchMs
     this.fastContentMs = build.contentMs
+    this.routeInfo = build.route
+    this.routeKnown = true
+    this.routeVerifyMs = build.verifyMs
     if (build.action === BUILD_CANCELLED) { return }
     this.lastTemplatePick = build.note
     if (build.action === BUILD_SCRATCH) {
@@ -659,6 +672,9 @@ struct GeneratePage {
     this.fastJevMs = 0
     this.fastSearchMs = -1
     this.fastContentMs = 0
+    this.routeKnown = false
+    this.routeVerifyMs = 0
+    this.routeFallback = ''
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
@@ -985,6 +1001,7 @@ struct GeneratePage {
     this.tab = TAB_PREVIEW
     this.generating = false
     this.status = reason + '; showing the template without it'
+    this.routeFallback = reason
     return true
   }
 
@@ -1305,6 +1322,9 @@ struct GeneratePage {
     this.fastJevMs = 0
     this.fastSearchMs = -1
     this.fastContentMs = 0
+    this.routeKnown = false
+    this.routeVerifyMs = 0
+    this.routeFallback = ''
     this.serverBytecode = ''
     this.cancelRequested = false
     this.runId++
@@ -1421,6 +1441,13 @@ struct GeneratePage {
     let total = 0
     for (let a of this.attempts) total += a.outputTokens
     return total
+  }
+
+  /** Colour of the route headline: blocks alone, blocks the model finishes, or a program written from scratch. */
+  routeTone(): string {
+    if (this.routeInfo.route === ROUTE_BLOCKS) { return '#1F9D4C' }
+    if (this.routeInfo.route === ROUTE_BLOCKS_MODEL) { return '#C77700' }
+    return '#4A5A80'
   }
 
   /**
@@ -1572,6 +1599,32 @@ struct GeneratePage {
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 4 })
 
+        if (this.routeKnown) {
+          Column({ space: 2 }) {
+            Text(routeLabel(this.routeInfo))
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.routeTone())
+            Text(jevLabel(this.routeInfo) + '  \u00B7  ' + checkLabel(this.routeInfo))
+              .fontSize(11)
+              .fontColor('#555555')
+              .maxLines(2)
+            Text(routeWhy(this.routeInfo))
+              .fontSize(11)
+              .fontColor('#777777')
+              .maxLines(4)
+            if (this.routeFallback.length > 0) {
+              Text('The model step failed (' + this.routeFallback + '), so the blocks are shown without it.')
+                .fontSize(11)
+                .fontColor('#B25000')
+                .maxLines(3)
+            }
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .padding({ left: 16, right: 16, top: 0, bottom: 4 })
+        }
+
         // Experiment only (experiment/jev-template-select branch): survives
         // the next status change and hilog's ring buffer getting
         // overwritten -- see ChatMessage.templatePick for the Chat-side
@@ -1685,6 +1738,17 @@ struct GeneratePage {
         } else {
           Scroll() {
             Column({ space: 10 }) {
+              if (this.routeKnown) {
+                // Where this request went before any code was written: Jev's answer, the second look, and the route.
+                Row({ space: 8 }) {
+                  this.cell('Route', routeShort(this.routeInfo), jevLabel(this.routeInfo))
+                  this.cell('Check', (this.routeInfo.check === CHECK_CONFIRMED || this.routeInfo.check === CHECK_REJECTED ||
+                    this.routeInfo.check === CHECK_FAILED) ? this.formatMs(this.routeVerifyMs) : checkShort(this.routeInfo),
+                    checkLabel(this.routeInfo).replace('Check: ', ''))
+                }
+                .width('100%')
+                Text(routeWhy(this.routeInfo)).fontSize(12).fontColor('#555555').width('100%')
+              }
               if (this.attempts.length === 0 && !this.fastPathRan) {
                 Text('No run yet').fontSize(13).fontColor('#BBBBBB').width('100%')
               } else if (this.attempts.length > 0) {

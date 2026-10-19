@@ -19,6 +19,8 @@ export class VerifyAnswer {
   confirmed: string[] = []
   /** What the model says is missing, '' when it said nothing. */
   missing: string = ''
+  /** True when no answer came back (no key, network, unreadable): nothing was checked. */
+  failed: boolean = false
 }
 
 const SYSTEM: string = 'A selector proposes ready-made screen blocks for an app request, but it was not sure. ' +
@@ -70,9 +72,10 @@ export async function verifyWeakPick(prompt: string, candidates: string[]): Prom
   let answer = new VerifyAnswer()
   try {
     let text = await deepseek.extractTemplateContent(SYSTEM, buildVerifyUser(prompt, candidates), 200)
-    if (text !== null) { answer = readVerifyAnswer(text, candidates) }
+    if (text !== null) { answer = readVerifyAnswer(text, candidates) } else { answer.failed = true }
   } catch (_e) {
     answer = new VerifyAnswer()
+    answer.failed = true
   }
   hilog.info(DOMAIN, 'VERA', 'VERA-VERIFY ms=' + (Date.now() - started).toString() + ' weak=' + candidates.join(',') +
     ' confirm=' + (answer.confirmed.length > 0 ? answer.confirmed.join(',') : 'none') + ' missing=' + answer.missing)

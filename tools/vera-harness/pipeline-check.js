@@ -105,5 +105,40 @@ const run = async (outcome, opts = {}) => {
     reg.registryEntries = savedReg
   }
 
+  // the route: what Jev said, whether a second look was taken, and which way the request went
+  const verify = loadVera('VeraPickVerify')
+  const weakBody = extra => JSON.stringify({answers: Object.assign({section1: {choice: 'checklist', confidence: 0.3}, section2: {choice: 'none', confidence: 0.6},
+    'veto.needs_integration': {noul: 0}, 'veto.needs_real_data': {noul: 0}, 'veto.needs_search_or_form': {noul: 0}, 'veto.needs_live_ticking': {noul: 0},
+    'veto.needs_multiple_counters': {noul: 0}, 'veto.needs_logic': {noul: 0}}, extra || {})})
+  const weak = extra => { const o = compose.readSectionPick(weakBody(extra)); o.rawBody = weakBody(extra); return o }
+  ;({build} = await run(jev(['checklist']), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev, build.route.check], ['blocks', 'sure', 'none']); assert.deepEqual(build.route.kinds, ['checklist'])
+  ;({build} = await run(jev(['checklist'], {needs_logic: 0.95}), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev], ['blocks+model', 'sure']); assert.match(build.route.logic, /needs_logic=0\.95/)
+  ;({build} = await run(jev(['checklist'], {needs_integration: 0.97}), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev], ['scratch', 'vetoed'])
+  ;({build} = await run(jev(['none', 'none']), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev], ['scratch', 'none'])
+  ;({build} = await run(jev(['checklist'], {needs_real_data: 0.9}), 0.9))
+  assert.equal(build.route.route, 'scratch'); assert.match(build.route.failure, /needs real data/)
+  // weak pick, second look off (the shipped setting): scratch, and the page can say the check was off
+  ;({build} = await run(weak(), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev, build.route.check, build.route.weak], ['scratch', 'unsure', 'off', ['checklist']])
+  // weak pick, second look on
+  verify.VERIFY_WEAK_PICKS = true
+  verify.verifyWeakPick = async () => Object.assign(new verify.VerifyAnswer(), {confirmed: ['checklist']})
+  ;({build} = await run(weak(), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev, build.route.check], ['blocks', 'unsure', 'confirmed']); assert.deepEqual(build.route.kinds, ['checklist'])
+  verify.verifyWeakPick = async () => Object.assign(new verify.VerifyAnswer(), {missing: 'scaling by people'})
+  ;({build} = await run(weak(), 0.9))
+  assert.deepEqual([build.route.route, build.route.check, build.route.missing], ['scratch', 'rejected', 'scaling by people'])
+  verify.verifyWeakPick = async () => Object.assign(new verify.VerifyAnswer(), {failed: true})
+  ;({build} = await run(weak(), 0.9))
+  assert.deepEqual([build.route.route, build.route.check], ['scratch', 'failed'])
+  verify.VERIFY_WEAK_PICKS = false
+  // the yes/no question built the block
+  ;({build} = await run(weak({'include.checklist': {noul: 0.6}}), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev, build.route.check, build.route.wanted], ['blocks', 'unsure', 'yesno', 'checklist'])
+
   console.log('pipeline-check: ok')
 })().catch(e => { console.error(e); process.exit(1) })

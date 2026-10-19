@@ -20,6 +20,8 @@
 import { settings } from './SettingsStore'
 import { selectSections, readSectionPick, composeProgram, SectionPickOutcome, SectionPick } from './VeraSectionCompose'
 import { verifyWeakPick, VERIFY_WEAK_PICKS, VerifyAnswer } from './VeraPickVerify'
+import { RouteInfo, jevStateOf, logicOf, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, ROUTE_SCRATCH, JEV_UNSURE, CHECK_NONE, CHECK_OFF, CHECK_YESNO,
+  CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED } from './VeraRoute'
 import { fillSectionsContent } from './VeraTemplateContent'
 import { compileVeraSource } from './VeraCompiler'
 import { smokeRun, SmokeResult } from './VeraSmokeRun'
@@ -53,6 +55,8 @@ export class TemplateBuild {
   /** The composition record (VeraComposition.ets) as JSON, for template and complete; the program above is rebuilt from it. */
   composition: string = ''
   layout: string = 'stack'
+  /** Which way this request went and why, for the Generate screen and the Metrics tab (VeraRoute.ets). */
+  route: RouteInfo = new RouteInfo()
 }
 
 /** Per-slot copies of `values` with `extra` added; the caller's maps are not changed. */
@@ -67,8 +71,11 @@ function mergeHoleValues(values: Map<string, string>[], extra: Map<string, strin
   return out
 }
 
-function scratch(note: string, status: string, build: TemplateBuild): TemplateBuild {
+function scratch(note: string, status: string, build: TemplateBuild, failure: string = ''): TemplateBuild {
   build.action = BUILD_SCRATCH
+  build.route.route = ROUTE_SCRATCH
+  build.route.failure = failure
+  if (build.route.note.length === 0) { build.route.note = note }
   build.note = note
   build.status = status
   return build
@@ -88,18 +95,26 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     let outcome: SectionPickOutcome = await selectSections(prompt, settings.getSelectorKey())
     build.jevMs = Date.now() - jevStart
     if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+    build.route.jev = jevStateOf(outcome)
+    build.route.note = outcome.note
+    build.route.weak = outcome.weakKinds
+    if (outcome.sections === null && !VERIFY_WEAK_PICKS && outcome.weakKinds.length > 0) { build.route.check = CHECK_OFF }
     if (outcome.sections === null && VERIFY_WEAK_PICKS && mode !== 'server' && outcome.weakKinds.length > 0 && outcome.rawBody.length > 0) {
       onStatus('Double-checking a weak pick...')
       let verifyStart = Date.now()
       let second: VerifyAnswer = await verifyWeakPick(prompt, outcome.weakKinds)
       build.verifyMs = Date.now() - verifyStart
       if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+      build.route.missing = second.missing
       if (second.confirmed.length > 0) {
         let confirmedNote = 'verified ' + second.confirmed.join('+')
         outcome = readSectionPick(outcome.rawBody, second.confirmed)
         outcome.note = outcome.note + ' ' + confirmedNote
+        build.route.check = CHECK_CONFIRMED
+        build.route.jev = JEV_UNSURE
       } else {
         outcome.note = outcome.note + ' verify=no' + (second.missing.length > 0 ? ' missing=' + second.missing : '')
+        build.route.check = second.failed ? CHECK_FAILED : CHECK_REJECTED
       }
     }
     if (outcome.sections === null) {
@@ -111,6 +126,12 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     if (sections.length === 0) { return scratch(outcome.note, '', build) }
     for (let section of sections) { build.kinds.push(section.kind) }
     build.layout = outcome.layout
+    build.route.kinds = build.kinds
+    if (outcome.wanted.length > 0 && build.route.check === CHECK_NONE) {
+      build.route.check = CHECK_YESNO
+      build.route.wanted = outcome.wanted
+      build.route.wantedP = outcome.wantedP
+    }
 
     // needs_real_data alone does not null outcome.sections -- it means this composition has to be
     // grounded in one real search before it is trusted. A trend_chart needs grounding whatever Jev
@@ -120,7 +141,8 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     let needsGrounding = outcome.needsRealData || build.kinds.indexOf('trend_chart') >= 0
     let canGround = needsGrounding && mode !== 'server' && settings.hasExaKey()
     if (needsGrounding && !canGround) {
-      return scratch(outcome.note + ' (needs real data, no search available; generating normally)', '', build)
+      return scratch(outcome.note + ' (needs real data, no search available; generating normally)', '', build,
+        'Jev chose ' + build.kinds.join(' + ') + ', but the request needs real data and no search is available, so the model writes it from scratch.')
     }
     let searchText = ''
     if (needsGrounding) {
@@ -201,12 +223,14 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
       vbc2 = compileVeraSource(source).vbc2
     } catch (_e) {
       return scratch('composed ' + shown + ' but it failed to compile; generated normally',
-        'Template pick failed to compile, generating normally...', build)
+        'Template pick failed to compile, generating normally...', build,
+        'Jev chose ' + shown + ', but the composed program did not compile, so the model writes it from scratch.')
     }
     let smoke: SmokeResult = smokeRun(vbc2)
     if (!smoke.ok) {
       return scratch('composed ' + shown + ' but it did not run (' + smoke.error + '); generated normally',
-        'Template pick did not run, generating normally...', build)
+        'Template pick did not run, generating normally...', build,
+        'Jev chose ' + shown + ', but the composed program did not run (' + smoke.error + '), so the model writes it from scratch.')
     }
     build.source = source
     build.vbc2 = vbc2
@@ -220,6 +244,8 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
 
     if (outcome.needsLogic) {
       build.action = BUILD_COMPLETE
+      build.route.route = ROUTE_BLOCKS_MODEL
+      build.route.logic = logicOf(outcome.note)
       build.note = note
       build.status = 'Composed ' + shown + ', adding the logic the request needs...'
       return build
@@ -227,6 +253,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     // An intent panel without rows shows only "No actions": the model writes the calls instead.
     if (panelRows === 0) {
       build.action = BUILD_COMPLETE
+      build.route.route = ROUTE_BLOCKS_MODEL
       build.note = note
       build.status = 'Composed ' + shown + ', finding the phone actions the request needs...'
       return build
@@ -240,10 +267,12 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
       return build
     }
     build.action = BUILD_TEMPLATE
+    build.route.route = ROUTE_BLOCKS
     build.note = note
     build.status = 'Composed ' + shown + ': ' + note.replace(' content:', ' | content:')
     return build
   } catch (e) {
-    return scratch('template path failed (' + (e as Error).message + '); generated normally', '', build)
+    return scratch('template path failed (' + (e as Error).message + '); generated normally', '', build,
+      'The block path failed (' + (e as Error).message + '), so the model writes it from scratch.')
   }
 }
