@@ -78,4 +78,10 @@ for (const spec of fragments()) {
   assert.equal(asked.includes('include.' + spec.kind), inLayout.includes(spec.kind), spec.kind + ' include')
   assert.equal(asked.includes('want.' + spec.kind), !inLayout.includes(spec.kind), spec.kind + ' want')
 }
+// the itinerary block already carries stops with several fields (name, minutes, coordinates), so needs_search_or_form is not left
+// for the model to finish; a block that does not cover it still is
+r = readSectionPick(body([['itinerary', 0.8]], {needs_search_or_form: 0.75}))
+assert.deepEqual(kinds(r), ['itinerary']); assert.equal(r.needsLogic, false)
+r = readSectionPick(body([['checklist', 0.8]], {needs_search_or_form: 0.75}))
+assert.equal(r.needsLogic, true)
 console.log('verify-check ok')

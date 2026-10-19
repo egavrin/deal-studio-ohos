@@ -743,7 +743,10 @@ struct GeneratePage {
       // Initial generation, refinement, and retries share reasoning and output settings.
       await ensureCapabilities(getContext(this))
       if (this.cancelRequested) { return new GenerateResult() }
-      deepseek.setThinking(true)
+      // Finishing a composed screen only adds to it, and reasoning was most of that call's output; repairs and a
+      // generation from scratch still think.
+      let finishingBase = this.completionBase.length > 0 && request.previousSource === this.completionBase
+      deepseek.setThinking(!finishingBase)
       request.maxTokens = DEEPSEEK_GENERATION_MAX_TOKENS
       return deepseek.generate(request, onToken)
     }

@@ -1862,7 +1862,7 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     [new PortSpec('writes', 'done', 'number', 'reachedCountIDX(state)', '', true),
      new PortSpec('writes', 'total', 'number', 'state.stopsIDX.length()', '', true)],
     [],
-    ['needs_logic'],
+    ['needs_logic', 'needs_search_or_form'],
     ['needs_integration=__NAVIGATE_IDX__|__CALENDAR_IDX__']
   )
 }
