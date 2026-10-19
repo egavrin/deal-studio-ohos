@@ -599,6 +599,13 @@ struct GeneratePage {
     this.generating = false
     this.totalMs = Date.now() - this.genStartTime
     this.status = build.status
+    // The trace's closing event for a screen composed from blocks with no model call; tools/vera-bench waits for it.
+    let templateEnd: Record<string, Object> = {}
+    templateEnd['ok'] = true
+    templateEnd['attempt'] = 0
+    templateEnd['totalMs'] = this.totalMs
+    templateEnd['outcome'] = 'template'
+    trace('gen-end', templateEnd)
   }
 
   /**
