@@ -37,7 +37,18 @@ def clean(prompt, limit):
     return re.sub(r'\s+', ' ', text).strip()[:limit]
 
 
-def run_one(prompt, limit, wait):
+def verify_line(wait):
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        out = hdc('shell', 'hilog -x | grep "VERA-VERIFY ms=" | tail -1').strip()
+        m = re.search(r'VERA-VERIFY ms=(\d+) weak=(\S*) confirm=(\S*) missing=(.*)$', out)
+        if m:
+            return {'ms': int(m.group(1)), 'weak': m.group(2), 'confirm': m.group(3), 'missing': m.group(4).strip()}
+        time.sleep(1)
+    return None
+
+
+def run_one(prompt, limit, wait, verify=False):
     hdc('shell', 'hilog -r')
     # A composed result collapses the prompt field into a header row. New brings the field back; when
     # the field is already open this tap lands inside it and does nothing.
@@ -61,13 +72,25 @@ def run_one(prompt, limit, wait):
     if found is None:
         return None
     note = found[1]
+    second = None
+    if verify and note.startswith('none') and re.search(r's\d=(?!none)[a-z_]+@0\.(2[5-9]|[34]\d)', raw_line()):
+        # a weak candidate: the app asks DeepSeek for a second opinion before it decides
+        second = verify_line(25)
+        if second is not None and second['confirm'] != 'none':
+            time.sleep(8)  # confirmed: composed, let the content fill finish
+            time.sleep(1)
+            return found + (raw_line(), second)
+        if second is not None:
+            hdc('shell', 'uitest', 'uiInput', 'click', *map(str, GENERATE))  # not confirmed: generation starts, stop it
+            time.sleep(1)
+            return found + (raw_line(), second)
     if note.startswith('vetoed') or note.startswith('none') or 'logic=' in note:
         # falls back to DeepSeek, or hands the composed base to it: stop before the model call is paid for
         hdc('shell', 'uitest', 'uiInput', 'click', *map(str, GENERATE))  # the button is Stop now
     else:
         time.sleep(8)  # composed: let the content fill finish so the page is idle again
     time.sleep(1)
-    return found + (raw_line(),)
+    return found + (raw_line(), second)
 
 
 if __name__ == '__main__':
@@ -77,6 +100,7 @@ if __name__ == '__main__':
     ap.add_argument('--limit', type=int, default=400, help='characters of the prompt typed')
     ap.add_argument('--wait', type=int, default=20)
     ap.add_argument('--only', help='comma-separated ids')
+    ap.add_argument('--verify', action='store_true', help='wait for the second opinion on weak picks (VERA-VERIFY)')
     args = ap.parse_args()
     rows = json.load(open(args.gold))
     if args.only:
@@ -84,8 +108,8 @@ if __name__ == '__main__':
         rows = [r for r in rows if r['id'] in keep]
     results = []
     for r in rows:
-        got = run_one(r['prompt'], args.limit, args.wait)
-        res = {'id': r['id'], 'label': r.get('label'), 'ms': got[0] if got else None, 'picked': got[1] if got else 'NO ANSWER', 'raw': got[2] if got else ''}
+        got = run_one(r['prompt'], args.limit, args.wait, args.verify)
+        res = {'id': r['id'], 'label': r.get('label'), 'ms': got[0] if got else None, 'picked': got[1] if got else 'NO ANSWER', 'raw': got[2] if got else '', 'verify': got[3] if got else None}
         results.append(res)
         print(res['id'], '|', res['label'], '|', res['picked'], '|', res['ms'], flush=True)
         json.dump(results, open(args.out, 'w'), indent=1)

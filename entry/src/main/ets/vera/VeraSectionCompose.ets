@@ -47,6 +47,8 @@ const SECTION_COUNT: number = 6
 
 /** Top-level bar for a section's fragment-kind choice: a wrong answer here skips that slot entirely. */
 const SECTION_PICK_ABOVE: number = 0.5
+/** A section answer below SECTION_PICK_ABOVE but at or above this is a weak candidate: reported, and may be confirmed by VeraPickVerify.ets. */
+const WEAK_FROM: number = 0.25
 /** Per-slot cosmetic bar, same role as VeraTemplateSelect.ets's SLOT_PICK_ABOVE. */
 const SLOT_PICK_ABOVE: number = 0.25
 /**
@@ -151,6 +153,10 @@ export class SectionPickOutcome {
   needsLogic: boolean
   /** The layout the sections were arranged in ('stack' when Jev chose none or the placement broke a slot rule). */
   layout: string = LAYOUT_STACK
+  /** When nothing was chosen and nothing vetoed: the kinds Jev named below the bar (at least WEAK_FROM), in section order. */
+  weakKinds: string[] = []
+  /** Jev's answer body as received, so the weak candidates can be re-read once confirmed. */
+  rawBody: string = ''
   constructor(sections: SectionPick[] | null, globalValues: Map<string, string>, note: string, needsRealData: boolean = false,
       needsLogic: boolean = false) {
     this.sections = sections
@@ -361,7 +367,7 @@ function readVetoProbability(answers: Record<string, Object>, veto: VetoSpec): n
  * doubt about the *whole* request; it just leaves that slot empty, same as a single bad cosmetic
  * slot answer falling back to its default.
  */
-export function readSectionPick(body: string): SectionPickOutcome {
+export function readSectionPick(body: string, confirmed: string[] = []): SectionPickOutcome {
   let specs = fragments()
   let emptyGlobals: Map<string, string> = new Map<string, string>()
   let answers: Record<string, Object> = {}
@@ -415,6 +421,11 @@ export function readSectionPick(body: string): SectionPickOutcome {
           if (fired.indexOf(key) >= 0 && coverNote.length === 0) { kind = weak; coverNote = '(covers ' + key + ')' }
         }
       }
+    }
+    if (kind === 'none' && confirmed.length > 0) {
+      // a weak candidate somebody else has confirmed (VeraPickVerify.ets) counts as picked
+      let weak = readChoiceValue(answers, 'section' + i.toString(), allowedKinds, WEAK_FROM, 'none')
+      if (confirmed.indexOf(weak) >= 0) { kind = weak }
     }
     if (kind === 'none') {
       picks.push(new SectionPick('none', new Map<string, string>()))
@@ -538,7 +549,12 @@ export function readSectionPick(body: string): SectionPickOutcome {
   let anyChosen = false
   for (let pick of placed) { if (pick.kind !== 'none') { anyChosen = true } }
   if (!anyChosen) {
-    return new SectionPickOutcome(null, emptyGlobals, 'none (' + notes.join(' ') + ')')
+    let nothing = new SectionPickOutcome(null, emptyGlobals, 'none (' + notes.join(' ') + ')')
+    for (let i = 1; i <= SECTION_COUNT; i++) {
+      let weak = readChoiceValue(answers, 'section' + i.toString(), allowedKinds, WEAK_FROM, 'none')
+      if (weak !== 'none' && nothing.weakKinds.indexOf(weak) < 0) { nothing.weakKinds.push(weak) }
+    }
+    return nothing
   }
 
   let globals: Map<string, string> = new Map<string, string>()
@@ -815,6 +831,7 @@ export async function selectSections(prompt: string, apiKey: string): Promise<Se
       return new SectionPickOutcome(null, emptyGlobals, 'none (selector answered ' + code.toString() + ')')
     }
     let outcome = readSectionPick(response.result as string)
+    outcome.rawBody = response.result as string
     hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS ms=' + (Date.now() - started).toString() + ' picked=' + outcome.note)
     hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS raw ' + rawAnswers(response.result as string))
     return outcome

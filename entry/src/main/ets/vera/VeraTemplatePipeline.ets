@@ -18,7 +18,8 @@
  */
 
 import { settings } from './SettingsStore'
-import { selectSections, composeProgram, SectionPickOutcome, SectionPick } from './VeraSectionCompose'
+import { selectSections, readSectionPick, composeProgram, SectionPickOutcome, SectionPick } from './VeraSectionCompose'
+import { verifyWeakPick, VERIFY_WEAK_PICKS, VerifyAnswer } from './VeraPickVerify'
 import { fillSectionsContent } from './VeraTemplateContent'
 import { compileVeraSource } from './VeraCompiler'
 import { smokeRun, SmokeResult } from './VeraSmokeRun'
@@ -44,6 +45,8 @@ export class TemplateBuild {
   /** The chosen section kinds, 'none' for an empty slot. */
   kinds: string[] = []
   jevMs: number = 0
+  /** Milliseconds spent on the second opinion for a weak pick, 0 when it was not asked. */
+  verifyMs: number = 0
   /** -1 when no search was made. */
   searchMs: number = -1
   contentMs: number = 0
@@ -85,6 +88,20 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     let outcome: SectionPickOutcome = await selectSections(prompt, settings.getSelectorKey())
     build.jevMs = Date.now() - jevStart
     if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+    if (outcome.sections === null && VERIFY_WEAK_PICKS && mode !== 'server' && outcome.weakKinds.length > 0 && outcome.rawBody.length > 0) {
+      onStatus('Double-checking a weak pick...')
+      let verifyStart = Date.now()
+      let second: VerifyAnswer = await verifyWeakPick(prompt, outcome.weakKinds)
+      build.verifyMs = Date.now() - verifyStart
+      if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+      if (second.confirmed.length > 0) {
+        let confirmedNote = 'verified ' + second.confirmed.join('+')
+        outcome = readSectionPick(outcome.rawBody, second.confirmed)
+        outcome.note = outcome.note + ' ' + confirmedNote
+      } else {
+        outcome.note = outcome.note + ' verify=no' + (second.missing.length > 0 ? ' missing=' + second.missing : '')
+      }
+    }
     if (outcome.sections === null) {
       return scratch(outcome.note, '', build)
     }
