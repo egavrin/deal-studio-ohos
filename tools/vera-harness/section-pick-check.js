@@ -36,8 +36,8 @@ o = readSectionPick(body(['search_list', 'none'], {needs_search_or_form: 0.95}))
 assert.deepEqual(kinds(o), pad(['search_list', 'none'])); assert.equal(o.needsLogic, false)
 o = readSectionPick(body(['search_list', 'none'], {needs_search_or_form: 0.95, needs_logic: 0.9}))
 assert.equal(o.needsLogic, true); assert.doesNotMatch(o.note, /needs_search_or_form/)
-o = readSectionPick(body(['log_entries', 'bar_chart', 'checklist', 'timeline'], {}))
-assert.deepEqual(kinds(o), pad(['log_entries', 'bar_chart', 'checklist', 'timeline'])); assert.equal(o.needsLogic, false)
+o = readSectionPick(body(['record_log', 'bar_chart', 'checklist', 'timeline'], {}))
+assert.deepEqual(kinds(o), pad(['record_log', 'bar_chart', 'checklist', 'timeline'])); assert.equal(o.needsLogic, false)
 // layouts: master_detail puts the list first and the detail second whatever order Jev gave
 const withLayout = (sections, layout, conf = 0.9) => {
   const b = JSON.parse(body(sections, {}))

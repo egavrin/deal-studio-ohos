@@ -1,5 +1,5 @@
 // Runs every fragment (and a 4-section composition) through the real VM: init(), view(), decode. Then drives
-// log_entries' handlers (type a note and an amount, add, remove) and checks the numbers on screen change.
+// record_log' handlers (type a note and an amount, add, remove) and checks the numbers on screen change.
 'use strict'
 const assert = require('node:assert/strict')
 const {loadVera} = require('./source-loader')
@@ -36,22 +36,31 @@ for (const f of fragments()) {
   const tree = view(vm, vm.execute('init'))
   assert.ok(tree && (tree.children || []).length > 0, f.kind + ': empty tree')
 }
-const all = build(['log_entries', 'bar_chart', 'checklist', 'timeline'])
+const all = build(['record_log', 'bar_chart', 'checklist', 'timeline'])
 const t0 = view(all, all.execute('init'))
 assert.ok(kindsIn(t0).includes('sparkline') && kindsIn(t0).includes('timeline'))
 
-// log_entries: the form actually works
-const vm = build(['log_entries'])
+// record_log with one label and no currency: the plain running list log_entries used to be (a note and an amount, one total)
+const plainValues = (() => {
+  const m = values('record_log'), spec = fragments().find(f => f.kind === 'record_log')
+  m.set(spec.listFields[0].token, '"Entry"'); m.set('__CURRENCY_IDX__', '')
+  return m
+})()
+const vm = (() => {
+  const result = compileVeraSource(composeProgram(['record_log'], globals, [plainValues]))
+  return new VirtualMachine(deserializeVbc2(result.vbc2 !== undefined ? result.vbc2 : result), new UiHostEnvironment())
+})()
 let state = vm.execute('init')
 const call = (name, ...args) => { state = vm.execute(name, [state, ...args]) }
 const names = (() => { const t = view(vm, state); return texts(t).join('|') })()
 assert.match(names, /Nothing yet/)
-call('setNote1', str('Lunch')); call('setAmount1', int(12)); call('addEntry1', int(0))
-call('setNote1', str('Taxi')); call('setAmount1', int(30)); call('addEntry1', int(0))
+assert.doesNotMatch(names, /Who/, 'one label: no chooser')
+call('setNote1', str('Lunch')); call('setAmount1', str('12')); call('addRecord1', int(0))
+call('setNote1', str('Taxi')); call('setAmount1', str('30')); call('addRecord1', int(0))
 let shown = texts(view(vm, state)).join('|')
-assert.match(shown, /\|42\|/, 'total 42'); assert.match(shown, /Taxi/); assert.match(shown, /Lunch/)
+assert.match(shown, /\|42\|/, 'total 42: ' + shown); assert.match(shown, /Taxi/); assert.match(shown, /Lunch/)
 assert.ok(shown.indexOf('Taxi') < shown.indexOf('Lunch'), 'newest first')
-call('removeLast1', int(0))
+call('removeLastRecord1', int(0))
 shown = texts(view(vm, state)).join('|')
 assert.match(shown, /\|12\|/); assert.doesNotMatch(shown, /Taxi/)
 // smokeRun: every fragment starts and draws something; a program that traps in view() does not pass

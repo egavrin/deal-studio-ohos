@@ -1235,7 +1235,8 @@ function recordLogFragment(): FragmentSpec {
     'record_log',
     'A form where the person adds records one at a time, each tagged with one of several named people or categories ' +
     'and an amount (with cents), plus a note; the records are listed newest first and can be removed or cleared. ' +
-    'The source of figures worked out per person or category: totals, an average, who is above or below it',
+    'The source of figures worked out per person or category: totals, an average, who is above or below it. ' +
+    'Also fits one plain running list with a single total and no named people or categories (a note and an amount per entry)',
     TALLY_CLASS,
     [new StateFieldSpec('labelsIDX', 'string[]'), new StateFieldSpec('recordsIDX', 'Tally[]'),
      new StateFieldSpec('draftWhoIDX', 'number'), new StateFieldSpec('draftAmountIDX', 'string'),
@@ -1331,19 +1332,40 @@ function balancesIDX(state: AppState): number[] {
 }`,
     `{
     let n: number = state.recordsIDX.length();
+    let plain: boolean = state.labelsIDX.length() <= 1;
     let rows: ui.View[] = [];
     let k: number = n - 1;
     while (k >= 0) {
       let r: Tally = state.recordsIDX[k];
       let who: string = "?";
       if (r.who >= 0 && r.who < state.labelsIDX.length()) { who = state.labelsIDX[r.who]; }
-      rows.push(ui.ListItem("default", who, r.note, state.currencyIDX + ui.formatNumber(r.amount, 2), "", k, false, "list"));
+      let shown: string = state.currencyIDX + ui.formatNumber(r.amount, 2);
+      if (state.currencyIDX.length() === 0) { shown = ui.numberToString(r.amount); }
+      if (plain) {
+        let title: string = r.note;
+        if (title.length() === 0) { title = "Entry"; }
+        rows.push(ui.ListItem("default", title, "", shown, "", k, false, "list"));
+      } else {
+        rows.push(ui.ListItem("default", who, r.note, shown, "", k, false, "list"));
+      }
       k = k - 1;
     }
     let typed: number = strings.toNumber(state.draftAmountIDX, 0);
+    if (plain) {
+      let sumText: string = state.currencyIDX + ui.formatNumber(totalSumIDX(state), 2);
+      if (state.currencyIDX.length() === 0) { sumText = ui.numberToString(totalSumIDX(state)); }
+      sections.push(ui.Section("summary", "", "", [
+        ui.MetricGroup("default", 2, [
+          ui.Stat("accent", "Total", sumText, "all entries", "chart"),
+          ui.Stat("default", "Entries", ui.numberToString(n), "logged", "list")
+        ])
+      ]));
+    }
+    let formRows: ui.View[] = [];
+    if (!plain) { formRows.push(ui.Select("default", "__WHO_LABEL_IDX__", state.labelsIDX, state.draftWhoIDX, "setWhoIDX")); }
+    formRows.push(ui.TextField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, "setAmountIDX", "number"));
     sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
-      ui.Select("default", "__WHO_LABEL_IDX__", state.labelsIDX, state.draftWhoIDX, "setWhoIDX"),
-      ui.TextField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, "setAmountIDX", "number"),
+      ui.Column("default", formRows),
       ui.TextField("default", "Note", state.draftNoteIDX, "setNoteIDX"),
       ui.ActionBar("end", [
         ui.Button("danger", "Start over", "clearRecordsIDX", 0, n > 0),
@@ -1361,12 +1383,13 @@ function balancesIDX(state: AppState): number[] {
       new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add a record', 'Heading of the form (2-4 words)', 24),
       new ContentFieldSpec('__WHO_LABEL_IDX__', 'who_label', 'Who', 'Label of the choice of person or category (1-2 words, e.g. Paid by)', 16),
       new ContentFieldSpec('__AMOUNT_LABEL_IDX__', 'amount_label', 'Amount', 'Label of the amount field (1-3 words)', 20),
-      new ContentFieldSpec('__CURRENCY_IDX__', 'currency', '$', 'Currency symbol shown before amounts, or an empty string when the amounts are not money', 3)
+      new ContentFieldSpec('__CURRENCY_IDX__', 'currency', '', 'Currency symbol shown before amounts, only when the amounts are money; leave it blank for counts, minutes, quantities or scores', 3)
     ],
     ['import * as strings from "std/strings"'],
     [new ListFieldSpec('__LABELS_IDX__', 'labels',
-      'The named people or categories a record can be tagged with, taken from the request (2 to 8)',
-      ['name of the person or category (1-2 words)'], [16], '"{0}"', ', ', 2, 8,
+      'The named people or categories a record can be tagged with, taken from the request (2 to 8); exactly one entry when the ' +
+      'records are one plain running list not tied to people or categories',
+      ['name of the person or category (1-2 words)'], [16], '"{0}"', ', ', 1, 8,
       [['Person 1'], ['Person 2'], ['Person 3']])],
     [new PortSpec('writes', 'labels', 'string[]', 'labelsIDX'),
      new PortSpec('writes', 'totals', 'number[]', 'totalsIDX(state)', '', true),
@@ -2087,86 +2110,6 @@ function barChartFragment(): FragmentSpec {
  * Amounts are whole units on purpose: money with cents is a request for the model to write the
  * program (needs_logic), not something a fixed fragment can promise.
  */
-function logEntriesFragment(): FragmentSpec {
-  return new FragmentSpec(
-    'log_entries',
-    'A form where the person adds entries one at a time, each with a short note and a whole-number amount, listed newest first with a running total and a button to remove the last one; one running list with one total, not tied to named people or categories',
-    `@jsonable
-class LogEntry {
-  note: string;
-  amount: number;
-}`,
-    [new StateFieldSpec('logIDX', 'LogEntry[]'), new StateFieldSpec('draftNoteIDX', 'string'), new StateFieldSpec('draftAmountIDX', 'number')],
-    `  let logIDX: LogEntry[] = [];`,
-    `logIDX: logIDX, draftNoteIDX: "", draftAmountIDX: 0`,
-    `function setNoteIDX(state: AppState, value: string): AppState {
-  return {logIDX: state.logIDX, draftNoteIDX: value, draftAmountIDX: state.draftAmountIDX__PASSTHROUGH__};
-}
-
-function setAmountIDX(state: AppState, value: number): AppState {
-  return {logIDX: state.logIDX, draftNoteIDX: state.draftNoteIDX, draftAmountIDX: value__PASSTHROUGH__};
-}
-
-function addEntryIDX(state: AppState, ignored: number): AppState {
-  let out: LogEntry[] = [];
-  let i: number = 0;
-  while (i < state.logIDX.length()) {
-    out.push(state.logIDX[i]);
-    i = i + 1;
-  }
-  let label: string = state.draftNoteIDX;
-  if (label.length() === 0) { label = "Entry"; }
-  out.push({note: label, amount: state.draftAmountIDX});
-  return {logIDX: out, draftNoteIDX: "", draftAmountIDX: 0__PASSTHROUGH__};
-}
-
-function removeLastIDX(state: AppState, ignored: number): AppState {
-  let out: LogEntry[] = [];
-  let i: number = 0;
-  while (i < state.logIDX.length() - 1) {
-    out.push(state.logIDX[i]);
-    i = i + 1;
-  }
-  return {logIDX: out, draftNoteIDX: state.draftNoteIDX, draftAmountIDX: state.draftAmountIDX__PASSTHROUGH__};
-}`,
-    `{
-    let n: number = state.logIDX.length();
-    let total: number = 0;
-    let rows: ui.View[] = [];
-    let k: number = n - 1;
-    while (k >= 0) {
-      let e: LogEntry = state.logIDX[k];
-      total = total + e.amount;
-      rows.push(ui.ListItem("default", e.note, "", ui.numberToString(e.amount), "", k, false, "list"));
-      k = k - 1;
-    }
-    sections.push(ui.Section("summary", "", "", [
-      ui.MetricGroup("default", 2, [
-        ui.Stat("accent", "Total", ui.numberToString(total), "all entries", "chart"),
-        ui.Stat("default", "Entries", ui.numberToString(n), "logged", "list")
-      ])
-    ]));
-    sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
-      ui.TextField("default", "Note", state.draftNoteIDX, "setNoteIDX"),
-      ui.NumberField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, 0, 100000, "setAmountIDX"),
-      ui.ActionBar("end", [
-        ui.Button("secondary", "Remove last", "removeLastIDX", 0, n > 0),
-        ui.Button("primary", "Add", "addEntryIDX", 0, state.draftAmountIDX > 0)
-      ])
-    ]));
-    sections.push(ui.Section("content", "", "", [
-      ui.When(n === 0, ui.EmptyState("default", "Nothing yet", "Add the first entry above.", "", "", "list")),
-      ui.When(n > 0, ui.ListGroup("default", "", rows))
-    ]));
-  }`,
-    [],
-    [
-      new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add an entry', 'Heading of the form (2-4 words)', 24),
-      new ContentFieldSpec('__AMOUNT_LABEL_IDX__', 'amount_label', 'Amount', 'Label of the amount field (1-2 words)', 16)
-    ]
-  )
-}
-
 /**
  * The palette VeraSectionCompose.ets picks from, one per section slot. `checklist`/`metrics`
  * reproduce today's two flat templates exactly (as single-fragment compositions); `timer` and
@@ -2180,7 +2123,7 @@ export function fragments(): FragmentSpec[] {
     actionsFragment(), progressGoalFragment(), keyFactsFragment(), trendChartFragment(),
     noteFragment(), ratingFragment(), spotlightFragment(),
     searchListFragment(), dataTableFragment(), timelineFragment(),
-    barChartFragment(), logEntriesFragment(),
+    barChartFragment(),
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
     itineraryFragment(), progressLineFragment(), intentPanelFragment()

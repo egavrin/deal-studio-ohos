@@ -17,7 +17,7 @@ const globals = new Map([['__THEME__', 'clean'], ['__HEADER_STYLE__', 'default']
 function values(kind, over = {}) {
   const spec = fragments().find(f => f.kind === kind), m = new Map()
   spec.slots.forEach(s => m.set(s.token, s.values[0]))
-  spec.contentFields.forEach(c => m.set(c.token, c.fallback))
+  spec.contentFields.forEach(c => m.set(c.token, c.token === '__CURRENCY_IDX__' ? '$' : c.fallback))
   spec.listFields.forEach(l => m.set(l.token, kind === 'record_log' && over.labels !== undefined
     ? over.labels.map(n => '"' + n + '"').join(', ') : expandListRows(undefined, l).text))
   return m

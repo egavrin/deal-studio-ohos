@@ -22,7 +22,7 @@ export class Version {
   prompt: string = ''
   /**
    * How the version came about when it began as a composed template: the section kinds Jev chose,
-   * comma-separated ("log_entries,bar_chart"), with "+model" appended when the model then rewrote
+   * comma-separated ("record_log,bar_chart"), with "+model" appended when the model then rewrote
    * it. Empty for a program written from scratch and for versions saved before this was kept.
    */
   origin: string = ''
