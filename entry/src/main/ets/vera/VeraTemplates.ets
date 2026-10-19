@@ -802,6 +802,218 @@ function timerFinishCriteria(): Map<string, string> {
 }
 
 /**
+ * A list the person builds one entry at a time: a title, a time of day (hour and minute) and whether it repeats every day. With the
+ * calendar slot on, every new entry goes into the phone calendar through the one verified call
+ * ("CalendarKit.Calendar.addEvent", with a reminder at the start time and a daily repeat when asked), each row shows what the
+ * calendar answered, and removing a row removes its event. Answers follow docs/intent-call-contract.md: the answer to addEvent is
+ * the event id, only "declined..." and "error..." are failures. The block is the multi-field form, so it covers
+ * needs_search_or_form, and with the calendar on it covers needs_integration. Publishes how many entries are scheduled (done) and
+ * how many there are (total) for the readers that take those ports.
+ */
+function remindersFragment(): FragmentSpec {
+  let calendar: Map<string, string> = new Map<string, string>()
+  calendar.set('true', 'yes, each entry goes into the phone calendar with a reminder')
+  calendar.set('false', 'no, the entries are only a list in the app')
+  return new FragmentSpec(
+    'reminders',
+    'A list the person builds one entry at a time, each with a title, a time of day (hour and minute) and whether it repeats every day; ' +
+    'entries can be put into the phone calendar with a reminder and removed, and the list shows what is scheduled and what the ' +
+    'calendar answered. For medicines, habits, appointments, daily reminders; not a day plan made of places',
+    `@jsonable
+class Reminder {
+  title: string;
+  hour: number;
+  minute: number;
+  daily: boolean;
+  eventId: string;
+  status: string;
+}`,
+    [new StateFieldSpec('remindersIDX', 'Reminder[]'), new StateFieldSpec('draftTitleIDX', 'string'),
+     new StateFieldSpec('draftHourIDX', 'number'), new StateFieldSpec('draftMinuteIDX', 'number'),
+     new StateFieldSpec('draftDailyIDX', 'boolean'), new StateFieldSpec('pendingIDX', 'number'), new StateFieldSpec('reminderNoteIDX', 'string')],
+    `  let remindersIDX: Reminder[] = [];`,
+    `remindersIDX: remindersIDX, draftTitleIDX: "", draftHourIDX: 8, draftMinuteIDX: 0, draftDailyIDX: true, pendingIDX: -1, reminderNoteIDX: ""`,
+    `function withDraftIDX(state: AppState, title: string, hour: number, minute: number, daily: boolean): AppState {
+  return {remindersIDX: state.remindersIDX, draftTitleIDX: title, draftHourIDX: hour, draftMinuteIDX: minute, draftDailyIDX: daily, pendingIDX: state.pendingIDX, reminderNoteIDX: state.reminderNoteIDX__PASSTHROUGH__};
+}
+
+function withListIDX(state: AppState, list: Reminder[], pending: number, note: string, title: string): AppState {
+  return {remindersIDX: list, draftTitleIDX: title, draftHourIDX: state.draftHourIDX, draftMinuteIDX: state.draftMinuteIDX, draftDailyIDX: state.draftDailyIDX, pendingIDX: pending, reminderNoteIDX: note__PASSTHROUGH__};
+}
+
+function failedIDX(value: string): boolean {
+  return strings.startsWith(value, "declined") || strings.startsWith(value, "error");
+}
+
+function scheduledCountIDX(state: AppState): number {
+  let n: number = 0;
+  for (let r: Reminder of state.remindersIDX) { if (r.status === "ok") { n = n + 1; } }
+  return n;
+}
+
+function setTitleIDX(state: AppState, value: string): AppState {
+  return withDraftIDX(state, value, state.draftHourIDX, state.draftMinuteIDX, state.draftDailyIDX);
+}
+
+function setHourIDX(state: AppState, value: number): AppState {
+  let hour: number = math.floor(value);
+  if (hour < 0) { hour = 0; }
+  if (hour > 23) { hour = 23; }
+  return withDraftIDX(state, state.draftTitleIDX, hour, state.draftMinuteIDX, state.draftDailyIDX);
+}
+
+function setMinuteIDX(state: AppState, value: number): AppState {
+  let minute: number = math.floor(value);
+  if (minute < 0) { minute = 0; }
+  if (minute > 59) { minute = 59; }
+  return withDraftIDX(state, state.draftTitleIDX, state.draftHourIDX, minute, state.draftDailyIDX);
+}
+
+function setDailyIDX(state: AppState, value: boolean): AppState {
+  return withDraftIDX(state, state.draftTitleIDX, state.draftHourIDX, state.draftMinuteIDX, value);
+}
+
+function addReminderIDX(state: AppState, ignored: number): AppState {
+  let title: string = strings.trim(state.draftTitleIDX);
+  if (title.length() === 0) { return state; }
+  let useCalendar: boolean = __CALENDAR_IDX__;
+  let status: string = "";
+  let pending: number = -1;
+  if (useCalendar) {
+    status = "pending";
+    pending = state.remindersIDX.length();
+  }
+  let out: Reminder[] = [];
+  for (let r: Reminder of state.remindersIDX) { out.push(r); }
+  out.push({title: title, hour: state.draftHourIDX, minute: state.draftMinuteIDX, daily: state.draftDailyIDX, eventId: "", status: status});
+  if (useCalendar) {
+    let repeat: string = "once";
+    if (state.draftDailyIDX) { repeat = "daily"; }
+    sdk.call("CalendarKit.Calendar.addEvent",
+      ["title", "__EVENT_PREFIX_IDX__" + title, "hour", ui.numberToString(state.draftHourIDX), "minute", ui.numberToString(state.draftMinuteIDX),
+       "durationMinutes", "15", "remindBefore", "0", "repeat", repeat, "description", "__EVENT_NOTE_IDX__"], "onAddedIDX");
+  }
+  return withListIDX(state, out, pending, "", "");
+}
+
+function onAddedIDX(state: AppState, value: string): AppState {
+  if (state.pendingIDX < 0 || state.pendingIDX >= state.remindersIDX.length()) { return state; }
+  let out: Reminder[] = [];
+  let i: number = 0;
+  while (i < state.remindersIDX.length()) {
+    let r: Reminder = state.remindersIDX[i];
+    if (i === state.pendingIDX) {
+      if (failedIDX(value)) {
+        out.push({title: r.title, hour: r.hour, minute: r.minute, daily: r.daily, eventId: "", status: value});
+      } else {
+        out.push({title: r.title, hour: r.hour, minute: r.minute, daily: r.daily, eventId: value, status: "ok"});
+      }
+    } else {
+      out.push(r);
+    }
+    i = i + 1;
+  }
+  let note: string = "";
+  if (failedIDX(value)) { note = value; }
+  return withListIDX(state, out, -1, note, state.draftTitleIDX);
+}
+
+function removeReminderIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.remindersIDX.length()) { return state; }
+  let gone: Reminder = state.remindersIDX[index];
+  let out: Reminder[] = [];
+  let i: number = 0;
+  while (i < state.remindersIDX.length()) {
+    if (i !== index) { out.push(state.remindersIDX[i]); }
+    i = i + 1;
+  }
+  let pending: number = state.pendingIDX;
+  if (pending === index) { pending = -1; }
+  if (pending > index) { pending = pending - 1; }
+  if (gone.eventId !== "") { sdk.call("CalendarKit.Calendar.deleteEvents", ["ids", gone.eventId], "onRemovedIDX"); }
+  return withListIDX(state, out, pending, "", state.draftTitleIDX);
+}
+
+function onRemovedIDX(state: AppState, value: string): AppState {
+  if (failedIDX(value)) { return withListIDX(state, state.remindersIDX, state.pendingIDX, value, state.draftTitleIDX); }
+  return state;
+}
+
+function openCalendarIDX(state: AppState, ignored: number): AppState {
+  sdk.call("com.huawei.hmos.calendar/phone/MainAbility", [], "onOpenedIDX");
+  return state;
+}
+
+function onOpenedIDX(state: AppState, value: string): AppState {
+  if (failedIDX(value)) { return withListIDX(state, state.remindersIDX, state.pendingIDX, value, state.draftTitleIDX); }
+  return state;
+}`,
+    `{
+    let useCalendar: boolean = __CALENDAR_IDX__;
+    let count: number = state.remindersIDX.length();
+    let canAdd: boolean = strings.trim(state.draftTitleIDX).length() > 0;
+    sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
+      ui.TextField("default", "__TITLE_LABEL_IDX__", state.draftTitleIDX, "setTitleIDX"),
+      ui.NumberField("default", "Hour (0-23)", state.draftHourIDX, 0, 23, "setHourIDX"),
+      ui.NumberField("default", "Minute (0-59)", state.draftMinuteIDX, 0, 59, "setMinuteIDX"),
+      ui.Toggle("default", "__REPEAT_LABEL_IDX__", state.draftDailyIDX, "setDailyIDX"),
+      ui.ActionBar("end", [
+        ui.Button("primary", "Add", "addReminderIDX", 0, canAdd)
+      ])
+    ]));
+    let rows: ui.View[] = [];
+    let j: number = 0;
+    while (j < count) {
+      let r: Reminder = state.remindersIDX[j];
+      let when: string = ui.clockToString(r.hour * 60 + r.minute);
+      if (r.daily) { when = when + " - every day"; }
+      let shown: string = "";
+      let icon: string = "list";
+      if (useCalendar) {
+        if (r.status === "pending") { shown = "sending..."; icon = "clock"; }
+        else if (r.status === "ok") { shown = "in calendar"; icon = "check"; }
+        else if (r.status !== "") { shown = "not added"; icon = "info"; }
+      }
+      rows.push(ui.ListItem("default", r.title, when, shown, "", 0, false, icon));
+      if (useCalendar && r.status !== "ok" && r.status !== "pending" && r.status !== "") {
+        rows.push(ui.InsetBanner("warning", "The calendar said no", r.status, "", "", "info"));
+      }
+      rows.push(ui.ActionBar("end", [ui.Button("secondary", "Remove", "removeReminderIDX", j, true)]));
+      j = j + 1;
+    }
+    sections.push(ui.Section("content", "", "", [
+      ui.When(count === 0, ui.EmptyState("default", "Nothing yet", "Add the first one above.", "", "", "list")),
+      ui.When(count > 0, ui.ListGroup("default", "", rows))
+    ]));
+    let notes: ui.View[] = [];
+    if (state.reminderNoteIDX !== "") {
+      notes.push(ui.InsetBanner("warning", "Last action", state.reminderNoteIDX, "", "", "info"));
+    }
+    if (useCalendar) {
+      notes.push(ui.ActionBar("spread", [ui.Button("secondary", "Open calendar", "openCalendarIDX", 0, true)]));
+    }
+    if (notes.length() > 0) { sections.push(ui.Section("supporting", "", "", notes)); }
+  }`,
+    [new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul',
+      'Should each entry be put into the phone calendar with a reminder, with a button to open the calendar?', calendar, 0.6)],
+    [
+      new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add a reminder', 'Heading of the form (2-4 words)', 24),
+      new ContentFieldSpec('__TITLE_LABEL_IDX__', 'title_label', 'Name', 'Label of the title field (1-3 words, such as Medicine or Habit)', 20),
+      new ContentFieldSpec('__REPEAT_LABEL_IDX__', 'repeat_label', 'Repeats every day', 'Label of the switch for a daily repeat (2-4 words)', 28),
+      new ContentFieldSpec('__EVENT_PREFIX_IDX__', 'event_prefix', '', 'Words put before the title in the calendar event, such as "Take " for medicines, or an empty string', 12),
+      new ContentFieldSpec('__EVENT_NOTE_IDX__', 'event_note', 'Reminder', 'A short note for the calendar event (2-6 words, no quotes)', 40)
+    ],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"'],
+    [],
+    [new PortSpec('writes', 'done', 'number', 'scheduledCountIDX(state)', '', true),
+     new PortSpec('writes', 'total', 'number', 'state.remindersIDX.length()', '', true)],
+    [],
+    ['needs_search_or_form'],
+    ['needs_integration=__CALENDAR_IDX__']
+  )
+}
+
+/**
  * Real device capability, hardcoded to one compile-time-verified sdk.call target
  * ("CalendarKit.Calendar.addEvent" -- checked against VeraSdkIndex's static 16,511-entry index,
  * same guarantee a wrong/outdated target would fail to compile rather than fail silently on the
@@ -2214,7 +2426,7 @@ export function fragments(): FragmentSpec[] {
     barChartFragment(),
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
-    itineraryFragment(), progressLineFragment(), intentPanelFragment()
+    itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment()
   ]
 }
 
