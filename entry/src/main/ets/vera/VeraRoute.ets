@@ -39,6 +39,10 @@ export class RouteInfo {
   wantedP: number = 0
   /** The soft vetoes that sent a composed screen to the model, e.g. "needs_logic=0.99". */
   logic: string = ''
+  /** A web search supplied real data for the text. */
+  searched: boolean = false
+  /** The model wrote function bodies for the blocks (holes). */
+  holes: boolean = false
   /** A failure after Jev chose (did not compile, did not run, needs real data and no search): overrides the generic reason. */
   failure: string = ''
   /** Jev's own note, for the reasons that quote it. */
@@ -82,7 +86,7 @@ export function vetoWords(tag: string): string {
 }
 
 export function routeLabel(info: RouteInfo): string {
-  if (info.route === ROUTE_BLOCKS) { return 'Blocks, no model call' }
+  if (info.route === ROUTE_BLOCKS) { return info.searched ? 'Blocks: web search + the model fills in text' : 'Blocks: the model only fills in text' }
   if (info.route === ROUTE_BLOCKS_MODEL) { return 'Blocks, then the model finishes it' }
   return 'From scratch: the model writes it'
 }
@@ -122,6 +126,14 @@ export function checkLabel(info: RouteInfo): string {
   return 'Check: not needed'
 }
 
+/** What the model did on a blocks-only route: it wrote no program, but it did fill in text. */
+export function whatTheModelDid(info: RouteInfo): string {
+  let text = 'The model wrote no program: it only filled in the text'
+  if (info.searched) { text = text + ' from a web search for real data' }
+  if (info.holes) { text = text + ' and wrote a few small function bodies' }
+  return text + '.'
+}
+
 /** One or two sentences saying why the route is what it is. */
 export function routeWhy(info: RouteInfo): string {
   let built = info.kinds.join(' + ')
@@ -144,7 +156,7 @@ export function routeWhy(info: RouteInfo): string {
       let because = words.length > 0 ? 'the request also needs ' + words.join(' and ') : 'the screen did not cover the request'
       return first + ' Then the model finishes it because ' + because + '.'
     }
-    return first + ' No model call was needed.'
+    return first + ' ' + whatTheModelDid(info)
   }
   if (info.failure.length > 0) { return info.failure }
   if (info.jev === JEV_VETOED) { return 'Jev vetoed building this from blocks (' + info.note.replace('vetoed ', '') + ').' }

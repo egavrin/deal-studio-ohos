@@ -9,7 +9,8 @@ assert.equal(r.logicOf('section1=checklist logic=needs_logic=0.99,needs_integrat
 assert.equal(r.logicOf('section1=checklist'), '')
 
 // labels
-assert.equal(r.routeLabel(info({route: 'blocks'})), 'Blocks, no model call')
+assert.equal(r.routeLabel(info({route: 'blocks'})), 'Blocks: the model only fills in text')
+assert.equal(r.routeLabel(info({route: 'blocks', searched: true})), 'Blocks: web search + the model fills in text')
 assert.match(r.routeLabel(info({route: 'blocks+model'})), /model finishes/)
 assert.match(r.routeLabel(info({route: 'scratch'})), /From scratch/)
 assert.equal(r.jevLabel(info({jev: 'sure', kinds: ['checklist', 'timeline']})), 'Jev: chose checklist + timeline')
@@ -20,7 +21,7 @@ assert.equal(r.checkLabel(info({check: 'confirmed', kinds: ['checklist']})), 'Ch
 assert.match(r.checkLabel(info({check: 'rejected'})), /rejected/); assert.match(r.checkLabel(info({check: 'failed'})), /did not answer/)
 
 // reasons: every route says which of the four things happened
-assert.match(r.routeWhy(info({route: 'blocks', jev: 'sure', kinds: ['checklist']})), /Jev was sure: it chose checklist\. No model call/)
+assert.match(r.routeWhy(info({route: 'blocks', jev: 'sure', kinds: ['checklist']})), /Jev was sure: it chose checklist\. The model wrote no program: it only filled in the text\./)
 assert.match(r.routeWhy(info({route: 'blocks', jev: 'unsure', check: 'confirmed', weak: ['checklist'], kinds: ['checklist']})), /unsure \(checklist\).*DeepSeek checked it and confirmed checklist/)
 assert.match(r.routeWhy(info({route: 'blocks', jev: 'unsure', check: 'yesno', wanted: 'timeline', wantedP: 0.7, kinds: ['timeline']})), /yes\/no question "does the request ask for timeline" answered 0\.70/)
 assert.match(r.routeWhy(info({route: 'blocks+model', jev: 'sure', kinds: ['timer'], logic: 'needs_integration=0.82'})), /Then the model finishes it because the request also needs a phone API or another app \(0\.82\)/)
@@ -34,4 +35,5 @@ assert.equal(r.routeWhy(info({route: 'scratch', jev: 'sure', failure: 'Jev chose
 assert.deepEqual(['blocks', 'blocks+model', 'scratch'].map(x => r.routeShort(info({route: x}))), ['Blocks', 'Blocks + model', 'Scratch'])
 assert.deepEqual(['none', 'off', 'yesno', 'confirmed', 'rejected', 'failed'].map(x => r.checkShort(info({check: x}))), ['not needed', 'off', 'yes/no', 'confirmed', 'rejected', 'no answer'])
 assert.equal(r.vetoWords('needs_logic=0.99'), 'calculation or logic (0.99)'); assert.equal(r.vetoWords('needs_x'), 'needs_x')
+assert.match(r.routeWhy(info({route: 'blocks', jev: 'sure', kinds: ['itinerary'], searched: true, holes: true})), /filled in the text from a web search for real data and wrote a few small function bodies\./)
 console.log('route-check ok')

@@ -72,9 +72,11 @@ const run = async (outcome, opts = {}) => {
     deepseek.extractTemplateContent = async () => { calls++; return JSON.stringify(Object.assign({holes: {rowMatches2: lower}}, rowsAnswer)) }
     ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view'])))
     assert.equal(build.action, 'template'); assert.match(build.note, /holes=filled\(1\)/); assert.match(build.source, /strings\.toLowerCase\(label\)/)
+    assert.equal(build.route.holes, true, 'the route says the model wrote function bodies')
     deepseek.extractTemplateContent = async () => JSON.stringify(rowsAnswer)
     ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view'])))
     assert.equal(build.action, 'template'); assert.match(build.note, /holes=default\(unusable answer\)/); assert.match(build.source, /strings\.contains\(label, query\)/)
+    assert.equal(build.route.holes, false)
     // no filter: the model is not asked about holes at all
     calls = 0
     deepseek.extractTemplateContent = async () => { calls++; return JSON.stringify(rowsAnswer) }

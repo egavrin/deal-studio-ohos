@@ -180,6 +180,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     if (needsGrounding) {
       let searchOk = searchText.length > 0 && !searchText.startsWith('Search failed:') && searchText !== 'No results.'
       searchTag = ' search=' + (searchOk ? 'ok' : 'empty')
+      build.route.searched = searchOk
     }
     let note = outcome.note + searchTag + (content.note.length > 0 ? ' ' + content.note : '')
     let shown = build.kinds.filter((k: string): boolean => k !== 'none').join('+')
@@ -197,6 +198,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
           (bodies: Map<string, string>): string => composeProgram(kinds, globalValues, mergeHoleValues(instanceValues, holeValues(kinds, bodies))))
         if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
         holeBodies = fill.bodies
+        build.route.holes = fill.bodies.size > 0
         instanceValues = mergeHoleValues(instanceValues, holeValues(kinds, fill.bodies))
         if (fill.note.length > 0) { note = note + ' ' + fill.note }
       } else {
