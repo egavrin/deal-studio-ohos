@@ -194,7 +194,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
         onStatus('Writing the details...')
         let kinds = build.kinds
         let fill: HoleFill = await fillHoles(prompt, kinds,
-          (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 500),
+          (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 500, 'Function bodies for the blocks'),
           (bodies: Map<string, string>): string => composeProgram(kinds, globalValues, mergeHoleValues(instanceValues, holeValues(kinds, bodies))))
         if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
         holeBodies = fill.bodies

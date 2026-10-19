@@ -9,7 +9,7 @@ import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText }
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
-import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS } from '../vera/DeepSeekEngine'
+import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS, SideCall } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
@@ -28,7 +28,7 @@ import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } fro
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 import { buildFromTemplates, TemplateBuild, BUILD_CANCELLED, BUILD_SCRATCH, BUILD_COMPLETE } from '../vera/VeraTemplatePipeline'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
-import { RouteInfo, routeLabel, routeShort, jevLabel, checkLabel, checkShort, routeWhy, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED } from '../vera/VeraRoute'
+import { RouteInfo, routeLabel, routeShort, jevLabel, checkLabel, checkShort, routeWhy, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED, CHECK_NONE } from '../vera/VeraRoute'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
@@ -234,6 +234,8 @@ struct GeneratePage {
   @State routeVerifyMs: number = 0
   /** Set when the model's step failed and the blocks are shown without it. */
   @State routeFallback: string = ''
+  /** The small model calls of this run (text for blocks, function bodies, second opinion, UI choice), for the Metrics tab. */
+  @State sideCalls: SideCall[] = []
   @State compiledVbc2: string = ''
   @State compiledSource: string = ''
   @State refinePrompt: string = ''
@@ -521,6 +523,7 @@ struct GeneratePage {
     this.routeKnown = false
     this.routeVerifyMs = 0
     this.routeFallback = ''
+    this.sideCalls = []
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
@@ -540,6 +543,8 @@ struct GeneratePage {
     this.startRun(this.prompt.trim())
     this.genStartTime = Date.now()
     logMark('gen-start', 'chars=' + this.prompt.trim().length.toString())
+    deepseek.clearSideCalls()
+    this.sideCalls = []
     let startFields: Record<string, Object> = {}
     startFields['prompt'] = this.prompt.trim()
     startFields['refining'] = this.previousSource.length > 0
@@ -585,6 +590,7 @@ struct GeneratePage {
     this.routeInfo = build.route
     this.routeKnown = true
     this.routeVerifyMs = build.verifyMs
+    this.sideCalls = deepseek.getSideCalls()
     if (build.action === BUILD_CANCELLED) { return }
     this.lastTemplatePick = build.note
     if (build.action === BUILD_SCRATCH) {
@@ -675,6 +681,7 @@ struct GeneratePage {
     this.routeKnown = false
     this.routeVerifyMs = 0
     this.routeFallback = ''
+    this.sideCalls = []
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
@@ -1015,6 +1022,7 @@ struct GeneratePage {
   }
 
   private addToProgram(metrics: AttemptMetrics): void {
+    this.sideCalls = deepseek.getSideCalls()
     let record = this.currentRun()
     if (record !== null) {
       record!.attempts = [...record!.attempts, metrics]
@@ -1086,6 +1094,7 @@ struct GeneratePage {
 
   private formatUsd(value: number): string {
     if (value <= 0) { return '$0' }
+    if (value < 0.0001) { return '$' + value.toFixed(5) }
     if (value < 0.01) { return '$' + value.toFixed(4) }
     return '$' + value.toFixed(3)
   }
@@ -1325,6 +1334,7 @@ struct GeneratePage {
     this.routeKnown = false
     this.routeVerifyMs = 0
     this.routeFallback = ''
+    this.sideCalls = []
     this.serverBytecode = ''
     this.cancelRequested = false
     this.runId++
@@ -1443,11 +1453,80 @@ struct GeneratePage {
     return total
   }
 
+  /** The small calls that belong to one stage of the run: '1' checking Jev, '2' filling in text, '3' before the program is written. */
+  private sideCallsOf(stage: string): SideCall[] {
+    let out: SideCall[] = []
+    for (let call of this.sideCalls) {
+      let own = call.purpose === 'Second opinion on a weak pick' ? '1' : (call.purpose === 'Pick the UI components' ? '3' : '2')
+      if (own === stage) { out.push(call) }
+    }
+    return out
+  }
+
+  private sideInput(calls: SideCall[]): number { let n = 0; for (let c of calls) { n += c.inputTokens } return n }
+  private sideCached(calls: SideCall[]): number { let n = 0; for (let c of calls) { n += c.cachedTokens } return n }
+  private sideOutput(calls: SideCall[]): number { let n = 0; for (let c of calls) { n += c.outputTokens } return n }
+  private sideMs(calls: SideCall[]): number { let n = 0; for (let c of calls) { n += c.ms } return n }
+  private sideCost(calls: SideCall[]): number { return this.costOf(this.sideInput(calls), this.sideCached(calls), this.sideOutput(calls)) }
+
+  /** One small call on one line: what it was for, how long it took, what it read and wrote, what it cost. */
+  private callLine(call: SideCall): string {
+    if (!call.ok) { return this.formatMs(call.ms) + ' \u00B7 failed' }
+    return this.formatMs(call.ms) + ' \u00B7 ' + call.inputTokens + ' in' +
+      (call.cachedTokens > 0 ? ' (' + call.cachedTokens + ' cached)' : '') + ' \u00B7 ' + call.outputTokens + ' out \u00B7 ~' +
+      this.formatUsd(this.costOf(call.inputTokens, call.cachedTokens, call.outputTokens))
+  }
+
   /** Colour of the route headline: blocks alone, blocks the model finishes, or a program written from scratch. */
   routeTone(): string {
     if (this.routeInfo.route === ROUTE_BLOCKS) { return '#1F9D4C' }
     if (this.routeInfo.route === ROUTE_BLOCKS_MODEL) { return '#C77700' }
     return '#4A5A80'
+  }
+
+  /** A numbered stage heading with a coloured bar, so the three parts of a run cannot be mistaken for one another. */
+  @Builder
+  stageHeader(num: string, title: string, who: string, color: string) {
+    Column({ space: 4 }) {
+      // The row is narrower than the pane: the pane's right edge slices whatever touches it.
+      Row({ space: 8 }) {
+        Text(num)
+          .fontSize(12)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#FFFFFF')
+          .backgroundColor(color)
+          .borderRadius(10)
+          .width(20)
+          .height(20)
+          .textAlign(TextAlign.Center)
+        Text(title).fontSize(13).fontWeight(FontWeight.Bold).fontColor(color).layoutWeight(1).maxLines(1)
+        Text(who)
+          .fontSize(10)
+          .fontColor(color)
+          .maxLines(1)
+          .border({ width: 1, color: color, radius: 6 })
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+      }
+      .width('92%')
+      Divider().strokeWidth(2).color(color)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: 6 })
+  }
+
+  /** One small model call as a card: its purpose, then time, tokens and cost. */
+  @Builder
+  callRow(call: SideCall) {
+    Column({ space: 2 }) {
+      Text(call.purpose).fontSize(12).fontWeight(FontWeight.Medium).fontColor('#222222')
+      Text(this.callLine(call)).fontSize(11).fontColor(call.ok ? '#666666' : '#C62828')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(10)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(8)
   }
 
   /**
@@ -1738,35 +1817,62 @@ struct GeneratePage {
         } else {
           Scroll() {
             Column({ space: 10 }) {
-              if (this.routeKnown) {
-                // Where this request went before any code was written: Jev's answer, the second look, and the route.
+              if (this.routeKnown || this.attempts.length > 0) {
+                // Totals first, then the three stages in the order they happen.
                 Row({ space: 8 }) {
-                  this.cell('Route', routeShort(this.routeInfo), jevLabel(this.routeInfo))
-                  this.cell('Check', (this.routeInfo.check === CHECK_CONFIRMED || this.routeInfo.check === CHECK_REJECTED ||
-                    this.routeInfo.check === CHECK_FAILED) ? this.formatMs(this.routeVerifyMs) : checkShort(this.routeInfo),
-                    checkLabel(this.routeInfo).replace('Check: ', ''))
+                  this.cell('Total time', this.formatMs(this.totalMs), 'the whole run')
+                  if (this.mode === MODE_DEEPSEEK) {
+                    this.cell('Total cost', '~' + this.formatUsd(this.runCost() + this.sideCost(this.sideCalls)), 'all model calls')
+                  }
                 }
                 .width('100%')
-                Text(routeWhy(this.routeInfo)).fontSize(12).fontColor('#555555').width('100%')
+              }
+              if (this.routeKnown) {
+                this.stageHeader('1', 'Choosing blocks', 'Jev', '#2F6FEB')
+                Row({ space: 8 }) {
+                  this.cell('Route', routeShort(this.routeInfo), jevLabel(this.routeInfo))
+                  this.cell('Jev', this.formatMs(this.fastJevMs), 'classify + pick blocks')
+                }
+                .width('100%')
+                Row({ space: 8 }) {
+                  this.cell('Check', checkShort(this.routeInfo),
+                    this.routeInfo.check === CHECK_NONE ? 'no second look needed' : checkLabel(this.routeInfo).replace('Check: ', ''))
+                  if (this.fastSearchMs >= 0) {
+                    this.cell('Search', this.formatMs(this.fastSearchMs), 'real-data lookup')
+                  }
+                }
+                .width('100%')
+                ForEach(this.sideCallsOf('1'), (call: SideCall) => { this.callRow(call) })
+                Text(routeWhy(this.routeInfo)).fontSize(12).fontColor('#555555').width('92%')
+
+                if (this.sideCallsOf('2').length > 0 || this.fastContentMs > 0) {
+                  this.stageHeader('2', 'Model fills in text', 'DeepSeek \u00B7 text only', '#1F9D4C')
+                  ForEach(this.sideCallsOf('2'), (call: SideCall) => { this.callRow(call) })
+                  Row({ space: 8 }) {
+                    this.cell('Stage time', this.formatMs(this.sideMs(this.sideCallsOf('2'))), 'text for the blocks')
+                    this.cell('Stage cost', '~' + this.formatUsd(this.sideCost(this.sideCallsOf('2'))),
+                      this.sideInput(this.sideCallsOf('2')) + ' in \u00B7 ' + this.sideOutput(this.sideCallsOf('2')) + ' out')
+                  }
+                  .width('100%')
+                }
               }
               if (this.attempts.length === 0 && !this.fastPathRan) {
                 Text('No run yet').fontSize(13).fontColor('#BBBBBB').width('100%')
               } else if (this.attempts.length > 0) {
-                // The headline is two of the same tiles as everything else:
-                // a right-aligned column inside a full-width row kept landing
+                this.stageHeader(this.routeKnown ? '3' : '1', 'Model writes the program', 'DeepSeek', '#C77700')
+                ForEach(this.sideCallsOf('3'), (call: SideCall) => { this.callRow(call) })
+                // Two tiles per row: a right-aligned column inside a full-width row kept landing
                 // past the edge, and this needs no special case.
                 Row({ space: 8 }) {
-                  this.cell('Time', this.formatMs(this.totalMs), this.runVerdict())
+                  this.cell('Writing', this.formatMs(this.runLlmMs()), this.runVerdict())
                   if (this.mode === MODE_DEEPSEEK) {
-                    this.cell('Cost', '~' + this.formatUsd(this.runCost()), 'incl. failed attempts')
+                    this.cell('Stage cost', '~' + this.formatUsd(this.runCost()), 'incl. failed attempts')
                   }
                 }
                 .width('100%')
 
-                // Where the run time actually went: waiting on the model, or
-                // working on the phone.
+                // Where the writing time went: waiting on the model, or working on the phone.
                 Row({ space: 8 }) {
-                  this.cell('LLM wall', this.formatMs(this.runLlmMs()), 'all calls this run')
                   this.cell('On device', this.formatMs(this.runCompileMs()), 'compiler only')
                 }
                 .width('100%')
@@ -1852,25 +1958,6 @@ struct GeneratePage {
                   ForEach(this.pastRuns(), (record: RunRecord) => {
                     this.pastRun(record, this.indexOfRun(record))
                   })
-                }
-              } else {
-                // Fast path composed the result directly; no DeepSeek "attempt" ran at all.
-                Row({ space: 8 }) {
-                  this.cell('Time', this.formatMs(this.totalMs), 'fast path, no code generation')
-                }
-                .width('100%')
-                Row({ space: 8 }) {
-                  this.cell('Jev', this.formatMs(this.fastJevMs), 'classify + pick fragments')
-                  if (this.fastSearchMs >= 0) {
-                    this.cell('Search', this.formatMs(this.fastSearchMs), 'real-data grounding')
-                  }
-                }
-                .width('100%')
-                if (this.fastContentMs > 0) {
-                  Row({ space: 8 }) {
-                    this.cell('Fill', this.formatMs(this.fastContentMs), 'content for the template')
-                  }
-                  .width('100%')
                 }
               }
             }

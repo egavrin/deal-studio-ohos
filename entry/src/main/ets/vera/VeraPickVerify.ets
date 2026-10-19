@@ -71,7 +71,7 @@ export async function verifyWeakPick(prompt: string, candidates: string[]): Prom
   let started = Date.now()
   let answer = new VerifyAnswer()
   try {
-    let text = await deepseek.extractTemplateContent(SYSTEM, buildVerifyUser(prompt, candidates), 200)
+    let text = await deepseek.extractTemplateContent(SYSTEM, buildVerifyUser(prompt, candidates), 200, 'Second opinion on a weak pick')
     if (text !== null) { answer = readVerifyAnswer(text, candidates) } else { answer.failed = true }
   } catch (_e) {
     answer = new VerifyAnswer()

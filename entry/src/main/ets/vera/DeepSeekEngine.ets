@@ -121,6 +121,19 @@ const TOOLS_AUTO = 'auto'
 const TOOLS_NONE = 'none'
 const TOOLS_OFF = 'off'
 
+/**
+ * One of the small model calls that is not the program itself: the text for a block, a block's function bodies, the second
+ * opinion on a weak pick, the choice of UI components. Kept per run so the Metrics tab can show what each cost.
+ */
+export class SideCall {
+  purpose: string = ''
+  ms: number = 0
+  inputTokens: number = 0
+  cachedTokens: number = 0
+  outputTokens: number = 0
+  ok: boolean = true
+}
+
 class StreamTurn {
   content: string = ''
   reasoning: string = ''
@@ -526,6 +539,25 @@ export class DeepSeekEngine {
   lastToolRounds(): number { return this.toolRounds }
   lastInputTokens(): number { return this.inputTokens }
 
+  private sideCalls: SideCall[] = []
+  /** Forget the small calls of the previous run; the Generate screen calls it when a run starts. */
+  clearSideCalls(): void { this.sideCalls = [] }
+  /** The small calls of this run, oldest first. */
+  getSideCalls(): SideCall[] { return this.sideCalls.slice() }
+  private recordSideCall(purpose: string, startedAt: number, turn: StreamTurn | null): void {
+    let call = new SideCall()
+    call.purpose = purpose
+    call.ms = Date.now() - startedAt
+    if (turn !== null) {
+      call.inputTokens = turn.inputTokens
+      call.cachedTokens = turn.cacheHitTokens
+      call.outputTokens = turn.outputTokens
+    } else {
+      call.ok = false
+    }
+    this.sideCalls.push(call)
+  }
+
   async generate(request: GenerateRequest, onToken: TokenCallback,
       onProgress: ProgressCallback = noProgress): Promise<GenerateResult> {
     let key = settings.getApiKey()
@@ -752,6 +784,7 @@ export class DeepSeekEngine {
     let startedAt = Date.now()
     try {
       let turn = await this.streamOnce(messages, 0, 300, (_token: string): void => {}, TOOLS_OFF, 'uineeds', 1)
+      this.recordSideCall('Pick the UI components', startedAt, turn)
       let text = extractVeraSource(turn.content)
       let start = text.indexOf('[')
       let end = text.lastIndexOf(']')
@@ -765,6 +798,7 @@ export class DeepSeekEngine {
       return needs.length > 0 ? needs : null
     } catch (e) {
       console.warn('VERA-UI-NEEDS failed: ' + (e as Error).message)
+      this.recordSideCall('Pick the UI components', startedAt, null)
       return null
     } finally {
       this.thinking = savedThinking
@@ -782,7 +816,8 @@ export class DeepSeekEngine {
    * extractUiNeeds above, because this is meant to be the cheapest possible
    * request this engine makes, not a second generation attempt.
    */
-  async extractTemplateContent(systemPrompt: string, userPrompt: string, maxTokens: number): Promise<string | null> {
+  async extractTemplateContent(systemPrompt: string, userPrompt: string, maxTokens: number,
+      purpose: string = 'Text for the blocks'): Promise<string | null> {
     // The engine holds one request and one set of flags: a stale template run must not take them from a generation.
     if (!settings.hasApiKey() || this.generating) { return null }
     let messages: Record<string, Object>[] = []
@@ -795,9 +830,11 @@ export class DeepSeekEngine {
     let startedAt = Date.now()
     try {
       let turn = await this.streamOnce(messages, 0.2, maxTokens, (_token: string): void => {}, TOOLS_OFF, 'template', 1)
+      this.recordSideCall(purpose, startedAt, turn)
       console.info('VERA-TEMPLATE-CONTENT ms=' + (Date.now() - startedAt).toString())
       return extractVeraSource(turn.content)
     } catch (e) {
+      this.recordSideCall(purpose, startedAt, null)
       console.warn('VERA-TEMPLATE-CONTENT failed: ' + (e as Error).message)
       return null
     } finally {
