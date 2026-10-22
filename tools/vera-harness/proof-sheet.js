@@ -145,7 +145,10 @@ function createRenderer(theme, options) {
       const card = kind === 'card' || kind === 'listgroup'
       const pad = card ? t.padCard : T.densityPad(t, style), w = Math.max(1, width - 2 * pad)
       const inner = stack([text(node.text, 'heading', w), ...children.map(c => layout(c, w, kind))], w, ['column', 'scroll'].includes(kind) ? 0 : T.densityGap(t, style))
-      return frame(inner, width, pad, pad, pad, card ? T.toneFill(t, style, t.surface) : T.containerFill(t, style), card ? t.radiusCard : 0, card ? t.line : 'none')
+      const boxed = frame(inner, width, pad, pad, pad, card ? T.toneFill(t, style, t.surface) : T.containerFill(t, style), card ? t.radiusCard : 0, card ? t.lineSoft : 'none')
+      // ArkUI's .shadow: a blurred copy of the card under it.
+      if (card && t.shadowRadius > 0) boxed.svg = `<rect width="${width}" height="${boxed.height}" rx="${t.radiusCard}" fill="#000" filter="url(#lift)"/>` + boxed.svg
+      return boxed
     }
     if (kind === 'header' || kind === 'sectionheader') {
       const pad = kind === 'header' ? t.padBase : 0, w = Math.max(1, width - 2 * pad)
@@ -260,6 +263,12 @@ function createRenderer(theme, options) {
   return layout
 }
 
+function liftFilter(t) {
+  const c = /^#([0-9A-F]{2})([0-9A-F]{6})$/i.exec(t.shadowColor)
+  if (!c || t.shadowRadius <= 0) return ''
+  return `<defs><filter id="lift" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="${t.shadowOffsetY}" stdDeviation="${t.shadowRadius / 2}" flood-color="#${c[2]}" flood-opacity="${parseInt(c[1], 16) / 255}"/></filter></defs>`
+}
+
 async function main() {
   const args = Object.fromEntries(process.argv.slice(2).map(arg => { const at = arg.indexOf('='); return [arg.slice(2, at), arg.slice(at + 1)] }))
   const width = args.width === undefined ? 360 : Number(args.width)
@@ -273,6 +282,6 @@ async function main() {
   const layout = createRenderer(theme, {embedded: args.embedded === 'true', selectWrap: args['select-wrap'] !== 'false'})
   const box = layout(tree, width), height = Math.max(1, box.height)
   const metadata = {approximate: true, preset: theme.preset, width, dark: args.dark === 'true', embedded: args.embedded === 'true', label: args.label || ''}
-  process.stdout.write(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><title>${esc(args.label || 'Approximate Vera proof')}</title><metadata>${esc(JSON.stringify(metadata))}</metadata>${rect(width, height, theme.background)}${box.svg}</svg>\n`)
+  process.stdout.write(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><title>${esc(args.label || 'Approximate Vera proof')}</title><metadata>${esc(JSON.stringify(metadata))}</metadata>${liftFilter(theme)}${rect(width, height, theme.background)}${box.svg}</svg>\n`)
 }
 main().catch(error => { console.error(error.stack || error); process.exitCode = 1 })

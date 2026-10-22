@@ -86,7 +86,7 @@ if (!baseline) {
   }
  })
  const T=loadVera('VeraTheme')
- const targets={clean:[32,40,16,24,16,16,'#F8FAFC','#2563EB'],soft:[32,40,16,24,20,24,'#FAF7F2','#6D5BD0'],expressive:[36,44,16,28,20,20,'#F7F3FF','#7C3AED'],editorial:[38,42,16,28,20,4,'#FAFAF7','#27272A'],technical:[30,36,15,20,16,8,'#F3F7F7','#0F766E'],playful:[36,44,16,28,20,24,'#FFF7F4','#BE185D']}
+ const targets={clean:[32,40,16,32,16,16,'#F8FAFC','#2563EB'],soft:[32,40,16,32,20,24,'#FAF7F2','#6D5BD0'],expressive:[36,44,16,36,20,20,'#F7F3FF','#7C3AED'],editorial:[38,42,16,36,20,4,'#FAFAF7','#27272A'],technical:[30,36,15,28,16,8,'#F3F7F7','#0F766E'],playful:[36,44,16,36,20,24,'#FFF7F4','#BE185D']}
  function luminance(hex) { return [1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(c=>c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4).reduce((a,c,i)=>a+c*[0.2126,0.7152,0.0722][i],0) }
  function ratio(a,b) { const x=luminance(a),y=luminance(b); return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05) }
  for(const [preset,target] of Object.entries(targets)) {

@@ -948,13 +948,13 @@ export struct VeraPreview {
   private sectionFill(style: string): string {
     let t = this.t()
     if (style === 'hero') { return t.primaryFill }
-    if (style === 'summary') { return t.surface }
+    if (style === 'summary' || style === 'content') { return t.surface }
     if (style === 'warning') { return t.warningFill }
     return '#00000000'
   }
 
   private sectionFills(style: string): boolean {
-    return style === 'hero' || style === 'summary' || style === 'warning'
+    return style === 'hero' || style === 'summary' || style === 'content' || style === 'warning'
   }
 
   /**
@@ -1002,6 +1002,34 @@ export struct VeraPreview {
   private renderTextSize(style: string): number {
     let size = textSize(this.t(), style)
     return this.embedded && (style === 'display' || style === 'metric') ? Math.min(32, size) : size
+  }
+
+  /**
+   * The wash behind a title block: the accent's container fading into the page, so the top of the
+   * screen carries the colour without a frame. Flat presets (no shadow) and an already-filled
+   * accent block get none -- a gradient needs two distinct stops, so this gives the same colour twice.
+   */
+  private titleTint(filled: boolean): string {
+    return this.t().shadowRadius > 0 && !filled ? this.t().primaryFill : this.t().background
+  }
+
+  /** The disc a timeline entry's icon sits on; the rail runs through its centre. */
+  private timelineMarker(): number {
+    return Math.round(this.t().sizeBody * 1.9)
+  }
+
+  /**
+   * How a title block or a section comes onto the screen: it fades in while rising a little.
+   * Short and with no overshoot, so a screen that fills in as it is generated settles rather than bounces.
+   */
+  private arrival(): TransitionEffect {
+    return TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 14 }))
+      .animation({ duration: 280, curve: Curve.EaseOut })
+  }
+
+  /** A stat's figure sits a step under the display size, so the title leads and the numbers follow it. */
+  private statFigureSize(): number {
+    return Math.round(this.renderTextSize('metric') * 0.85)
   }
 
   /** Each group measures its own available width, including inside another group. */
@@ -1305,6 +1333,20 @@ export struct VeraPreview {
     return this.sectionFills(style) ? this.t().radiusCard : 0
   }
 
+  /** An icon on a tinted disc: the anchor that lets the eye find a row or an empty screen. */
+  @Builder
+  iconChip(name: string, box: number, fill: string, colour: string) {
+    Column() {
+      this.drawIcon(name, Math.round(box * 0.5), colour)
+    }
+    .width(box)
+    .height(box)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(fill)
+    .borderRadius(box / 2)
+  }
+
   /**
    * One icon, at a size, in a colour.
    *
@@ -1437,8 +1479,9 @@ export struct VeraPreview {
       .alignItems(HorizontalAlign.Start)
       .padding(this.t().padCard)
       .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
-      .border({ width: this.t().borderWidth, color: this.t().line })
+      .border({ width: this.t().borderWidth, color: this.t().lineSoft })
       .borderRadius(this.t().radiusCard)
+      .shadow({ radius: this.t().shadowRadius, color: this.t().shadowColor, offsetY: this.t().shadowOffsetY })
     } else if (node.kind === 'text') {
       Text(node.text)
         .fontSize(this.renderTextSize(node.style))
@@ -1460,8 +1503,8 @@ export struct VeraPreview {
           Text(node.label)
             .fontSize(this.t().sizeCaption)
             .fontFamily(this.textFamily())
-            .fontWeight(this.t().weightHeading)
-            .fontColor(this.t().inkMuted)
+            .fontWeight(Math.max(this.t().weightHeading, 600))
+            .fontColor(this.t().primaryInk)
             .letterSpacing(this.t().eyebrowSpacing)
             .width('100%')
         }
@@ -1493,6 +1536,7 @@ export struct VeraPreview {
         bottom: node.style === 'accent' ? this.t().padCard : 0
       })
       .backgroundColor(node.style === 'accent' ? this.t().primaryFill : '#00000000')
+      .linearGradient({ angle: 180, colors: [[this.titleTint(node.style === 'accent'), 0.0], [this.t().background, 1.0]] })
       .borderRadius(node.style === 'accent' ? this.t().radiusCard : 0)
       .margin({ bottom: this.t().gapSection })
     } else if (node.kind === 'adaptivecolumns') {
@@ -1531,15 +1575,23 @@ export struct VeraPreview {
           Text(node.label)
             .fontSize(this.t().sizeEyebrow)
             .fontFamily(this.textFamily())
-            .fontWeight(this.t().weightHeading)
-            .fontColor(this.t().inkMuted)
+            .fontWeight(Math.max(this.t().weightHeading, 600))
+            .fontColor(this.t().primaryInk)
             .letterSpacing(this.t().eyebrowSpacing)
             .width('100%')
             .textAlign(node.style === 'center' ? TextAlign.Center : TextAlign.Start)
         }
         Row({ space: this.t().gapBase }) {
           if (node.icon.length > 0) {
-            this.drawIcon(node.icon, this.t().sizeTitle, this.t().primaryInk)
+            Column() {
+              this.drawIcon(node.icon, this.t().sizeTitle - 4, this.t().primaryInk)
+            }
+            .width(this.t().sizeTitle + 16)
+            .height(this.t().sizeTitle + 16)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            .backgroundColor(this.t().primaryFill)
+            .borderRadius(this.t().radiusControl)
           }
           Text(node.text)
             .fontSize(this.renderTextSize('display'))
@@ -1564,13 +1616,15 @@ export struct VeraPreview {
       .alignItems(node.style === 'center' ? HorizontalAlign.Center : HorizontalAlign.Start)
       .padding({ left: this.t().padBase, right: this.t().padBase,
                  top: this.t().padLoose, bottom: this.t().padBase })
+      .linearGradient({ angle: 180, colors: [[this.titleTint(false), 0.0], [this.t().background, 1.0]] })
+      .transition(this.arrival())
     } else if (node.kind === 'section') {
       Column({ space: this.t().gapTight }) {
         if (node.text.length > 0) {
           Text(node.text)
             .fontSize(this.renderTextSize('heading'))
             .fontFamily(this.textFamily('heading'))
-            .fontWeight(this.t().weightHeading)
+            .fontWeight(Math.max(this.t().weightHeading, 600))
             .fontColor(node.style === 'warning' ? this.t().warningInk :
               node.style === 'supporting' ? this.t().inkSoft : this.t().ink)
             .width('100%')
@@ -1584,7 +1638,8 @@ export struct VeraPreview {
         }
         this.renderChildren(node)
       }
-      .width('100%')
+      // Margins add to a 100% width, so a section that stands in from the edges takes them off it.
+      .width(this.sectionFills(node.style) ? 'calc(100% - ' + (this.t().padBase * 2).toString() + 'vp)' : '100%')
       .alignItems(HorizontalAlign.Start)
       .padding({
         left: !this.sectionFills(node.style) && this.compositionOwnsInset(parentKind) ? 0 : this.sectionPadX(node.style),
@@ -1593,9 +1648,21 @@ export struct VeraPreview {
       })
       .backgroundColor(this.sectionFill(node.style))
       .borderRadius(this.sectionRadius(node.style))
+      // Only a section that fills has a box to lift. For the others a shadow of radius 0 is not "none":
+      // it is a hard copy of the box offset downward, which showed as a line under every plain section.
+      .shadow({
+        radius: this.sectionFills(node.style) ? this.t().shadowRadius : 0,
+        color: this.sectionFills(node.style) ? this.t().shadowColor : '#00000000',
+        offsetY: this.sectionFills(node.style) ? this.t().shadowOffsetY : 0 })
       // The gap between one section and the next comes from the theme, so a
       // program does not have to punctuate itself with ui.Spacer.
-      .margin({ top: this.t().gapTight, bottom: this.t().gapSection })
+      // A section that fills stands in from the screen's edges: run flush to them, its shadow
+      // shows only as a hard line along the bottom and its corners are cut off.
+      .margin({
+        left: this.sectionFills(node.style) ? this.t().padBase : 0,
+        right: this.sectionFills(node.style) ? this.t().padBase : 0,
+        top: this.t().gapTight, bottom: this.t().gapSection })
+      .transition(this.arrival())
     } else if (node.kind === 'sectionheader') {
       Column({ space: 2 }) {
         Row() {
@@ -1668,8 +1735,9 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .backgroundColor(this.t().surfaceRaised)
-      .border({ width: this.t().borderWidth, color: this.t().line })
+      .border({ width: this.t().borderWidth, color: this.t().lineSoft })
       .borderRadius(this.t().radiusCard)
+      .shadow({ radius: this.t().shadowRadius, color: this.t().shadowColor, offsetY: this.t().shadowOffsetY })
       .clip(true)
       .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'banner') {
@@ -1725,7 +1793,8 @@ export struct VeraPreview {
       // sees. It used to be a blank column.
       Column({ space: this.t().gapBase }) {
         if (node.icon.length > 0) {
-          this.drawIcon(node.icon, this.t().sizeDisplay, this.t().inkMuted)
+          this.iconChip(node.icon, this.t().controlHeight + 24,
+            this.t().primaryFill, this.t().primaryInk)
         }
         Text(node.text)
           .fontSize(this.renderTextSize('heading'))
@@ -1774,12 +1843,19 @@ export struct VeraPreview {
               .fontFamily(this.textFamily())
               .fontColor(this.t().inkMuted)
               .layoutWeight(1)
+              // One line, so the figures of neighbouring stats sit on one baseline.
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
         Text(node.text)
-          .fontSize(this.renderTextSize('metric'))
+          .fontSize(this.statFigureSize())
+          // One line, shrunk to fit its column: three to a row leave a cell about 100 vp wide.
+          .maxLines(1)
+          .minFontSize(14)
+          .maxFontSize(this.statFigureSize())
           .fontFamily(this.textFamily('metric'))
           .fontWeight(this.t().weightMetric)
           .fontColor(toneInk(this.t(), node.style, this.t().ink))
@@ -1794,7 +1870,7 @@ export struct VeraPreview {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding(this.t().padBase)
+      .padding(this.t().padTight)
     } else if (node.kind === 'metricgroup') {
       // Equal columns over one shared surface, built the same way ui.Grid is
       // and for the same reason -- see the note in the grid branch.
@@ -1848,16 +1924,19 @@ export struct VeraPreview {
               .fontFamily(this.textFamily())
               .fontColor(this.t().inkMuted)
               .layoutWeight(1)
+              // One line, so the figures of neighbouring stats sit on one baseline.
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
         Text(this.formatNumber(node))
-          .fontSize(this.renderTextSize('metric'))
+          .fontSize(this.statFigureSize())
           // One line, shrunk to fit its column: "$120.50" in half a screen wrapped its last digit onto a second line.
           .maxLines(1)
           .minFontSize(14)
-          .maxFontSize(this.renderTextSize('metric'))
+          .maxFontSize(this.statFigureSize())
           .fontFamily(this.textFamily('metric'))
           .fontWeight(this.t().weightMetric)
           .fontColor(toneInk(this.t(), node.style, this.t().ink))
@@ -1868,11 +1947,13 @@ export struct VeraPreview {
             .fontFamily(this.textFamily())
             .fontColor(this.t().inkSoft)
             .width('100%')
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding(this.t().padBase)
+      .padding(this.t().padTight)
     } else if (node.kind === 'numberfield') {
       // A stepper for a small count; a typed amount goes through ui.TextField
       // and strings.toNumber instead.
@@ -2063,10 +2144,11 @@ export struct VeraPreview {
               this.renderNode(child, 'timeline')
             }
             .width('100%')
-            .padding({ left: this.t().gapLoose })
+            .padding({ left: this.timelineMarker() / 2 + this.t().gapBase })
             .border({
-              width: { left: index < node.children.length - 1 ? this.t().borderWidth * 2 : 0 },
-              color: { left: this.t().line }
+              // The last entry keeps the rail's width but not its colour, so its words line up with the rest.
+              width: { left: this.t().borderWidth * 2 },
+              color: { left: index < node.children.length - 1 ? this.t().lineStrong : '#00000000' }
             })
 
             // A marker means "a moment happened here", so only an entry gets
@@ -2086,14 +2168,14 @@ export struct VeraPreview {
                   .backgroundColor(toneEdge(this.t(), child.style, this.t().primaryInk))
               }
             }
-            .width(child.kind === 'timelineitem' ? this.t().sizeBody * 1.5 : 0)
-            .height(child.kind === 'timelineitem' ? this.t().sizeBody * 1.5 : 0)
-            .borderRadius(this.t().sizeBody * 0.75)
+            .width(child.kind === 'timelineitem' ? this.timelineMarker() : 0)
+            .height(child.kind === 'timelineitem' ? this.timelineMarker() : 0)
+            .borderRadius(this.timelineMarker() / 2)
             .backgroundColor(child.kind === 'timelineitem'
-              ? this.t().background : '#00000000')
+              ? toneFill(this.t(), child.style, this.t().primaryFill) : '#00000000')
             .alignItems(HorizontalAlign.Center)
             .justifyContent(FlexAlign.Center)
-            .offset({ x: -(this.t().sizeBody * 0.75) })
+            .offset({ x: -(this.timelineMarker() / 2) })
             // Same keying as renderChildren; see the note there.
           }
           .width('100%')
@@ -2102,7 +2184,7 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .padding({
-        left: densityPad(this.t(), node.style) + this.t().sizeBody * 0.75,
+        left: densityPad(this.t(), node.style) + this.timelineMarker() / 2,
         right: densityPad(this.t(), node.style),
         top: densityPad(this.t(), node.style),
         bottom: densityPad(this.t(), node.style)
@@ -2137,7 +2219,8 @@ export struct VeraPreview {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding({ bottom: node.style === 'compact' ? this.t().gapBase : this.t().gapLoose })
+      .padding({ top: Math.round((this.timelineMarker() - this.t().sizeBody * 1.3) / 2),
+                 bottom: node.style === 'compact' ? this.t().gapBase : this.t().gapLoose })
       .opacity(node.enabled ? 1 : 0.5)
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
@@ -2218,8 +2301,9 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .backgroundColor(this.t().surfaceRaised)
-      .border({ width: this.t().borderWidth, color: this.t().line })
+      .border({ width: this.t().borderWidth, color: this.t().lineSoft })
       .borderRadius(this.t().radiusCard)
+      .shadow({ radius: this.t().shadowRadius, color: this.t().shadowColor, offsetY: this.t().shadowOffsetY })
     } else if (node.kind === 'tablerow') {
       // Each row's own cells (node.options) say how many columns it draws --
       // not the table's columns prop, which exists for the model to keep
@@ -2510,8 +2594,9 @@ export struct VeraPreview {
     } else if (node.kind === 'listitem') {
       Row({ space: this.t().gapBase + 2 }) {
         if (node.icon.length > 0) {
-          this.drawIcon(node.icon, this.t().sizeHeading,
-            toneInk(this.t(), node.style, this.t().inkSoft))
+          this.iconChip(node.icon, this.t().controlHeight - 4,
+            toneFill(this.t(), node.style, this.t().primaryFill),
+            toneInk(this.t(), node.style, this.t().primaryInk))
         }
         Column({ space: 2 }) {
           Text(node.text).fontSize(this.t().sizeBody + 1).fontFamily(this.textFamily()).width('100%')
