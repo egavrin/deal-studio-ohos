@@ -1602,7 +1602,7 @@ export struct VeraPreview {
             .textAlign(node.style === 'center' ? TextAlign.Center : TextAlign.Start)
         }
         .width('100%')
-        .alignItems(VerticalAlign.Center)
+        .alignItems(VerticalAlign.Top)
         if (node.value.length > 0) {
           Text(node.value)
             .fontSize(this.t().sizeBody)
@@ -1843,8 +1843,11 @@ export struct VeraPreview {
               .fontFamily(this.textFamily())
               .fontColor(this.t().inkMuted)
               .layoutWeight(1)
-              // One line, so the figures of neighbouring stats sit on one baseline.
+              // One line, so the figures of neighbouring stats sit on one baseline: a long label
+              // shrinks to fit before it is cut.
               .maxLines(1)
+              .minFontSize(9)
+              .maxFontSize(this.t().sizeCaption)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
         }
@@ -1924,8 +1927,11 @@ export struct VeraPreview {
               .fontFamily(this.textFamily())
               .fontColor(this.t().inkMuted)
               .layoutWeight(1)
-              // One line, so the figures of neighbouring stats sit on one baseline.
+              // One line, so the figures of neighbouring stats sit on one baseline: a long label
+              // shrinks to fit before it is cut.
               .maxLines(1)
+              .minFontSize(9)
+              .maxFontSize(this.t().sizeCaption)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
         }
@@ -1959,14 +1965,15 @@ export struct VeraPreview {
       // and strings.toNumber instead.
       Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().inkStrong).width('100%')
         }
         Row({ space: this.t().gapBase }) {
           Button('-')
             .fontSize(this.t().sizeBody)
             .fontFamily(this.textFamily())
-            .width(this.t().controlHeight)
-            .height(this.t().controlHeight)
+            .width(this.t().controlHeight - 8)
+            .height(this.t().controlHeight - 8)
             .type(ButtonType.Circle)
             .enabled(node.enabled && node.numberValue > node.minimum)
             .backgroundColor(this.t().secondaryFill)
@@ -2000,6 +2007,12 @@ export struct VeraPreview {
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
+        // One pill holding both buttons and the value, rather than a circle at each edge of the screen.
+        .height(this.t().controlHeight)
+        .padding({ left: 4, right: 4 })
+        .backgroundColor(this.t().fieldFill)
+        .border({ width: this.t().borderWidth, color: this.t().fieldLine })
+        .borderRadius(this.t().controlHeight / 2)
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
@@ -2463,7 +2476,8 @@ export struct VeraPreview {
     } else if (node.kind === 'field') {
       Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().inkStrong).width('100%')
         }
         // Commits on submit rather than on every keystroke. The tree no longer
         // rebuilds under the caret, but echoing each character back through the
@@ -2473,7 +2487,10 @@ export struct VeraPreview {
           .fontFamily(this.textFamily())
           .fontColor(this.t().ink)
           .placeholderColor(this.t().inkMuted)
-          .backgroundColor(this.t().surface)
+          .caretColor(this.t().primary)
+          .backgroundColor(this.t().fieldFill)
+          .border({ width: this.t().borderWidth, color: this.t().fieldLine })
+          .borderRadius(this.t().radiusControl)
           .height(node.style === 'multiline' ? this.t().controlHeight * 2 : this.t().controlHeight)
           .width('100%')
           .enabled(node.enabled)
@@ -2514,8 +2531,10 @@ export struct VeraPreview {
     } else if (node.kind === 'slider') {
       Column({ space: 2 }) {
         Row() {
-          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).layoutWeight(1)
-          Text(node.eventValue.toString()).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkStrong)
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().inkStrong).layoutWeight(1)
+          Text(node.eventValue.toString()).fontSize(this.t().sizeCaption).fontFamily(this.textFamily('metric'))
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().primaryInk)
         }.width('100%')
         Slider({
           value: node.eventValue,
@@ -2542,7 +2561,8 @@ export struct VeraPreview {
     } else if (node.kind === 'select') {
       Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().inkStrong).width('100%')
         }
         // A single trigger showing the current choice, with the rest of the
         // options in a system overlay menu rather than always on screen. The
@@ -2561,9 +2581,10 @@ export struct VeraPreview {
         }
         .width('100%')
         .height(this.t().controlHeight)
-        .padding({ left: this.t().padRow, right: this.t().padRow })
+        .padding({ left: this.t().padBase, right: this.t().padBase })
         .borderRadius(this.t().radiusControl)
-        .backgroundColor(this.t().secondaryFill)
+        .backgroundColor(this.t().fieldFill)
+        .border({ width: this.t().borderWidth, color: this.t().fieldLine })
         .opacity(node.enabled ? 1 : 0.5)
         .enabled(node.enabled)
         .bindMenu(this.selectMenuItems(node))
@@ -2644,9 +2665,14 @@ export struct VeraPreview {
       Divider().strokeWidth(this.t().borderWidth).color(this.t().line)
         .margin({ top: this.t().padRow, bottom: this.t().padRow })
     } else if (node.kind === 'progress') {
-      Column({ space: 3 }) {
-        if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
+      Column({ space: 6 }) {
+        // The label on the left and how far along on the right, so the bar needs no second line to be read.
+        Row() {
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().inkStrong).layoutWeight(1)
+          Text(Math.round(100 * node.eventValue / (node.maximum > 0 ? node.maximum : 100)).toString() + '%')
+            .fontSize(this.t().sizeCaption).fontFamily(this.textFamily('metric'))
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().primaryInk)
         }
         Progress({
           value: node.eventValue,
@@ -2654,7 +2680,9 @@ export struct VeraPreview {
           type: ProgressType.Linear
         })
           .width('100%')
+          .style({ strokeWidth: 10, strokeRadius: 5 })
           .color(toneEdge(this.t(), node.style, this.t().primary))
+          .backgroundColor(this.t().lineSoft)
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })

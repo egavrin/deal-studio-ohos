@@ -79,6 +79,10 @@ export class ResolvedTheme {
   radiusSmall: number = 8
   borderWidth: number = 1
 
+  /** What an input is filled with and edged by: a step off the card it sits on, so it reads as a field. */
+  fieldFill: string = '#F8FAFC'
+  fieldLine: string = '#CBD6E4'
+
   /** The lift under a card. Radius 0 draws none; editorial and technical stay flat on purpose. */
   shadowRadius: number = 16
   shadowOffsetY: number = 5
@@ -148,6 +152,9 @@ export function makeTheme(preset: string): ResolvedTheme {
     // Saturated, tinted throughout, and heavy at the top of the scale. The
     // background is not white, which is most of why it reads as another app.
     t.preset = 'expressive'
+    // Poster-like: the narrow cut of the system face for titles and figures, set heavy.
+    t.headingFontFamily = 'HarmonyOS Sans Condensed'
+    t.metricFontFamily = 'HarmonyOS Sans Condensed'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#E2D8F2'
     t.secondaryInk = '#3B2A5C'
@@ -178,7 +185,8 @@ export function makeTheme(preset: string): ResolvedTheme {
     t.shadowRadius = 0
     t.shadowOffsetY = 0
     t.shadowColor = '#00000000'
-    t.headingFontFamily = 'serif'
+    t.headingFontFamily = 'Noto Serif'
+    t.metricFontFamily = 'Noto Serif'
     t.onPrimary = '#FFFFFF'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#EDEAE3'
@@ -253,6 +261,7 @@ export function makeTheme(preset: string): ResolvedTheme {
   } else if (preset === 'playful') {
     // Pills, high chroma, plenty of air.
     t.preset = 'playful'
+    t.headingFontFamily = 'HarmonyOS Sans Condensed'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#FFE6CC'
     t.secondaryInk = '#7A3E12'
@@ -503,6 +512,8 @@ export function resolveTheme(preset: string, primaryHex: string, dark: boolean):
   // and lightened with it rather than being overwritten by the preset's.
   if (dark) { applyDark(t, t.preset) }
   resolveTextContrast(t, dark)
+  t.fieldFill = t.background
+  t.fieldLine = t.lineStrong
   return t
 }
 
