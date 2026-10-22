@@ -92,6 +92,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['select', ['default']],
   ['divider', ['default']],
   ['progress', ['default', 'accent', 'success', 'warning', 'danger']],
+  ['progressring', ['default', 'accent', 'success', 'warning', 'danger']],
   ['ticker', ['default']],
   ['grid', ['default', 'compact', 'spacious']],
   ['canvas', ['default', 'small', 'large']],
@@ -110,6 +111,8 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['emptystate', ['default', 'muted']],
   ['stat', ['default', 'accent', 'success', 'warning', 'danger']],
   ['metricgroup', ['default', 'compact', 'spacious']],
+  ['tilegrid', ['default', 'compact', 'spacious']],
+  ['tile', ['default', 'accent', 'success', 'warning', 'danger']],
 
   // The typed numeric layer: the number travels as a number.
   ['numbertext', ['display', 'title', 'heading', 'body', 'caption', 'metric', 'muted', 'success', 'warning', 'danger']],
@@ -226,6 +229,12 @@ export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('Progress', 'progress',
     [style('progress'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
       new PropSpec('maximum', 'number')], 'a progress bar'),
+  new ComponentSpec('ProgressRing', 'progressring',
+    [style('progressring'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
+      new PropSpec('maximum', 'number'), new PropSpec('text', 'string')],
+    'a ring that fills toward a goal, with a short figure in the middle',
+    '',
+    'For the one number a screen is about -- steps toward a goal, tasks done, a budget used -- where a bar would be small. text is what sits in the middle ("62%", "5 of 8"); pass "" for the percentage. label is drawn under the ring and may be "". Use ui.Progress instead for several bars one under another.'),
   new ComponentSpec('Select', 'select',
     [style('select'), new PropSpec('label', 'string'), new PropSpec('options', 'string[]'),
       new PropSpec('selected', 'number'), new PropSpec('action', 'string')],
@@ -307,6 +316,18 @@ export const CATALOG: ComponentSpec[] = [
     'two to four ui.Stat or ui.NumberStat children across one surface, in equal columns',
     '',
     'The summary strip at the top of a screen. Only ui.Stat or ui.NumberStat children. columns is a maximum: a narrow screen uses fewer.'),
+
+  new ComponentSpec('TileGrid', 'tilegrid',
+    [style('tilegrid'), new PropSpec('children', 'view[]')],
+    'ui.Tile children laid out two to a row, a wide one taking a whole row',
+    '',
+    'A dashboard of mixed-importance facts, where one tile should be wider than the rest -- the figure the screen is about on a row of its own, the others in pairs below it. Only ui.Tile children. Prefer ui.MetricGroup when every figure is equal.'),
+  new ComponentSpec('Tile', 'tile',
+    [style('tile'), new PropSpec('span', 'number'), new PropSpec('label', 'string'),
+      new PropSpec('value', 'string'), new PropSpec('supporting', 'string'), icon('icon')],
+    'one fact on a surface of its own: a label, a figure and a line of context',
+    '',
+    'Only inside a ui.TileGrid. span is 1 for half a row or 2 for the whole row. value is the figure as text ("8,420", "62%"); supporting is a short line under it and may be "". Pass icon "" for no icon.'),
 
   // The typed numeric layer: these take the number and let the renderer format
   // it -- decimals, padding, prefix and suffix -- so a program never builds
@@ -507,6 +528,7 @@ export const CHILD_RULES: ChildRule[] = [
   // So these forbid only what is actually wrong and would actually draw badly.
   new ChildRule('ListGroup', ['ListItem', 'NumberListItem', 'SectionHeader', 'ActionBar', 'When'], []),
   new ChildRule('MetricGroup', ['Stat', 'NumberStat', 'When'], []),
+  new ChildRule('TileGrid', ['Tile', 'When'], []),
   new ChildRule('KeyValueGroup', ['KeyValueItem', 'When'], []),
   new ChildRule('Timeline', ['TimelineItem', 'ActionBar', 'When'], []),
   new ChildRule('Table', ['TableRow', 'When'], []),
@@ -600,6 +622,7 @@ const COMPANIONS: string[][] = [
   ['Timeline', 'TimelineItem'],
   ['KeyValueGroup', 'KeyValueItem'],
   ['Table', 'TableRow'],
+  ['TileGrid', 'Tile'],
 ]
 
 /**

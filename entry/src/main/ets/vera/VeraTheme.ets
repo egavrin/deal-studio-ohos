@@ -152,9 +152,6 @@ export function makeTheme(preset: string): ResolvedTheme {
     // Saturated, tinted throughout, and heavy at the top of the scale. The
     // background is not white, which is most of why it reads as another app.
     t.preset = 'expressive'
-    // Poster-like: the narrow cut of the system face for titles and figures, set heavy.
-    t.headingFontFamily = 'HarmonyOS Sans Condensed'
-    t.metricFontFamily = 'HarmonyOS Sans Condensed'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#E2D8F2'
     t.secondaryInk = '#3B2A5C'
@@ -261,7 +258,6 @@ export function makeTheme(preset: string): ResolvedTheme {
   } else if (preset === 'playful') {
     // Pills, high chroma, plenty of air.
     t.preset = 'playful'
-    t.headingFontFamily = 'HarmonyOS Sans Condensed'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#FFE6CC'
     t.secondaryInk = '#7A3E12'

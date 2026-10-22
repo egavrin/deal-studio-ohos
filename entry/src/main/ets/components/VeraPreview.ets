@@ -223,9 +223,9 @@ export struct VeraPreview {
   // discovered as a blank space in someone's generated app.
   private static RENDERED: string[] = ['column', 'scroll', 'row', 'card', 'text',
     'button', 'cell', 'spacer', 'path', 'image', 'field', 'toggle', 'checkbox',
-    'slider', 'select', 'divider', 'progress', 'ticker', 'grid', 'listitem', 'canvas',
+    'slider', 'select', 'divider', 'progress', 'progressring', 'ticker', 'grid', 'listitem', 'canvas',
     'apptheme', 'hero', 'adaptivecolumns', 'header', 'section', 'sectionheader', 'listgroup', 'banner',
-    'emptystate', 'stat', 'metricgroup',
+    'emptystate', 'stat', 'metricgroup', 'tilegrid', 'tile',
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
     'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
@@ -953,6 +953,23 @@ export struct VeraPreview {
     return '#00000000'
   }
 
+  /**
+   * The role a section is drawn as. A summary or content section whose only drawn child is already a frame of its own
+   * (a list group, a card, a table, a timeline, a tile grid) is drawn plain: filling it too would put a card inside a card,
+   * two edges and two shadows around one thing.
+   */
+  private sectionLook(node: LiveNode): string {
+    if (node.style !== 'summary' && node.style !== 'content') { return node.style }
+    // A When that is false decodes to an empty spacer; it neither draws nor counts.
+    let framed = 0
+    for (let child of node.children) {
+      if (child.kind === 'spacer') { continue }
+      if (['listgroup', 'card', 'table', 'timeline', 'tilegrid'].indexOf(child.kind) < 0) { return node.style }
+      framed++
+    }
+    return framed === 1 ? 'plain' : node.style
+  }
+
   private sectionFills(style: string): boolean {
     return style === 'hero' || style === 'summary' || style === 'content' || style === 'warning'
   }
@@ -1025,6 +1042,11 @@ export struct VeraPreview {
   private arrival(): TransitionEffect {
     return TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 14 }))
       .animation({ duration: 280, curve: Curve.EaseOut })
+  }
+
+  /** The ring is a square sized to the control rhythm, never wider than a third of a phone. */
+  private ringSize(): number {
+    return this.t().controlHeight * 3
   }
 
   /** A stat's figure sits a step under the display size, so the title leads and the numbers follow it. */
@@ -1570,7 +1592,7 @@ export struct VeraPreview {
     } else if (node.kind === 'header') {
       // The app's own title block. A generated program used to open with a bare
       // ui.Text and nothing to distinguish it from the first line of content.
-      Column({ space: this.t().gapTight }) {
+      Column({ space: this.t().gapBase }) {
         if (node.label.length > 0) {
           Text(node.label)
             .fontSize(this.t().sizeEyebrow)
@@ -1639,28 +1661,28 @@ export struct VeraPreview {
         this.renderChildren(node)
       }
       // Margins add to a 100% width, so a section that stands in from the edges takes them off it.
-      .width(this.sectionFills(node.style) ? 'calc(100% - ' + (this.t().padBase * 2).toString() + 'vp)' : '100%')
+      .width(this.sectionFills(this.sectionLook(node)) ? 'calc(100% - ' + (this.t().padBase * 2).toString() + 'vp)' : '100%')
       .alignItems(HorizontalAlign.Start)
       .padding({
-        left: !this.sectionFills(node.style) && this.compositionOwnsInset(parentKind) ? 0 : this.sectionPadX(node.style),
-        right: !this.sectionFills(node.style) && this.compositionOwnsInset(parentKind) ? 0 : this.sectionPadX(node.style),
-        top: this.sectionPadY(node.style), bottom: this.sectionPadY(node.style)
+        left: !this.sectionFills(this.sectionLook(node)) && this.compositionOwnsInset(parentKind) ? 0 : this.sectionPadX(this.sectionLook(node)),
+        right: !this.sectionFills(this.sectionLook(node)) && this.compositionOwnsInset(parentKind) ? 0 : this.sectionPadX(this.sectionLook(node)),
+        top: this.sectionPadY(this.sectionLook(node)), bottom: this.sectionPadY(this.sectionLook(node))
       })
-      .backgroundColor(this.sectionFill(node.style))
-      .borderRadius(this.sectionRadius(node.style))
+      .backgroundColor(this.sectionFill(this.sectionLook(node)))
+      .borderRadius(this.sectionRadius(this.sectionLook(node)))
       // Only a section that fills has a box to lift. For the others a shadow of radius 0 is not "none":
       // it is a hard copy of the box offset downward, which showed as a line under every plain section.
       .shadow({
-        radius: this.sectionFills(node.style) ? this.t().shadowRadius : 0,
-        color: this.sectionFills(node.style) ? this.t().shadowColor : '#00000000',
-        offsetY: this.sectionFills(node.style) ? this.t().shadowOffsetY : 0 })
+        radius: this.sectionFills(this.sectionLook(node)) ? this.t().shadowRadius : 0,
+        color: this.sectionFills(this.sectionLook(node)) ? this.t().shadowColor : '#00000000',
+        offsetY: this.sectionFills(this.sectionLook(node)) ? this.t().shadowOffsetY : 0 })
       // The gap between one section and the next comes from the theme, so a
       // program does not have to punctuate itself with ui.Spacer.
       // A section that fills stands in from the screen's edges: run flush to them, its shadow
       // shows only as a hard line along the bottom and its corners are cut off.
       .margin({
-        left: this.sectionFills(node.style) ? this.t().padBase : 0,
-        right: this.sectionFills(node.style) ? this.t().padBase : 0,
+        left: this.sectionFills(this.sectionLook(node)) ? this.t().padBase : 0,
+        right: this.sectionFills(this.sectionLook(node)) ? this.t().padBase : 0,
         top: this.t().gapTight, bottom: this.t().gapSection })
       .transition(this.arrival())
     } else if (node.kind === 'sectionheader') {
@@ -1743,7 +1765,7 @@ export struct VeraPreview {
     } else if (node.kind === 'banner') {
       Row({ space: this.t().gapBase }) {
         if (node.icon.length > 0) {
-          this.drawIcon(node.icon, this.t().sizeHeading,
+          this.iconChip(node.icon, this.t().controlHeight - 8, this.t().surface,
             toneEdge(this.t(), node.style, this.t().primaryInk))
         }
         Column({ space: 2 }) {
@@ -1759,7 +1781,7 @@ export struct VeraPreview {
             Text(node.label)
               .fontSize(this.t().sizeCaption)
               .fontFamily(this.textFamily())
-              .fontColor(this.t().inkSoft)
+              .fontColor(this.t().inkStrong)
               .width('100%')
           }
         }
@@ -1886,13 +1908,62 @@ export struct VeraPreview {
           Column() {
             this.renderNode(child, 'metricgroup')
           }
-          .width(Math.floor(100 / this.fittingColumns(this.metricColumns(node), 128)).toString() + '%')
+          .width(Math.floor(100 / this.fittingColumns(this.metricColumns(node), 104)).toString() + '%')
           // Same keying as renderChildren; see the note there.
         }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
       }
       .width('100%')
       .padding(densityPad(this.t(), node.style) - this.t().padTight)
       .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'tilegrid') {
+      // Two to a row; a tile of span 2 takes the row. Widths are calc() shares of the row less half the gap,
+      // so the pair and the wide tile line up at both edges.
+      Flex({
+        wrap: FlexWrap.Wrap,
+        justifyContent: FlexAlign.Start,
+        alignItems: ItemAlign.Stretch,
+        space: { main: LengthMetrics.vp(this.t().gapLoose), cross: LengthMetrics.vp(this.t().gapLoose) }
+      }) {
+        ForEach(node.children, (child: LiveNode) => {
+          Column() {
+            this.renderNode(child, 'tilegrid')
+          }
+          .width(child.kind === 'tile' && child.columns >= 2 ? '100%' :
+            'calc(50% - ' + (this.t().gapLoose / 2).toString() + 'vp)')
+          // Same keying as renderChildren; see the note there.
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+      }
+      .width('100%')
+      .padding({ left: this.t().padBase, right: this.t().padBase })
+      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'tile') {
+      Column({ space: this.t().gapTight }) {
+        if (node.icon.length > 0) {
+          this.iconChip(node.icon, this.t().controlHeight - 8,
+            node.style === 'default' ? this.t().primaryFill : this.t().surface,
+            toneInk(this.t(), node.style, this.t().primaryInk))
+        }
+        if (node.label.length > 0) {
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().inkSoft)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+        }
+        Text(node.text).fontSize(this.statFigureSize()).fontFamily(this.textFamily('metric'))
+          .fontWeight(this.t().weightMetric).fontColor(toneInk(this.t(), node.style, this.t().ink))
+          .maxLines(1).minFontSize(14).maxFontSize(this.statFigureSize()).width('100%')
+        if (node.value.length > 0) {
+          Text(node.value).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(this.t().padCard)
+      .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
+      .border({ width: this.t().borderWidth, color: this.t().lineSoft })
+      .borderRadius(this.t().radiusCard)
+      .shadow({ radius: this.t().shadowRadius, color: this.t().shadowColor, offsetY: this.t().shadowOffsetY })
     } else if (node.kind === 'numbertext') {
       // ui.Text's twin for a number the program holds as a number.
       Text(this.formatNumber(node))
@@ -2171,7 +2242,7 @@ export struct VeraPreview {
             // another one.
             Column() {
               if (child.kind === 'timelineitem' && child.icon.length > 0) {
-                this.drawIcon(child.icon, this.t().sizeBody,
+                this.drawIcon(child.icon, this.t().sizeBody - 2,
                   toneEdge(this.t(), child.style, this.t().primaryInk))
               } else if (child.kind === 'timelineitem') {
                 Column()
@@ -2482,7 +2553,8 @@ export struct VeraPreview {
         // Commits on submit rather than on every keystroke. The tree no longer
         // rebuilds under the caret, but echoing each character back through the
         // VM and into .text() still fights whoever is typing.
-        TextInput({ placeholder: node.label, text: node.value })
+        // The label is already drawn above the box, so it is not repeated inside it as a placeholder.
+        TextInput({ placeholder: node.label.length > 0 ? '' : ' ', text: node.value })
           .fontSize(this.t().sizeBody)
           .fontFamily(this.textFamily())
           .fontColor(this.t().ink)
@@ -2674,6 +2746,7 @@ export struct VeraPreview {
             .fontSize(this.t().sizeCaption).fontFamily(this.textFamily('metric'))
             .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().primaryInk)
         }
+        .width('100%')
         Progress({
           value: node.eventValue,
           total: node.maximum > 0 ? node.maximum : 100,
@@ -2686,6 +2759,38 @@ export struct VeraPreview {
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'progressring') {
+      Column({ space: this.t().gapTight }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Progress({
+            value: node.eventValue,
+            total: node.maximum > 0 ? node.maximum : 100,
+            type: ProgressType.Ring
+          })
+            .width(this.ringSize())
+            .height(this.ringSize())
+            .style({ strokeWidth: 12 })
+            .color(toneEdge(this.t(), node.style, this.t().primary))
+            .backgroundColor(this.t().lineSoft)
+          Text(node.text.length > 0 ? node.text :
+            Math.round(100 * node.eventValue / (node.maximum > 0 ? node.maximum : 100)).toString() + '%')
+            .fontSize(this.renderTextSize('heading'))
+            .fontFamily(this.textFamily('metric'))
+            .fontWeight(this.t().weightMetric)
+            .fontColor(toneInk(this.t(), node.style, this.t().ink))
+            .maxLines(1)
+            .textAlign(TextAlign.Center)
+            .width(this.ringSize() - 36)
+        }
+        if (node.label.length > 0) {
+          Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().inkStrong)
+            .textAlign(TextAlign.Center).width('100%')
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
+      .padding({ top: this.t().gapBase, bottom: this.t().gapBase })
     } else if (node.kind === 'sparkline') {
       // The path commands are written directly in this box's own real vp
       // (chartWidth's own comment has the full story on why, and on the

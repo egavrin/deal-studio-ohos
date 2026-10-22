@@ -94,7 +94,7 @@ if (!baseline) {
    const t=T.resolveTheme(preset,'',false)
    assert.deepEqual([t.sizeDisplay,t.sizeMetric,t.sizeBody,t.gapSection,t.padCard,t.radiusCard,t.background,t.primary],target)
    assert.equal(t.surface,'#FFFFFF'); assert.equal(t.sizeTitle,24); assert.equal(t.sizeHeading,preset==='technical'?18:20); assert.equal(t.sizeCaption,13)
-   assert.equal(t.fontFamily,''); assert.equal(t.headingFontFamily,{editorial:'Noto Serif',expressive:'HarmonyOS Sans Condensed',playful:'HarmonyOS Sans Condensed'}[preset]||''); assert.equal(t.metricFontFamily,{editorial:'Noto Serif',expressive:'HarmonyOS Sans Condensed',technical:'monospace'}[preset]||'')
+   assert.equal(t.fontFamily,''); assert.equal(t.headingFontFamily,{editorial:'Noto Serif'}[preset]||''); assert.equal(t.metricFontFamily,{editorial:'Noto Serif',technical:'monospace'}[preset]||'')
   })
   for(const dark of [false,true]) for(const seed of ['', '#FFFFFF','#000000','#FFCC00','#FF00FF','#00FFFF']) test(`${preset}/${dark?'dark':'light'}/${seed||'default'}: enabled color contrast`, () => {
    const t=T.resolveTheme(preset,seed,dark)

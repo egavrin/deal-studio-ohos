@@ -545,6 +545,14 @@ export class UiHostEnvironment extends HostEnvironment {
           ['value', new VeraNumberValue(argNum(args, 2))],
           ['maximum', new VeraNumberValue(argNum(args, 3))],
         ])
+      case 'ProgressRing':
+        return viewNode('progressring', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['value', new VeraNumberValue(argNum(args, 2))],
+          ['maximum', new VeraNumberValue(argNum(args, 3))],
+          ['text', new VeraStringValue(argString(args, 4))],
+        ])
       case 'Button':
         return viewNode('button', [
           ['style', new VeraStringValue(argString(args, 0))],
@@ -642,6 +650,20 @@ export class UiHostEnvironment extends HostEnvironment {
           ['text', new VeraStringValue(argString(args, 2))],
           ['value', new VeraStringValue(argString(args, 3))],
           ['icon', new VeraStringValue(argString(args, 4))],
+        ])
+      case 'TileGrid':
+        return viewNode('tilegrid', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['children', argArray(args, 1)],
+        ])
+      case 'Tile':
+        return viewNode('tile', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['columns', new VeraNumberValue(argNum(args, 1))],
+          ['label', new VeraStringValue(argString(args, 2))],
+          ['text', new VeraStringValue(argString(args, 3))],
+          ['value', new VeraStringValue(argString(args, 4))],
+          ['icon', new VeraStringValue(argString(args, 5))],
         ])
       case 'MetricGroup':
         return viewNode('metricgroup', [

@@ -1137,7 +1137,7 @@ function resetProgressIDX(state: AppState, ignored: number): AppState {
 }`,
     `{
     sections.push(ui.Section("summary", "", "", [
-      ui.Progress("__PROGRESS_STYLE_IDX__", "__PROGRESS_LABEL_IDX__", state.progressIDX, state.goalIDX)
+      ui.ProgressRing("__PROGRESS_STYLE_IDX__", "__PROGRESS_LABEL_IDX__", state.progressIDX, state.goalIDX, ui.numberToString(state.progressIDX) + " of " + ui.numberToString(state.goalIDX))
     ]));
     sections.push(ui.Section("content", "", "", [
       ui.ActionBar("spread", [
