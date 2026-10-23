@@ -1809,7 +1809,9 @@ export struct VeraPreview {
       // than as one more tinted box.
       .borderWidth({ left: 4 })
       .borderColor({ left: toneEdge(this.t(), node.style, this.t().primary) })
-      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+      .margin({ top: this.t().gapTight, bottom: this.t().gapTight,
+                left: this.compositionOwnsInset(parentKind) ? 0 : this.t().padBase,
+                right: this.compositionOwnsInset(parentKind) ? 0 : this.t().padBase })
     } else if (node.kind === 'emptystate') {
       // State starts empty, so for most programs this is the first thing anyone
       // sees. It used to be a blank column.
@@ -1865,11 +1867,10 @@ export struct VeraPreview {
               .fontFamily(this.textFamily())
               .fontColor(this.t().inkMuted)
               .layoutWeight(1)
-              // One line, so the figures of neighbouring stats sit on one baseline: a long label
-              // shrinks to fit before it is cut.
-              .maxLines(1)
-              .minFontSize(9)
-              .maxFontSize(this.t().sizeCaption)
+              // Two lines of fixed size and a fixed box, so every figure in a row sits on one baseline
+              // and neighbouring labels are the same size; a longer label is cut, not shrunk.
+              .maxLines(2)
+              .height(Math.round(this.t().sizeCaption * 2.6))
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
         }
@@ -1998,11 +1999,10 @@ export struct VeraPreview {
               .fontFamily(this.textFamily())
               .fontColor(this.t().inkMuted)
               .layoutWeight(1)
-              // One line, so the figures of neighbouring stats sit on one baseline: a long label
-              // shrinks to fit before it is cut.
-              .maxLines(1)
-              .minFontSize(9)
-              .maxFontSize(this.t().sizeCaption)
+              // Two lines of fixed size and a fixed box, so every figure in a row sits on one baseline
+              // and neighbouring labels are the same size; a longer label is cut, not shrunk.
+              .maxLines(2)
+              .height(Math.round(this.t().sizeCaption * 2.6))
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
         }
@@ -2297,7 +2297,7 @@ export struct VeraPreview {
           Text(node.label)
             .fontSize(this.t().sizeCaption)
             .fontFamily(this.textFamily())
-            .fontColor(this.t().inkMuted)
+            .fontColor(this.t().inkSoft)
             .width('100%')
         }
       }

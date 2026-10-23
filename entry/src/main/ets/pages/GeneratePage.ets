@@ -703,7 +703,7 @@ struct GeneratePage {
     this.fastSearchMs = build.searchMs
     this.fastContentMs = build.contentMs
     this.routeInfo = build.route
-    this.routeKnown = true
+    animateTo({ duration: 250, curve: Curve.EaseInOut }, () => { this.routeKnown = true })
     this.routeVerifyMs = build.verifyMs
     this.sideCalls = deepseek.getSideCalls()
     this.lastTemplatePick = build.note
@@ -716,7 +716,7 @@ struct GeneratePage {
     this.compiledVbc2 = build.vbc2
     this.compiledSource = build.source
     this.compositionJson = build.composition
-    this.composerOpen = false
+    animateTo({ duration: 250, curve: Curve.EaseInOut }, () => { this.composerOpen = false })
     this.tab = TAB_PREVIEW
     this.compiled = true
     this.compileErrors = ''
@@ -830,7 +830,7 @@ struct GeneratePage {
         this.serverBytecode = decoded.bytecode
         this.compiledVbc2 = decoded.bytecode
         this.compiledSource = decoded.source
-        this.composerOpen = false
+        animateTo({ duration: 250, curve: Curve.EaseInOut }, () => { this.composerOpen = false })
         this.tab = TAB_PREVIEW
         this.compiled = true
         this.compileErrors = ''
@@ -1058,7 +1058,7 @@ struct GeneratePage {
       this.compiledVbc2 = vbc2
       this.compiledSource = this.generatedSource.trim()
       this.refinePrompt = ''
-      this.composerOpen = false
+      animateTo({ duration: 250, curve: Curve.EaseInOut }, () => { this.composerOpen = false })
       // Only when the program first appears: yanking the pane away from
       // someone reading the source or the numbers is worse than leaving it.
       if (!hadProgram) { this.tab = TAB_PREVIEW }
@@ -1116,7 +1116,7 @@ struct GeneratePage {
     this.compositionJson = this.completionComposition
     this.compileErrors = ''
     this.compiled = true
-    this.composerOpen = false
+    animateTo({ duration: 250, curve: Curve.EaseInOut }, () => { this.composerOpen = false })
     this.tab = TAB_PREVIEW
     this.generating = false
     this.status = reason + '; showing the template without it'

@@ -1659,10 +1659,16 @@ function balancesIDX(state: AppState): number[] {
     if (plain) {
       let sumText: string = state.currencyIDX + ui.formatNumber(totalSumIDX(state), 2);
       if (state.currencyIDX.length() === 0) { sumText = ui.numberToString(totalSumIDX(state)); }
+      let avgText: string = "-";
+      if (n > 0) {
+        avgText = state.currencyIDX + ui.formatNumber(totalSumIDX(state) / n, 2);
+        if (state.currencyIDX.length() === 0) { avgText = ui.formatNumber(totalSumIDX(state) / n, 2); }
+      }
       sections.push(ui.Section("summary", "", "", [
-        ui.MetricGroup("default", 2, [
-          ui.Stat("accent", "Total", sumText, "all entries", "chart"),
-          ui.Stat("default", "Entries", ui.numberToString(n), "logged", "list")
+        ui.TileGrid("default", [
+          ui.Tile("accent", 2, "Total", sumText, "all entries", "chart"),
+          ui.Tile("default", 1, "Entries", ui.numberToString(n), "logged", "list"),
+          ui.Tile("default", 1, "Average", avgText, "per entry", "chart")
         ])
       ]));
     }

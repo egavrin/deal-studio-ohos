@@ -184,6 +184,9 @@ export function makeTheme(preset: string): ResolvedTheme {
     t.shadowColor = '#00000000'
     t.headingFontFamily = 'Noto Serif'
     t.metricFontFamily = 'Noto Serif'
+    // A serif at 700 reads heavy on a phone; 600 keeps the contrast with body text without the weight.
+    t.weightDisplay = 600
+    t.weightMetric = 600
     t.onPrimary = '#FFFFFF'
     t.surfaceRaised = '#FFFFFF'
     t.secondaryFill = '#EDEAE3'
