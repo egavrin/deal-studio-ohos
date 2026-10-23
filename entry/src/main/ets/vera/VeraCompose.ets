@@ -121,7 +121,7 @@ const SKETCH_BASE: string =
  * detail view, the readers of a log); and the intent panel, whose rows are a call of their own.
  */
 export const READY_KINDS: string[] = ['checklist', 'key_facts', 'trend_chart', 'spotlight', 'search_list', 'data_table', 'timeline',
-  'bar_chart', 'itinerary']
+  'bar_chart', 'itinerary', 'live_facts']
 
 /**
  * The ready-made sections, as the plan sees them: what each brings, from the catalogue's own words (VeraTemplates.ets),
