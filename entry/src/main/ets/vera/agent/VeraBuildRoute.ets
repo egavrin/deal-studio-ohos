@@ -48,13 +48,8 @@ let wholeScreen: boolean = true
 export function setWholeScreenEnabled(on: boolean): void { wholeScreen = on }
 export function wholeScreenEnabled(): boolean { return wholeScreen }
 
-/**
- * Blocks first: Jev's pick costs 0.3-0.5 s and is already running beside the agent's plan, and a request the blocks build
- * whole (live figures, a ledger, a chart, a countdown) is served from them, with their real data and their look; when Jev
- * finds nothing that fits, the agent follows at once. The blocks that need more than they do are kept for the agent's turn
- * (below). `--ps veraOrder agent-first` puts the agent in front, as the first version of this route did.
- */
-let order: string = ORDER_BLOCKS_FIRST
+/** Agent first until the blocks' pick is cheap enough to put in front of every request; `--ps veraOrder blocks-first` swaps them. */
+let order: string = ORDER_AGENT_FIRST
 export function setRouteOrder(next: string): void { order = next === ORDER_BLOCKS_FIRST ? ORDER_BLOCKS_FIRST : ORDER_AGENT_FIRST }
 export function routeOrder(): string { return order }
 
