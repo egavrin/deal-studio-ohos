@@ -604,7 +604,7 @@ struct GeneratePage {
     // JevSelector.ets is unchanged and still callable; nothing here calls it.
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
     // A new screen goes through the route (agent/VeraBuildRoute.ets): the agent and the blocks in the route's
-    // order; what neither builds is reported as not built, not generated.
+    // order; what neither builds comes back as not built, and the model then writes the whole program.
     // Not on top of a saved program: with previousSource set this is a change to it (the model edits it).
     let route = new RouteRequest()
     route.mode = this.mode

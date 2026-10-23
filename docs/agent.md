@@ -37,7 +37,9 @@ the more of it the model writes, down to the whole screen.
      a ready need with no section: a slot for the written section;
    - an input nothing uses is left out, with a note.
 4. **Fill.** The catalogue sections' content is written (from a web search when it must be real) and their holes
-   filled.
+   filled, by the one fill both the agent and the blocks use (`SectionFill.ets`): a trend chart or a live-facts block is
+   always grounded in a search whatever the plan said (the chart with the longer results), a live-facts block shows only
+   the figures and the source that search contains, and with no search the sections are refused.
 5. **Section hole.** One section is written for the open slots (`writeHole`, `writeSection`):
    - for each phone slot the app's own lookups run first (`find_intent_function`, keyword and embedding rankings
      together; `find_sdk_function`), and the section may call only targets they returned -- every `sdk.call` target is
@@ -47,8 +49,9 @@ the more of it the model writes, down to the whole screen.
    - after the quick tries, one more with thinking on;
    - still failing: the best try that works and does part of it is served with a notice for what it misses; none, a
      notice in its place; `<cannot>` (nothing on this phone does it) is reported as the writer says and not retried.
-6. **Check.** The assembled program is compiled and run; one that fails is repaired with SEARCH/REPLACE edits, at
-   most twice.
+6. **Check.** The assembled program is compiled, started, drawn and run with every handler tapped (`VeraSmoke.ets`); one
+   that fails, or draws an empty screen, is repaired with SEARCH/REPLACE edits, at most twice (`settleProgram`). Every
+   program served goes through it, whoever assembled it: the agent, the blocks, a written section or the whole screen.
 7. **Blocks**, when the agent did not build it: a plain template is served; when the sections are right but the
    request needs more (a soft veto, an intent panel with no rows, buttons only), or the agent's plan names a phone
    action they do not do, the layout stays and a section hole is written into it.
@@ -87,7 +90,7 @@ the melody.
   (`$ARKESTR_API_KEY`), Jev (`$TYPESAFE_API_KEY`), Exa (`$EXA_API_KEY`, optional).
 - Every written hole is recorded: a `hole` event in the app's trace, `holes.jsonl` beside each host run.
   `tools/vera-harness/hole-report.py` groups the needs that recur -- the blocks the catalogue lacks.
-- Host checks: `tools/vera-harness/{agent,plan,parts,compose,route,pipeline}-check.js`; fixtures in
+- Host checks: `tools/vera-harness/{agent,plan,parts,compose,route,pipeline,section-fill}-check.js`; fixtures in
   `tools/vera-harness/compose/`.
 
 ## Known limits

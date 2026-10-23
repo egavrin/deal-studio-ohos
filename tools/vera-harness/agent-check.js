@@ -111,7 +111,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
   // Real data with no search: the host refuses the sections, and nothing is served.
   {
     const {host} = replayHost('sections-tipping')
-    host.fillBlocks = async () => Object.assign(new (loadVera('agent/AgentHost').BlockFill)(), {failed: 'sections need real data and no search is available'})
+    host.fillBlocks = async () => Object.assign(new (loadVera('SectionFill').BlockFill)(), {failed: 'sections need real data and no search is available'})
     const r = await runAgent(request('tipping'), host)
     assert.equal(r.vbc2, '')
     assert.match(r.note, /no search is available/)
@@ -456,6 +456,37 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(r.source, '')
     assert.notEqual(r.failed, '')
   }
+  // Every program served is settled the same way (settleProgram): checked, repaired by edits when a model can be asked, and its
+  // bytecode only when it passes. A program that compiles but stops when it draws, or draws nothing, is not served as it is.
+  {
+    const {settleProgram} = loadVera('agent/AgentRepair')
+    const {AgentHost} = loadVera('agent/AgentHost')
+    const program = expr => 'import * as ui from "std/ui"\n@jsonable\nclass AppState { n: number; }\nfunction init(): AppState { return {n: 4}; }\n' +
+      'function view(state: AppState): ui.View { return ui.AppTheme("clean", "", [ui.Section("content", "", "", [ui.Text("body", ' + expr + ')])]); }'
+    const good = program('ui.numberToString(state.n)'), traps = program('ui.numberToString(16 / (state.n - 4))')
+    const fix = '<<<<<<< SEARCH\n16 / (state.n - 4)\n=======\n16 / (state.n + 4)\n>>>>>>> REPLACE'
+    const hostWith = (ask, language = 'VERA-L') => { const h = new AgentHost(); h.language = language; h.askCode = ask; return h }
+    let r = await settleProgram(good, 'a counter', hostWith(null))
+    assert.equal(r.errors, ''); assert.ok(r.vbc2.length > 0); assert.equal(r.note, ''); assert.equal(r.repair, null)
+    // It stops when it draws and nothing can be asked: not served, and nothing compiled to serve.
+    r = await settleProgram(traps, 'a counter', hostWith(null))
+    assert.match(r.errors, /division by zero/); assert.equal(r.vbc2, ''); assert.equal(r.repair, null)
+    r = await settleProgram(traps, 'a counter', hostWith(async () => fix, ''))
+    assert.match(r.errors, /division by zero/, 'no language, no repair')
+    // Edits that fix it are served, with the round counted; edits that do not leave what still fails.
+    let asked = 0
+    r = await settleProgram(traps, 'a counter', hostWith(async () => { asked++; return fix }))
+    assert.equal(r.errors, ''); assert.match(r.source, /state\.n \+ 4/); assert.ok(r.vbc2.length > 0)
+    assert.equal(r.note, '; repaired by edits in 1 round(s)'); assert.equal(asked, 1); assert.equal(r.repair.rounds, 1)
+    r = await settleProgram(traps, 'a counter', hostWith(async () => 'no edits here'))
+    assert.match(r.errors, /division by zero/); assert.equal(r.vbc2, ''); assert.match(r.note, /^; repair: /)
+    // A screen with nothing on it is a mistake too; a plan's preview with a slot open is not checked for it.
+    const empty = 'import * as ui from "std/ui"\n@jsonable\nclass AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\n' +
+      'function view(state: AppState): ui.View { return ui.AppTheme("clean", "", []); }'
+    r = await settleProgram(empty, 'a counter', hostWith(null))
+    assert.match(r.errors, /drew an empty screen/); assert.equal(r.vbc2, '')
+    assert.equal(loadVera('VeraSmoke').smokeRun(loadVera('VeraCompiler').compileVeraSource(empty), false), '')
+  }
   // What one hole of a request learned is not asked again by the next: a phone need it said it cannot do is reported as
   // it said, and a lookup is made once.
   {
@@ -518,7 +549,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
   }
   route.setRouteOrder('anything else')
   assert.equal(route.routeOrder(), route.ORDER_AGENT_FIRST)
-  // Neither builder asked for: straight to scratch, no model call.
+  // Neither builder asked for: not built, no model call; the caller decides what to do with that.
   {
     const {host, seen} = replayHost('tip')
     const o = await route.buildScreen(new route.RouteRequest(), host)

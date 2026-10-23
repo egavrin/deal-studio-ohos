@@ -25,7 +25,6 @@
  */
 
 import http from '@ohos.net.http'
-import { deepseek } from './DeepSeekEngine'
 import { FragmentSpec, StateFieldSpec, VetoSpec, fragments, vetoes } from './VeraTemplates'
 import { composeFragments } from './VeraSectionCompose'
 import { blockDefaults } from './VeraTemplateContent'
@@ -3372,15 +3371,6 @@ export async function askJev(body: string, apiKey: string): Promise<string> {
 export type SketchAsk = (system: string, user: string, onText: (soFar: string) => void, think: boolean) => Promise<string | null>
 /** Asks Jev: request body -> response body, '' when there was none. */
 export type JevAsk = (body: string) => Promise<string>
-
-/** Sketch, Jev, assembly, with the app's own DeepSeek engine and Jev client. Never throws. */
-export async function composeFromPrompt(prompt: string, apiKey: string,
-    onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false): Promise<ComposeResult> {
-  return composeWith(prompt,
-    (system: string, user: string, onText: (soFar: string) => void, think: boolean): Promise<string | null> =>
-      deepseek.extractSketch(system, user, onText, think),
-    (body: string): Promise<string> => askJev(body, apiKey), onSketch, widget)
-}
 
 /** Sketch, Jev, assembly, asking through the calls given. Never throws: anything that goes wrong comes back as an empty source and a note. */
 class Planned {

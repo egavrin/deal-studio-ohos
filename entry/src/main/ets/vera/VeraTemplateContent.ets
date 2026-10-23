@@ -1,12 +1,8 @@
 /**
- * Experiment only (experiment/jev-template-select branch): fills the free-
- * text fields of an already-picked canned template (VeraTemplates.ets's
- * ContentFieldSpec) with a separate, narrow generative call -- never Jev,
- * which cannot write free text at all (see VeraTemplateSelect.ets's header
- * comment). This file only runs after VeraTemplateSelect.selectTemplate()
- * has already returned a non-null pick; it never influences which template
- * is chosen, and a failure here never falls through to normal generation --
- * each field just keeps its literal default.
+ * Fills the free-text fields of the sections picked for a screen (VeraTemplates.ets's ContentFieldSpec) with a
+ * separate, narrow generative call -- never Jev, which cannot write free text at all. It never influences
+ * which sections are chosen, and a failure here never falls through to normal generation -- each field just
+ * keeps its literal default.
  *
  * Mode-aware, matching GeneratePage.ets's three generation modes:
  *  - 'deepseek': a real HTTP call via DeepSeekEngine.extractTemplateContent,
@@ -21,7 +17,7 @@
  * 'deepseek'.
  */
 
-import { ContentFieldSpec, ListFieldSpec, FragmentSpec, contentFieldsFor, fragments } from './VeraTemplates'
+import { ContentFieldSpec, ListFieldSpec, FragmentSpec, fragments } from './VeraTemplates'
 import { GenerateRequest, engine } from './LlamaEngine'
 import { deepseek } from './DeepSeekEngine'
 
@@ -45,8 +41,7 @@ function defaultResult(fields: ContentFieldSpec[], note: string): ContentFillRes
 /**
  * `searchText`, when non-empty, is a web search result the caller already ran for a request that
  * needs real/current facts (VeraSectionCompose.ets's needsRealData) -- grounds the answer instead
- * of leaving every such field a generic placeholder. Defaulted so fillTemplateContent's existing
- * one-arg call is untouched.
+ * of leaving every such field a generic placeholder.
  */
 function buildContentPrompt(fields: ContentFieldSpec[], searchText: string = '', lists: FlatListField[] = []): string {
   let parts: string[] = []
@@ -299,22 +294,6 @@ function fillContentLocal(systemPrompt: string, userPrompt: string, maxTokens: n
 }
 
 /**
- * Fills the free-text fields of an already-picked template. Never throws,
- * never blocks the template fast path: every failure degrades to that
- * field's literal default, and `note` always explains what happened.
- */
-export async function fillTemplateContent(templateId: string, userPrompt: string, mode: string): Promise<ContentFillResult> {
-  let fields = contentFieldsFor(templateId)
-  if (fields.length === 0) { return new ContentFillResult(new Map<string, string>(), '') }
-  if (mode === 'server') { return defaultResult(fields, 'content=default(server mode)') }
-  let prompt = buildContentPrompt(fields)
-  let raw: string | null = mode === 'local'
-    ? fillContentLocal(prompt, userPrompt, 150)
-    : await deepseek.extractTemplateContent(prompt, userPrompt, 150)
-  return parseContentResponse(raw, fields)
-}
-
-/**
  * One content field flattened for a single-call, multi-slot composed request: `token` is still
  * the field's generic form (containing "IDX" for a per-slot field, or the literal "__TITLE__" for
  * the one global field), and `jsonKey` is the instance-qualified key actually asked of the model
@@ -365,11 +344,10 @@ function listFieldsForKind(kind: string): ListFieldSpec[] {
 }
 
 /**
- * Fills the free-text fields of an already-composed set of section picks -- the section-palette
- * counterpart to fillTemplateContent above, for VeraSectionCompose.ets. One call covers the whole
+ * Fills the free-text fields of an already-composed set of section picks, for VeraSectionCompose.ets. One call covers the whole
  * screen: a single shared title plus every chosen (non-'none') slot's own content fields, each
  * asked under an instance-qualified json key so two slots holding the same kind never collide.
- * Same contract as fillTemplateContent: never throws, every field that fails or is missing keeps
+ * Never throws, every field that fails or is missing keeps
  * its literal fallback, and `note` always explains what happened.
  */
 /** Asks the content model: (system prompt, request, token budget) -> its reply, or null when there was none. */

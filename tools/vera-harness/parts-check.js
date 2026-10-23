@@ -18,7 +18,8 @@ const compositionOf = (label, widget = false) => {
   const sketch = c.parseSketch(fixture(label, 'sketch.json'))
   return c.readComposition(fixture(label, 'jev-answer.json'), sketch, widget)
 }
-const runs = source => { const compiled = compileVeraSource(source); assert.equal(smokeRun(compiled), ''); return compiled }
+// A screen with a slot still open has nothing on it until the section is written: it runs, and draws what it has.
+const runs = source => { const compiled = compileVeraSource(source); assert.equal(smokeRun(compiled, false), ''); return compiled }
 
 // __PASSTHROUGH__ fills in every field the literal does not set, at the literal's own level: a nested literal's keys,
 // a key inside a string and a key in a comment do not count.

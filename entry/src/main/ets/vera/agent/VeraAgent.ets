@@ -9,14 +9,15 @@
  * so those can change behind it. Never throws.
  */
 
-import { AgentHost, BlockRequest, BlockFill } from './AgentHost'
+import { AgentHost } from './AgentHost'
+import { BlockRequest, BlockFill } from '../SectionFill'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
 import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
 import { ScreenPlan, assemblePlan } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
-import { Repaired, checkProgram, repairProgram } from './AgentRepair'
+import { Repaired, settleProgram } from './AgentRepair'
 
 export class AgentRequest {
   /** What to build, in the person's words (or the chat's request for them). */
@@ -97,7 +98,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       blocks.prompt = request.prompt
       blocks.realData = comp.realData
       blocks.offset = partCount(comp)
-      blocks.compose = (filled: Map<string, string>[]): string => assembleProgram(comp, filled)
+      blocks.compose = (filled: Map<string, string>[], _globals: Map<string, string>): string => assembleProgram(comp, filled)
       let fill = await host.fillBlocks(blocks)
       result.blocks = comp.blocks
       result.blockFill = fill
@@ -121,27 +122,17 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     if (ready) { composed.source = assemblePlan(plan) }
   }
   if (composed.source.length > 0) {
-    let checkStart = Date.now()
-    result.errors = checkProgram(composed.source)
-    result.checkMs = Date.now() - checkStart
-    // What the assembly got wrong is repaired by edits to it, not by building it again.
-    if (result.errors.length > 0 && host.askCode !== null && host.language.length > 0 && !host.cancelled()) {
-      host.status('Repairing the program...')
-      let repaired = await repairProgram(composed.source, result.errors, request.prompt, host.language, host.askCode!)
-      result.repair = repaired
-      if (repaired.source.length > 0) {
-        composed.source = repaired.source
-        result.errors = ''
-        result.note += '; repaired by edits in ' + repaired.rounds.toString() + ' round(s)'
-      } else {
-        result.note += '; repair: ' + repaired.failed
-      }
-    }
-    if (result.errors.length === 0) {
-      result.source = composed.source
-      result.vbc2 = compileVeraSource(composed.source).vbc2
+    let settled = await settleProgram(composed.source, request.prompt, host)
+    result.checkMs = settled.checkMs
+    result.repair = settled.repair
+    result.errors = settled.errors
+    result.note += settled.note
+    composed.source = settled.source
+    if (settled.errors.length === 0) {
+      result.source = settled.source
+      result.vbc2 = settled.vbc2
     } else {
-      result.note += '; ' + result.errors
+      result.note += '; ' + settled.errors
     }
   }
   result.ms = Date.now() - started

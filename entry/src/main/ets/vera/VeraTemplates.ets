@@ -1,24 +1,21 @@
 /**
- * Experiment only (experiment/jev-template-select branch): two hand-written,
- * self-contained `.vera` programs, each with a few cosmetic placeholder
- * tokens that VeraTemplateSelect.ets fills in from a closed set of values
- * before handing the result to compileVeraSource (see VeraTemplateSelect.ets's
- * header comment for why those are closed-set, Jev-answerable choices).
+ * The catalogue of blocks and the closed sets Jev answers from.
  *
- * A second kind of token, declared below as ContentFieldSpec, holds the
- * title and item/label text instead. These are NOT answered by Jev -- they
- * are filled, best-effort, by VeraTemplateContent.ets's separate narrow
- * generative call, with a literal fallback (the values below) on any
- * failure. This is the one place in the pipeline that renders text from the
- * user's own request rather than a fixed closed-set identifier.
+ * SlotSpec and VetoSpec are the closed-set questions (VeraSectionCompose.ets asks them in one request): a
+ * cosmetic choice per slot, and a yes/no gate on the whole request. ContentFieldSpec holds the title and
+ * item/label text instead. These are NOT answered by Jev -- they are filled, best-effort, by
+ * VeraTemplateContent.ets's separate narrow generative call, with a literal fallback on any failure. This is
+ * the one place in the pipeline that renders text from the user's own request rather than a fixed closed-set
+ * identifier.
  *
- * Shape follows docs/examples/shanghai-layover.vera: import, @jsonable state,
- * init(), pure updaters, view(). Only `//` comments are legal in this
- * language -- a /* block *\/ will not parse.
+ * FragmentSpec is the one block format: the catalogue's sections (fragments()) and the composer's parts
+ * (VeraCompose.ets) are both FragmentSpecs.
  *
- * Every style token substituted into these two sources is one already
- * registered in VeraUiCatalog.ets's STYLE_SETS (apptheme, header, listgroup,
- * metricgroup, intstat) -- checked there, not invented here.
+ * Shape follows docs/examples/shanghai-layover.vera: import, @jsonable state, init(), pure updaters, view().
+ * Only `//` comments are legal in this language -- a /* block *\/ will not parse.
+ *
+ * Every style token substituted into a block is one already registered in VeraUiCatalog.ets's STYLE_SETS
+ * (apptheme, header, listgroup, metricgroup, intstat) -- checked there, not invented here.
  */
 
 export class SlotSpec {
@@ -52,7 +49,7 @@ export class SlotSpec {
  * A shared yes/no gate asked once per request, independent of which template
  * matches -- unlike SlotSpec there is no token to substitute and no `values`
  * list, just a probability that can kill the whole pick. See readPick's veto
- * loop in VeraTemplateSelect.ets.
+ * loop in VeraSectionCompose.ets.
  */
 export class VetoSpec {
   /** Stable key in the request/response, prefixed "veto." there. */
@@ -108,224 +105,9 @@ export class ContentFieldSpec {
   }
 }
 
-export function contentFieldsFor(templateId: string): ContentFieldSpec[] {
-  if (templateId === 'list_detail') {
-    return [
-      new ContentFieldSpec('__TITLE__', 'title', 'Checklist', 'Short title for the whole list (2-4 words)', 24),
-      new ContentFieldSpec('__ITEM1__', 'item1', 'First item', 'Name of the first checklist item', 28),
-      new ContentFieldSpec('__ITEM2__', 'item2', 'Second item', 'Name of the second checklist item', 28),
-      new ContentFieldSpec('__ITEM3__', 'item3', 'Third item', 'Name of the third checklist item', 28)
-    ]
-  }
-  if (templateId === 'dashboard') {
-    return [
-      new ContentFieldSpec('__TITLE__', 'title', 'Demo Dashboard', 'Short title for the dashboard screen (2-4 words)', 24),
-      new ContentFieldSpec('__STAT1_LABEL__', 'stat1_label', 'Count', 'Label for the first number shown (1-2 words)', 16),
-      new ContentFieldSpec('__STAT2_LABEL__', 'stat2_label', 'Total', 'Label for the second number shown (1-2 words)', 16),
-      new ContentFieldSpec('__STAT3_LABEL__', 'stat3_label', 'Remaining', 'Label for the third number shown (1-2 words)', 16)
-    ]
-  }
-  return []
-}
-
-export class TemplateSpec {
-  id: string
-  /** What this template is, shown to Jev as the criteria text for the top-level pick. */
-  criteria: string
-  source: string
-  slots: SlotSpec[]
-  constructor(id: string, criteria: string, source: string, slots: SlotSpec[]) {
-    this.id = id
-    this.criteria = criteria
-    this.source = source
-    this.slots = slots
-  }
-}
-
-const BANNER_SHOWN: string = `,
-    ui.Section("supporting", "", "", [
-      ui.InsetBanner("default", "Demo banner", "This screen comes from a canned template; nothing here is personalized.", "", "", "info")
-    ])`
-
-const LIST_DETAIL_SOURCE: string = `import * as ui from "std/ui"
-
-@jsonable
-class Item {
-  label: string;
-  done: boolean;
-}
-
-@jsonable
-class AppState {
-  items: Item[];
-  lastToggled: number;
-}
-
-function init(): AppState {
-  let items: Item[] = [
-    {label: "__ITEM1__", done: false},
-    {label: "__ITEM2__", done: false},
-    {label: "__ITEM3__", done: false}
-  ];
-  return {items: items, lastToggled: -1};
-}
-
-function toggle(state: AppState, index: number): AppState {
-  let out: Item[] = [];
-  let i: number = 0;
-  while (i < state.items.length()) {
-    let it: Item = state.items[i];
-    if (i === index) {
-      out.push({label: it.label, done: !it.done});
-    } else {
-      out.push(it);
-    }
-    i = i + 1;
-  }
-  return {items: out, lastToggled: index};
-}
-
-function view(state: AppState): ui.View {
-  let count: number = state.items.length();
-  let doneCount: number = 0;
-  let i: number = 0;
-  while (i < count) {
-    if (state.items[i].done) { doneCount = doneCount + 1; }
-    i = i + 1;
-  }
-  let rows: ui.View[] = [];
-  let j: number = 0;
-  while (j < count) {
-    let it: Item = state.items[j];
-    let icon: string = "pin";
-    let subtitle: string = "not done";
-    if (it.done) { icon = "check"; subtitle = "done"; }
-    rows.push(ui.ListItem("default", it.label, subtitle, "", "toggle", j, true, icon));
-    j = j + 1;
-  }
-  return ui.AppTheme("__THEME__", "", [
-    ui.Header("__HEADER_STYLE__", "__TITLE__", "", ui.numberToString(doneCount) + " of " + ui.numberToString(count) + " done", "check"),
-    ui.Section("content", "", "", [
-      ui.When(count === 0, ui.EmptyState("default", "Nothing here", "Add an item to get started.", "", "", "pin")),
-      ui.When(count > 0, ui.ListGroup("__LIST_STYLE__", "", rows))
-    ])__BANNER_SECTION__
-  ]);
-}
-`
-
-const DASHBOARD_SOURCE: string = `import * as ui from "std/ui"
-
-@jsonable
-class AppState {
-  count: number;
-  total: number;
-}
-
-function init(): AppState {
-  return {count: 0, total: 100};
-}
-
-function increment(state: AppState, ignored: number): AppState {
-  return {count: state.count + 1, total: state.total};
-}
-
-function reset(state: AppState, ignored: number): AppState {
-  return {count: 0, total: state.total};
-}
-
-function view(state: AppState): ui.View {
-  let remaining: number = state.total - state.count;
-  return ui.AppTheme("__THEME__", "", [
-    ui.Header("default", "__TITLE__", "", "A canned template screen with generic numbers", "clock"),
-    ui.Section("summary", "", "", [
-      ui.MetricGroup("__METRIC_STYLE__", 3, [
-        ui.NumberStat("default", "__STAT1_LABEL__", state.count, "", "", 1, "", "pin"),
-        ui.NumberStat("__ACCENT_STAT__", "__STAT2_LABEL__", state.total, "", "", 1, "", "check"),
-        ui.NumberStat("default", "__STAT3_LABEL__", remaining, "", "", 1, "", "clock")
-      ])
-    ]),
-    ui.Section("content", "", "", [
-      ui.ActionBar("spread", [
-        ui.Button("primary", "Add one", "increment", 0, true),
-        ui.Button("secondary", "Reset", "reset", 0, true)
-      ])
-    ])__BANNER_SECTION__
-  ]);
-}
-`
-
-function bannerSlot(): SlotSpec {
-  let criteria: Map<string, string> = new Map<string, string>()
-  criteria.set('true', 'yes, show one')
-  criteria.set('false', 'no')
-  return new SlotSpec('__BANNER_SECTION__', ['hide', 'show'], 'noul',
-    'Does this app need a standing info note visible at all times?', criteria)
-}
-
-function listDetailSlots(): SlotSpec[] {
-  let theme: Map<string, string> = new Map<string, string>()
-  theme.set('clean', 'restrained and neutral')
-  theme.set('soft', 'calm and friendly')
-  theme.set('expressive', 'bold and atmospheric')
-  let header: Map<string, string> = new Map<string, string>()
-  header.set('default', 'left-aligned')
-  header.set('center', 'centered')
-  let density: Map<string, string> = new Map<string, string>()
-  density.set('default', 'normal spacing')
-  density.set('compact', 'tighter spacing')
-  density.set('comfortable', 'looser spacing')
-  return [
-    new SlotSpec('__THEME__', ['clean', 'soft', 'expressive'], 'choice',
-      'Which look fits best: clean (restrained), soft (calm, friendly) or expressive (bold)?', theme),
-    new SlotSpec('__HEADER_STYLE__', ['default', 'center'], 'choice',
-      'Should the title block be left-aligned (default) or centered?', header),
-    new SlotSpec('__LIST_STYLE__', ['default', 'compact', 'comfortable'], 'choice',
-      'How dense should the list rows be?', density),
-    bannerSlot()
-  ]
-}
-
-function dashboardSlots(): SlotSpec[] {
-  let theme: Map<string, string> = new Map<string, string>()
-  theme.set('clean', 'restrained and neutral')
-  theme.set('technical', 'dense, precise numbers')
-  theme.set('playful', 'energetic')
-  let density: Map<string, string> = new Map<string, string>()
-  density.set('default', 'normal spacing')
-  density.set('compact', 'tighter spacing')
-  density.set('spacious', 'looser spacing')
-  let accent: Map<string, string> = new Map<string, string>()
-  accent.set('default', 'no, same tone as the rest')
-  accent.set('accent', 'yes, highlighted')
-  return [
-    new SlotSpec('__THEME__', ['clean', 'technical', 'playful'], 'choice',
-      'Which look fits best: clean (restrained), technical (dense, precise) or playful (energetic)?', theme),
-    new SlotSpec('__METRIC_STYLE__', ['default', 'compact', 'spacious'], 'choice',
-      'How dense should the summary numbers be?', density),
-    new SlotSpec('__ACCENT_STAT__', ['default', 'accent'], 'choice',
-      'Should the middle number stand out with an accent tone?', accent),
-    bannerSlot()
-  ]
-}
-
-export function templates(): TemplateSpec[] {
-  return [
-    new TemplateSpec('list_detail',
-      'A browsable list of items the person can check off or mark one at a time',
-      LIST_DETAIL_SOURCE, listDetailSlots()),
-    new TemplateSpec('dashboard',
-      'A small dashboard of a few summary numbers with a couple of actions',
-      DASHBOARD_SOURCE, dashboardSlots())
-  ]
-}
-
-export function bannerLiteral(): string { return BANNER_SHOWN }
-
 /**
- * Bare view expression for the same banner, for VeraSectionCompose.ets's composer -- which
- * builds `view()` as a sequence of `sections.push(...)` calls rather than one array literal, so
- * it needs the banner as a standalone `ui.Section(...)` expression, not BANNER_SHOWN's
- * leading-comma array-splice text.
+ * The standing info banner as a bare view expression, for VeraSectionCompose.ets's composer -- which
+ * builds `view()` as a sequence of `sections.push(...)` calls rather than one array literal.
  */
 export function bannerSectionView(): string {
   return `ui.Section("supporting", "", "", [
@@ -474,9 +256,8 @@ export class PortSpec {
 }
 
 /**
- * A pre-authored, parameterized building block for VeraSectionCompose.ets's composer -- the
- * dynamic-composition counterpart to TemplateSpec, picked per section slot instead of picking one
- * whole-screen TemplateSpec. See VeraSectionCompose.ets's header comment for the full composition
+ * A pre-authored, parameterized building block for VeraSectionCompose.ets's composer, picked per
+ * section slot. See VeraSectionCompose.ets's header comment for the full composition
  * design (instance indexing, the __PASSTHROUGH__ token, why local view() variables need no
  * indexing but AppState fields and function names do).
  */
@@ -2618,7 +2399,7 @@ export function fragments(): FragmentSpec[] {
  * calls still matched `list_detail` at 0.95 confidence). These questions are
  * asked once, regardless of which template matched, and clearing its own
  * `above` bar on any one of them vetoes the pick outright -- see readPick in
- * VeraTemplateSelect.ets.
+ * VeraSectionCompose.ets.
  */
 export function vetoes(): VetoSpec[] {
   let yn = (yes: string, no: string): Map<string, string> => {

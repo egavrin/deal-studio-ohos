@@ -20,8 +20,8 @@ import { specsOf, markedHole, readChoiceValue } from './VeraSectionCompose'
 import { planFromBlocks, assemblePlan } from './ScreenPlan'
 import { fillSectionsContent } from './VeraTemplateContent'
 import { arrangeInLayout, LAYOUT_STACK } from './VeraLayouts'
-import { compileVeraSource } from './VeraCompiler'
-import { smokeRun } from './VeraSmokeRun'
+import { compileVeraSource, CompileResult } from './VeraCompiler'
+import { smokeRun } from './VeraSmoke'
 
 const DOMAIN = 0x0000
 const ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
@@ -366,19 +366,19 @@ export async function editComposition(request: string, c: Composition, mode: str
     let next = applyEdit(c, edit, values)
     if (next === null) { result.note = result.note + ' (cannot be applied)'; return result }
     let source = composeFrom(next)
-    let vbc2 = ''
+    let compiled: CompileResult
     try {
-      vbc2 = compileVeraSource(source).vbc2
+      compiled = compileVeraSource(source)
     } catch (_e) {
       result.note = result.note + ' (did not compile)'
       return result
     }
-    let smoke = smokeRun(vbc2)
-    if (!smoke.ok) { result.note = result.note + ' (did not run: ' + smoke.error + ')'; return result }
+    let problem = smokeRun(compiled)
+    if (problem.length > 0) { result.note = result.note + ' (did not run: ' + problem + ')'; return result }
     result.applied = true
     result.composition = next
     result.source = source
-    result.vbc2 = vbc2
+    result.vbc2 = compiled.vbc2
     return result
   } catch (e) {
     result.note = result.note + ' (failed: ' + (e as Error).message + ')'

@@ -1,31 +1,32 @@
 /**
  * Which builder makes a new screen, the same for the Generate screen and the chat: the blocks
  * (VeraTemplatePipeline.ets) and the agent (VeraAgent.ets), in the order set below. When neither serves, the
- * screen is not built and the outcome says why: there is no generation from scratch after the route. The caller turns the outcome into its own state; this file decides nothing about pages.
+ * screen is not built and the outcome says why: the route itself never generates from scratch. What happens then is
+ * the caller's: the Generate screen has the model write the whole program, the chat shows the reason. The caller
+ * turns the outcome into its own state; this file decides nothing about pages.
  *
  * A composition the blocks hand on to be completed -- the right sections, but the request needs more than they do -- is
  * kept until the agent has had its turn, so the agent is always tried first. Then its layout stays and what it lacks is
  * written into it as one section (AgentHole.ets), as the agent fills what nothing ready does; only when that cannot be
- * done does the model finish the whole program. What the agent's plan asks the phone to do and could not bind is
+ * done does the route go on to the whole screen below. What the agent's plan asks the phone to do and could not bind is
  * something the blocks' layout lacks too: a pick of sections that does not do it is not a finished screen.
  *
  * When no part of the screen can be built from what is ready, the hole widens to the whole screen: the model writes it
  * as one section against the agent's plan of it, looked up and checked the same way (AgentHole.ets), and Jev reads it
- * against everything the plan says the screen does. Only then does the model finish the blocks' base or generate from
- * scratch. Never throws.
+ * against everything the plan says the screen does. Only then does the route return OUTCOME_COMPLETE (the blocks' base,
+ * for the caller's model to finish) or OUTCOME_NOT_BUILT. Never throws.
  */
 
 import { AgentHost } from './AgentHost'
 import { AgentRequest, AgentResult, runAgent } from './VeraAgent'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
-import { buildFromTemplates, TemplateBuild, BUILD_TEMPLATE, BUILD_COMPLETE, BUILD_CANCELLED } from '../VeraTemplatePipeline'
+import { buildFromTemplates, markComplete, TemplateBuild, BUILD_TEMPLATE, BUILD_COMPLETE, BUILD_CANCELLED } from '../VeraTemplatePipeline'
 import { selectSections, SectionPickOutcome } from '../VeraSectionCompose'
 import { settings } from '../SettingsStore'
 import { assemblePlan, PlanSlot, ScreenPlan } from '../ScreenPlan'
 import { wholeScreenPlan, sketchConstants } from '../VeraCompose'
-import { compileVeraSource, CompileError } from '../VeraCompiler'
-import { ROUTE_BLOCKS_MODEL } from '../VeraRoute'
+import { settleProgram } from './AgentRepair'
 
 /** The agent's program is the result. */
 export const OUTCOME_AGENT: string = 'agent'
@@ -34,8 +35,8 @@ export const OUTCOME_TEMPLATE: string = 'template'
 /** The blocks' program is the base for the model to finish (`blocks.source`), and the fallback if it cannot. */
 export const OUTCOME_COMPLETE: string = 'complete'
 /**
- * Nothing served: the screen is not built, and `reason` says why. There is no generation from scratch after the route:
- * what the agent cannot build is shown as an error, to be seen and fixed.
+ * Nothing served: the screen is not built, and `reason` says why. The route does not generate: the chat shows the
+ * reason as an error, and the Generate screen has the model write the whole program (GeneratePage.ets).
  */
 export const OUTCOME_NOT_BUILT: string = 'not-built'
 export const OUTCOME_CANCELLED: string = 'cancelled'
@@ -90,10 +91,8 @@ function addAgentNeeds(build: TemplateBuild, agent: AgentResult | null): void {
     added.push(needs[i])
   }
   if (added.length > 0 && build.action === BUILD_TEMPLATE) {
-    build.action = BUILD_COMPLETE
-    build.route.route = ROUTE_BLOCKS_MODEL
-    build.note += '; the plan also asks: ' + added.join('; ')
-    build.status = 'Composed ' + build.kinds.join('+') + ', adding what the request asks the phone to do...'
+    markComplete(build, build.note + '; the plan also asks: ' + added.join('; '),
+      'Composed ' + build.kinds.join('+') + ', adding what the request asks the phone to do...')
   }
 }
 
@@ -125,15 +124,17 @@ async function writeWholeScreen(request: RouteRequest, host: AgentHost, outcome:
     agent!.note += '; whole screen: ' + (written !== null ? written.failed : 'nothing to write')
     return false
   }
-  let source = assemblePlan(plan)
-  try {
-    agent!.vbc2 = compileVeraSource(source).vbc2
-  } catch (e) {
-    agent!.note += '; whole screen: ' + (e instanceof CompileError ? (e as CompileError).message : (e as Error).message)
+  let settled = await settleProgram(assemblePlan(plan), prompt, host)
+  agent!.checkMs += settled.checkMs
+  if (settled.repair !== null) { agent!.repair = settled.repair }
+  agent!.note += settled.note
+  if (settled.errors.length > 0) {
+    agent!.note += '; whole screen: ' + settled.errors
     return false
   }
-  agent!.source = source
-  agent!.composed.source = source
+  agent!.vbc2 = settled.vbc2
+  agent!.source = settled.source
+  agent!.composed.source = settled.source
   agent!.errors = ''
   agent!.screen = plan
   agent!.note += '; whole screen written in ' + written.attempts.toString() + ' attempt(s)'
@@ -163,14 +164,14 @@ async function finishBlocks(build: TemplateBuild, prompt: string, host: AgentHos
     build.note += '; ' + (written !== null ? written.failed : 'nothing to write')
     return false
   }
-  let source = assemblePlan(plan)
-  try {
-    build.vbc2 = compileVeraSource(source).vbc2
-  } catch (e) {
-    build.note += '; written section: ' + (e instanceof CompileError ? (e as CompileError).message : (e as Error).message)
+  let settled = await settleProgram(assemblePlan(plan), prompt, host)
+  build.note += settled.note
+  if (settled.errors.length > 0) {
+    build.note += '; written section: ' + settled.errors
     return false
   }
-  build.source = source
+  build.vbc2 = settled.vbc2
+  build.source = settled.source
   build.action = BUILD_TEMPLATE
   // The composition record has no place for a written section: a structural edit would drop it, so there is none.
   build.composition = ''
