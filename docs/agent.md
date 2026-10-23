@@ -1,9 +1,11 @@
 # The agent: how a new screen is built
 
 A new screen (the Generate screen, or a widget in the chat) is built by the **route**
-(`agent/VeraBuildRoute.ets`): the **agent** first, the **blocks** after it, then the **whole screen as one hole**.
-What none of them builds is reported as *not built*, with the reason; there is no generation from scratch after
-the route. A change to an existing program still goes to the model (refine), as before.
+(`agent/VeraBuildRoute.ets`): the **blocks** first (Jev's pick runs beside the agent's plan, so it costs nothing extra),
+the **agent** after them, then the **whole screen as one hole**. A request the blocks build whole (live figures, a ledger,
+a chart, a countdown) is served from them with their real data; when Jev finds nothing that fits, or the blocks need more
+than they do, the agent follows. What none of them builds is handed to the model to write from scratch on the Generate
+screen (the chat reports it as *not built*, with the reason). A change to an existing program goes to the model (refine).
 
 The idea: planning and building each have a fast path, where Jev picks something ready, and a slow path, where the
 model writes it. A simple request is built from Jev's picks alone; the more a request asks that nothing ready does,
@@ -81,7 +83,7 @@ the melody.
 
 ## Switches and tools
 
-- `--ps veraOrder blocks-first` puts the blocks before the agent; `--ps veraCustom 0` turns written sections off;
+- `--ps veraOrder agent-first` puts the agent before the blocks (the first version of the route); `--ps veraCustom 0` turns written sections off;
   `--ps veraWhole 0` the whole-screen hole.
 - `tools/vera-harness/agent-run.js [-r] [-w]` runs the agent (or the whole route) live on the host: DeepSeek
   (`$ARKESTR_API_KEY`), Jev (`$TYPESAFE_API_KEY`), Exa (`$EXA_API_KEY`, optional).

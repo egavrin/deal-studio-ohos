@@ -652,12 +652,9 @@ struct GeneratePage {
       this.startAttemptOne(userPrompt, 'Completing template')
       return
     }
-    // Nothing built it: no generation from scratch, the reason is shown, to be seen and fixed.
-    this.totalMs = Date.now() - this.genStartTime
-    this.generating = false
-    this.status = 'Not built (' + (this.totalMs / 1000).toFixed(1) + ' s): ' + outcome.reason
-    if (this.previewVbc2.length > 0) { this.previewNote = 'Preview from the sketch only — the app was not built' }
-    this.traceEnd('not built: ' + outcome.reason)
+    // Nothing built it: the model writes the whole program, as it did before the route, rather than showing an error.
+    this.status = 'Not built by blocks or agent (' + outcome.reason.substring(0, 160) + '); the model writes it from scratch...'
+    this.startAttemptOne(userPrompt)
   }
 
   private traceAgent(result: AgentResult): void {

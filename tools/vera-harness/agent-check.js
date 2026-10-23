@@ -236,8 +236,10 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(r.asked.length, 1)
   }
 
-  // The route, agent first (the default): a served agent ends it and the blocks never run.
+  // The route, agent first (set here; the default is blocks first): a served agent ends it and the blocks never run.
   const routeRequest = (prompt, blocks) => Object.assign(new route.RouteRequest(), {agent: request(prompt), blocksPrompt: blocks ? prompt : ''})
+  assert.equal(route.routeOrder(), route.ORDER_BLOCKS_FIRST)
+  route.setRouteOrder(route.ORDER_AGENT_FIRST)
   assert.equal(route.routeOrder(), route.ORDER_AGENT_FIRST)
   {
     const {host} = replayHost('tip')
