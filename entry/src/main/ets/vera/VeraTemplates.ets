@@ -378,7 +378,7 @@ export class ListFieldSpec {
   numericColumns: number[]
   /**
    * Per column, a value check applied before splicing: '' none, 'lat' and 'lon' (a decimal within the range of a
-   * latitude / longitude, else the cell becomes empty), 'minutes' (a whole number 5 to 600, else 60), 'seconds' (a whole number 5 to 86400, else 60).
+   * latitude / longitude, else the cell becomes empty), 'number' (a number with an optional fraction, else 0), 'minutes' (a whole number 5 to 600, else 60), 'seconds' (a whole number 5 to 86400, else 60).
    */
   columnChecks: string[]
   constructor(token: string, key: string, hint: string, columnHints: string[], columnMax: number[], rowTemplate: string,
@@ -1187,6 +1187,165 @@ function keyFactsFragment(): FragmentSpec {
 }
 
 /**
+ * One to three current figures from the internet that keep themselves up to date, with the source shown. A program cannot reach the
+ * internet; this block's refresh calls the host function "Vera.Live.fetch" (VeraLive.ets), which searches, has a model read the figures
+ * off the results and answers in plain lines:
+ *
+ *   ok / error: <reason>, <value 1>, <value 2>, <value 3>, source<TAB>domain<TAB>address, asof<TAB>HH:MM
+ *
+ * The first figures and their source are written at generation from the search the pipeline already made, and checked against it
+ * (VeraLive.ets checkLiveProvenance): an address or a figure that is not in the results is blanked, never shown as found. A refresh
+ * that fails keeps the figures on screen and says why; the source line always says where the figures are from and when.
+ * A tick every second counts down to the next automatic refresh (one soon after the screen opens, then every interval).
+ */
+function liveFactsFragment(): FragmentSpec {
+  let every: Map<string, string> = new Map<string, string>()
+  every.set('300', 'every five minutes')
+  every.set('60', 'every minute, for fast-moving figures such as a price')
+  every.set('900', 'every quarter of an hour, for slowly changing figures such as the weather')
+  return new FragmentSpec(
+    'live_facts',
+    'One to three figures that change from minute to minute (an exchange rate, a price, the weather right now, a live score) that the screen keeps ' +
+    'refreshing from the internet, shown with their source; only when the request asks for the current value or to keep watching it; ' +
+    'not for a value at a stated time or date, a past or forecast figure, or a fact that does not change',
+    '',
+    [new StateFieldSpec('v1IDX', 'string'), new StateFieldSpec('v2IDX', 'string'), new StateFieldSpec('v3IDX', 'string'),
+     new StateFieldSpec('prev1IDX', 'string'), new StateFieldSpec('srcNameIDX', 'string'), new StateFieldSpec('srcUrlIDX', 'string'),
+     new StateFieldSpec('asOfIDX', 'string'), new StateFieldSpec('noteIDX', 'string'), new StateFieldSpec('busyIDX', 'boolean'),
+     new StateFieldSpec('autoIDX', 'boolean'), new StateFieldSpec('nextInIDX', 'number'), new StateFieldSpec('lastCallIDX', 'number'),
+     new StateFieldSpec('chgIDX', 'string')],
+    // The content tokens are resolved in init statements only, so the figures are read into locals here and the state literal names them.
+    `  let v1IDX: string = "__V1_IDX__";
+  let v2IDX: string = "__V2_IDX__";
+  let v3IDX: string = "__V3_IDX__";
+  let srcNameIDX: string = "__SRC_NAME_IDX__";
+  let srcUrlIDX: string = "__SRC_URL_IDX__";`,
+    `v1IDX: v1IDX, v2IDX: v2IDX, v3IDX: v3IDX, prev1IDX: "", srcNameIDX: srcNameIDX, srcUrlIDX: srcUrlIDX, asOfIDX: "", noteIDX: "", busyIDX: false, autoIDX: true, nextInIDX: 3, lastCallIDX: 0, chgIDX: ""`,
+    `function rebuildLiveIDX(state: AppState, v1: string, v2: string, v3: string, prev1: string, srcName: string, srcUrl: string, asOf: string, note: string, busy: boolean, auto: boolean, nextIn: number, lastCall: number, chg: string): AppState {
+  return {v1IDX: v1, v2IDX: v2, v3IDX: v3, prev1IDX: prev1, srcNameIDX: srcName, srcUrlIDX: srcUrl, asOfIDX: asOf, noteIDX: note, busyIDX: busy, autoIDX: auto, nextInIDX: nextIn, lastCallIDX: lastCall, chgIDX: chg__PASSTHROUGH__};
+}
+
+function startFetchIDX(state: AppState, now: number): AppState {
+  sdk.call("Vera.Live.fetch", ["query", "__QUERY_IDX__", "labels", "__L1_IDX__|__L2_IDX__|__L3_IDX__"], "onLiveIDX");
+  return rebuildLiveIDX(state, state.v1IDX, state.v2IDX, state.v3IDX, state.prev1IDX, state.srcNameIDX, state.srcUrlIDX, state.asOfIDX, "", true, state.autoIDX, __INTERVAL_IDX__, now, state.chgIDX);
+}
+
+function refreshIDX(state: AppState, ignored: number): AppState {
+  let now: number = time.nowSeconds();
+  if (state.busyIDX || now - state.lastCallIDX < 5) { return state; }
+  return startFetchIDX(state, now);
+}
+
+function onTickIDX(state: AppState, elapsedMs: number): AppState {
+  if (!state.autoIDX) { return state; }
+  let left: number = state.nextInIDX - 1;
+  if (left > 0) {
+    return rebuildLiveIDX(state, state.v1IDX, state.v2IDX, state.v3IDX, state.prev1IDX, state.srcNameIDX, state.srcUrlIDX, state.asOfIDX, state.noteIDX, state.busyIDX, state.autoIDX, left, state.lastCallIDX, state.chgIDX);
+  }
+  let now: number = time.nowSeconds();
+  if (state.busyIDX || now - state.lastCallIDX < 5) {
+    return rebuildLiveIDX(state, state.v1IDX, state.v2IDX, state.v3IDX, state.prev1IDX, state.srcNameIDX, state.srcUrlIDX, state.asOfIDX, state.noteIDX, state.busyIDX, state.autoIDX, 5, state.lastCallIDX, state.chgIDX);
+  }
+  return startFetchIDX(state, now);
+}
+
+function toggleAutoIDX(state: AppState, value: boolean): AppState {
+  return rebuildLiveIDX(state, state.v1IDX, state.v2IDX, state.v3IDX, state.prev1IDX, state.srcNameIDX, state.srcUrlIDX, state.asOfIDX, state.noteIDX, state.busyIDX, value, __INTERVAL_IDX__, state.lastCallIDX, state.chgIDX);
+}
+
+function lineAtIDX(lines: string[], at: number, fallback: string): string {
+  if (at < lines.length()) {
+    let t: string = strings.trim(lines[at]);
+    if (t !== "") { return t; }
+  }
+  return fallback;
+}
+
+function onLiveIDX(state: AppState, value: string): AppState {
+  if (!strings.startsWith(value, "ok")) {
+    let why: string = value;
+    if (strings.length(why) > 140) { why = strings.substring(why, 0, 140); }
+    return rebuildLiveIDX(state, state.v1IDX, state.v2IDX, state.v3IDX, state.prev1IDX, state.srcNameIDX, state.srcUrlIDX, state.asOfIDX, why, false, state.autoIDX, __INTERVAL_IDX__, state.lastCallIDX, state.chgIDX);
+  }
+  let lines: string[] = strings.split(value, "\\n");
+  let n1: string = lineAtIDX(lines, 1, state.v1IDX);
+  let n2: string = lineAtIDX(lines, 2, state.v2IDX);
+  let n3: string = lineAtIDX(lines, 3, state.v3IDX);
+  let prev: string = state.prev1IDX;
+  if (n1 !== state.v1IDX) { prev = state.v1IDX; }
+  let chg: string = "same";
+  if (n1 !== state.v1IDX || n2 !== state.v2IDX || n3 !== state.v3IDX) { chg = "changed"; }
+  let srcName: string = state.srcNameIDX;
+  let srcUrl: string = state.srcUrlIDX;
+  let asOf: string = state.asOfIDX;
+  if (lines.length() > 4) {
+    let src: string[] = strings.split(lines[4], "\\t");
+    if (src.length() > 2) { srcName = src[1]; srcUrl = src[2]; }
+  }
+  if (lines.length() > 5) {
+    let when: string[] = strings.split(lines[5], "\\t");
+    if (when.length() > 1) { asOf = when[1]; }
+  }
+  return rebuildLiveIDX(state, n1, n2, n3, prev, srcName, srcUrl, asOf, "", false, state.autoIDX, __INTERVAL_IDX__, state.lastCallIDX, chg);
+}`,
+    `{
+    let l1: string = "__L1_IDX__";
+    let l2: string = "__L2_IDX__";
+    let l3: string = "__L3_IDX__";
+    let shown1: string = state.v1IDX;
+    let shown2: string = state.v2IDX;
+    let shown3: string = state.v3IDX;
+    if (shown1 === "") { shown1 = "-"; }
+    if (shown2 === "") { shown2 = "-"; }
+    if (shown3 === "") { shown3 = "-"; }
+    let was: string = "";
+    if (state.prev1IDX !== "") { was = "was " + state.prev1IDX; }
+    let facts: ui.View[] = [];
+    facts.push(ui.KeyValueItem("default", l1, shown1, was));
+    facts.push(ui.When(l2 !== "", ui.KeyValueItem("default", l2, shown2, "")));
+    facts.push(ui.When(l3 !== "", ui.KeyValueItem("default", l3, shown3, "")));
+    let buttonText: string = "Refresh now";
+    if (state.busyIDX) { buttonText = "Updating..."; }
+    let head: ui.View[] = [];
+    head.push(ui.KeyValueGroup("default", 1, facts));
+    head.push(ui.ActionBar("spread", [ui.Button("primary", buttonText, "refreshIDX", 0, !state.busyIDX)]));
+    head.push(ui.When(state.chgIDX === "same" && !state.busyIDX && state.noteIDX === "", ui.InsetBanner("default", "No change", "The source showed the same figures as at the previous check.", "", "", "info")));
+    sections.push(ui.Section("content", "", "", head));
+    let sourceTitle: string = "Source: not found yet";
+    if (state.srcNameIDX !== "") { sourceTitle = "Source: " + state.srcNameIDX; }
+    if (state.asOfIDX !== "") { sourceTitle = sourceTitle + " \\u00b7 checked " + state.asOfIDX; }
+    sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("default", sourceTitle, state.srcUrlIDX, "", "", "info")]));
+    let controls: ui.View[] = [];
+    controls.push(ui.Toggle("default", "Auto-refresh", state.autoIDX, "toggleAutoIDX"));
+    controls.push(ui.Ticker("default", "liveIDX", 1000, state.autoIDX, "onTickIDX"));
+    controls.push(ui.When(state.autoIDX && !state.busyIDX, ui.InsetBanner("default", "Next update in " + ui.durationToString(state.nextInIDX), "", "", "", "info")));
+    sections.push(ui.Section("content", "", "", controls));
+    sections.push(ui.Section("supporting", "", "", [
+      ui.When(state.noteIDX !== "", ui.InsetBanner("warning", "Could not update", state.noteIDX, "", "", "info"))
+    ]));
+  }`,
+    [new SlotSpec('__INTERVAL_IDX__', ['300', '60', '900'], 'choice',
+      'How often should these figures refresh while the screen is open?', every)],
+    [
+      new ContentFieldSpec('__L1_IDX__', 'label1', 'Value', 'Label of the first figure (1-3 words, such as USD/RUB)', 20),
+      new ContentFieldSpec('__L2_IDX__', 'label2', '', 'Label of a second figure, or an empty string when the request asks for one figure', 20),
+      new ContentFieldSpec('__L3_IDX__', 'label3', '', 'Label of a third figure, or an empty string', 20),
+      new ContentFieldSpec('__V1_IDX__', 'value1', '-', 'The first figure exactly as the search results write it (digits and unit), or "-" when the results do not have it', 24),
+      new ContentFieldSpec('__V2_IDX__', 'value2', '-', 'The second figure exactly as the search results write it, or "-"', 24),
+      new ContentFieldSpec('__V3_IDX__', 'value3', '-', 'The third figure exactly as the search results write it, or "-"', 24),
+      new ContentFieldSpec('__QUERY_IDX__', 'query', '', 'A web search query that finds these figures again later, 3-8 words, such as "USD RUB exchange rate today"', 80),
+      new ContentFieldSpec('__SRC_NAME_IDX__', 'source_name', '', 'Domain of the search result the figures were read from, such as cbr.ru, or an empty string', 40),
+      new ContentFieldSpec('__SRC_URL_IDX__', 'source_url', '', 'Address of that search result, copied exactly from the results, or an empty string', 160)
+    ],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"', 'import * as time from "std/time"'],
+    [],
+    [],
+    [],
+    ['needs_integration', 'needs_live_ticking']
+  )
+}
+
+/**
  * A single-series line chart of a handful of real data points, display-only. Min/max are computed
  * from the actual plotted values at render time (a plain while loop over the array), not asked of
  * the content-fill model as a separate field -- VeraPreview.ets's Sparkline renderer never
@@ -1200,16 +1359,18 @@ function trendChartFragment(): FragmentSpec {
   chartStyle.set('accent', 'yes, highlighted')
   return new FragmentSpec(
     'trend_chart',
-    'A simple line chart of a handful of data points trending over a sequence (a measurement by ' +
-    'year, a reading over months) -- not interactive, no taps, no editable inputs',
+    'A simple line chart of ONE series of a handful of data points trending over a sequence (a measurement ' +
+    'by year, a reading over months); it cannot compare several groups -- not interactive, no taps, no editable inputs',
     '',
     [],
     '',
     '',
     '',
     `{
-    let series: number[] = [__V1_IDX__, __V2_IDX__, __V3_IDX__, __V4_IDX__];
-    let categories: string[] = ["__Y1_IDX__", "__Y2_IDX__", "__Y3_IDX__", "__Y4_IDX__"];
+    let series: number[] = [];
+    let categories: string[] = [];
+    __POINTS_IDX__
+    if (series.length() < 1) { series.push(0); categories.push(""); }
     let maxV: number = series[0];
     let minV: number = series[0];
     let i: number = 1;
@@ -1218,22 +1379,27 @@ function trendChartFragment(): FragmentSpec {
       if (series[i] < minV) { minV = series[i]; }
       i = i + 1;
     }
+    let span: number = maxV - minV;
+    if (span < 1) { span = 1; }
+    let top: number = maxV + span / 5;
+    let bottom: number = minV - span / 5;
+    if (bottom < 0) { if (minV > -1) { bottom = 0; } }
     sections.push(ui.Section("content", "", "", [
-      ui.Sparkline("__CHART_STYLE_IDX__", series, maxV, "__CHART_LABEL_IDX__", false, [], "default", "", "", categories, minV)
+      ui.Sparkline("__CHART_STYLE_IDX__", series, top, "__CHART_LABEL_IDX__", false, [], "default", "", "", categories, bottom)
     ]));
   }`,
     [new SlotSpec('__CHART_STYLE_IDX__', ['default', 'accent'], 'choice', 'Should the chart line stand out?', chartStyle)],
     [
-      new ContentFieldSpec('__CHART_LABEL_IDX__', 'chart_label', 'Value', 'Short label for what the chart plots (2-4 words, e.g. "Average height (cm)")', 24),
-      new ContentFieldSpec('__Y1_IDX__', 'point1_label', 'Point 1', 'Short label for data point 1 (e.g. a year, "1950")', 12),
-      new ContentFieldSpec('__V1_IDX__', 'point1_value', '0', 'Numeric value for data point 1, digits only, no units or commas', 15, true),
-      new ContentFieldSpec('__Y2_IDX__', 'point2_label', 'Point 2', 'Short label for data point 2', 12),
-      new ContentFieldSpec('__V2_IDX__', 'point2_value', '0', 'Numeric value for data point 2, digits only, no units or commas', 15, true),
-      new ContentFieldSpec('__Y3_IDX__', 'point3_label', 'Point 3', 'Short label for data point 3', 12),
-      new ContentFieldSpec('__V3_IDX__', 'point3_value', '0', 'Numeric value for data point 3, digits only, no units or commas', 15, true),
-      new ContentFieldSpec('__Y4_IDX__', 'point4_label', 'Point 4', 'Short label for data point 4', 12),
-      new ContentFieldSpec('__V4_IDX__', 'point4_value', '0', 'Numeric value for data point 4, digits only, no units or commas', 15, true)
-    ]
+      new ContentFieldSpec('__CHART_LABEL_IDX__', 'chart_label', 'Value', 'Short label for what the chart plots (2-4 words, e.g. "Average height (cm)")', 24)
+    ],
+    [],
+    [new ListFieldSpec('__POINTS_IDX__', 'points',
+      'The data points of the line, in order along the x axis (2 to 12), each with its label and a number. Take the points the ' +
+      'request names; when it names none, take 6 to 10 evenly spaced ones from the search results\' table (every 10 years, every month). ' +
+      'Never invent a point, never pad with zeros or with derived values such as a change',
+      ['x-axis label (a year or a month, 1-2 words)', 'its value, a plain number, no units'], [12, 12],
+      'categories.push("{0}"); series.push({1});', '\n    ', 2, 12,
+      [['A', '1'], ['B', '2']], [], ['', 'number'])]
   )
 }
 
@@ -2437,7 +2603,7 @@ export function fragments(): FragmentSpec[] {
     barChartFragment(),
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
-    itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment()
+    itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment(), liveFactsFragment()
   ]
 }
 
@@ -2505,6 +2671,12 @@ export function vetoes(): VetoSpec[] {
       'just marked done/not done, present/absent, or on/off is one list, not multiple counters, and ' +
       'does not count -- only answer yes for genuinely separate running numeric tallies.',
       yn('yes', 'no, one adjustable number (plus derived read-only numbers) is enough'), 0.65),
+    new VetoSpec('needs_multiple_series',
+      'Does this request need a chart that compares two or more separate data series on the same ' +
+      'axes -- for example men and women, two cities, this year and last year -- rather than a ' +
+      'single line of values over one sequence (one measurement by year or by month)? One series ' +
+      'with several points is not multiple series; only answer yes when each group needs its own line.',
+      yn('yes', 'no, one line of values over one sequence is enough'), 0.65),
     new VetoSpec('needs_logic',
       'Does this request ask the app to calculate, convert, scale, split, total, compare or decide ' +
       'something from values -- for example amounts for a number of people, a tip split, a unit ' +

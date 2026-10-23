@@ -13,6 +13,8 @@ import { settings } from './SettingsStore'
 export const SEARCH_TOOL_NAME = 'web_search'
 export const SEARCH_RESULTS = 4
 export const SEARCH_CHARS = 400
+/** A chart needs a whole table of values, not a headline: a page's table of one value per year is about 2000 characters. */
+export const SEARCH_CHARS_DATA = 2400
 export const EXA_URL = 'https://api.exa.ai/search'
 
 export function searchToolSchema(): Record<string, Object>[] {
@@ -60,8 +62,77 @@ function imagesOf(item: Record<string, Object>): string[] {
   return found
 }
 
+/** One search result, as the search returned it: where it is and what it says. */
+export class SearchHit {
+  title: string = ''
+  url: string = ''
+  snippet: string = ''
+}
+
+export class SearchHits {
+  hits: SearchHit[] = []
+  /** Why there are none ('' when the search worked): no key, an HTTP code, a failure. */
+  error: string = ''
+}
+
+/**
+ * The same Exa search as webSearch, but the results stay separate (title, address, text) so a caller can say which one a figure
+ * came from. Never throws. Used by the live-data block's refresh (VeraLive.ets).
+ */
+export async function webSearchHits(query: string, chars: number = SEARCH_CHARS_DATA): Promise<SearchHits> {
+  let out = new SearchHits()
+  if (query.length === 0) { out.error = 'empty query'; return out }
+  if (!settings.hasExaKey()) { out.error = 'no search key'; return out }
+  let client = http.createHttp()
+  try {
+    let body: Record<string, Object> = {}
+    body['query'] = query
+    body['numResults'] = SEARCH_RESULTS
+    let text: Record<string, Object> = {}
+    text['maxCharacters'] = chars
+    let contents: Record<string, Object> = {}
+    contents['text'] = text
+    // Exa answers from its cache unless told otherwise: a refreshed price came back identical, in 260 ms instead of seconds.
+    // 0 fetches the pages fresh; the live fetch gets its own time limit.
+    contents['maxAgeHours'] = 0
+    contents['livecrawlTimeout'] = 8000
+    body['contents'] = contents
+    let header: Record<string, string> = {}
+    header['Content-Type'] = 'application/json'
+    header['x-api-key'] = settings.getExaKey()
+    let resp = await client.request(EXA_URL, {
+      method: http.RequestMethod.POST,
+      header: header,
+      extraData: JSON.stringify(body),
+      expectDataType: http.HttpDataType.STRING,
+      connectTimeout: 8000,
+      readTimeout: 20000
+    })
+    if (resp.responseCode !== 200) { out.error = 'search answered HTTP ' + resp.responseCode.toString(); return out }
+    let parsed = JSON.parse(resp.result as string) as Record<string, Object>
+    let results = parsed['results'] as Object[]
+    if (results === null || results === undefined || results.length === 0) { out.error = 'no results'; return out }
+    for (let r of results) {
+      let item = r as Record<string, Object>
+      let hit = new SearchHit()
+      hit.title = typeof item['title'] === 'string' ? item['title'] as string : ''
+      hit.url = typeof item['url'] === 'string' ? item['url'] as string : ''
+      let snippet = typeof item['text'] === 'string' ? item['text'] as string : ''
+      hit.snippet = snippet.split('\n').join(' ').trim()
+      if (hit.snippet.length > chars) { hit.snippet = hit.snippet.substring(0, chars) }
+      if (hit.url.length > 0) { out.hits.push(hit) }
+    }
+    if (out.hits.length === 0) { out.error = 'no results' }
+  } catch (e) {
+    out.error = 'search failed: ' + (e as Error).message
+  } finally {
+    try { client.destroy() } catch (_e) {}
+  }
+  return out
+}
+
 /** Exa search, flattened to text a model can read. A failure comes back as text too, so the turn goes on. */
-export async function webSearch(query: string): Promise<string> {
+export async function webSearch(query: string, chars: number = SEARCH_CHARS): Promise<string> {
   if (query.length === 0) { return 'Search failed: empty query.' }
   let client = http.createHttp()
   try {
@@ -69,7 +140,7 @@ export async function webSearch(query: string): Promise<string> {
     body['query'] = query
     body['numResults'] = SEARCH_RESULTS
     let text: Record<string, Object> = {}
-    text['maxCharacters'] = SEARCH_CHARS
+    text['maxCharacters'] = chars
     let contents: Record<string, Object> = {}
     contents['text'] = text
     let extras: Record<string, Object> = {}
@@ -111,7 +182,7 @@ export async function webSearch(query: string): Promise<string> {
       let url = typeof item['url'] === 'string' ? item['url'] as string : ''
       let snippet = typeof item['text'] === 'string' ? item['text'] as string : ''
       snippet = snippet.split('\n').join(' ').trim()
-      if (snippet.length > SEARCH_CHARS) { snippet = snippet.substring(0, SEARCH_CHARS) }
+      if (snippet.length > chars) { snippet = snippet.substring(0, chars) }
       out = out + n.toString() + '. ' + title + ' (' + url + ')\n' + snippet + '\n'
       let pics = imagesOf(item)
       if (pics.length > 0) { out = out + 'Images: ' + pics.join(' ') + '\n' }

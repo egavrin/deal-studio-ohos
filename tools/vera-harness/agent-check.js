@@ -264,7 +264,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     const savedPick = compose.selectSections, savedContent = deepseek.extractTemplateContent
     deepseek.extractTemplateContent = async () => JSON.stringify({title: 'Party'})
     const answers = {section1: {choice: 'metrics', confidence: 0.9}}
-    for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_logic'])
+    for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_multiple_series', 'needs_logic'])
       answers['veto.' + k] = {noul: k === 'needs_logic' ? 0.95 : 0}
     compose.selectSections = async () => compose.readSectionPick(JSON.stringify({answers}))
     const section = '<classes>\n</classes>\n<fields>\nc_people: number = 4\n</fields>\n<functions>\n' +

@@ -21,16 +21,18 @@ import { settings } from './SettingsStore'
 import { selectSections, readSectionPick, composeProgram, specsOf, SectionPickOutcome, SectionPick } from './VeraSectionCompose'
 import { ScreenPlan, planFromBlocks, assemblePlan } from './ScreenPlan'
 import { verifyWeakPick, VERIFY_WEAK_PICKS, VerifyAnswer } from './VeraPickVerify'
-import { RouteInfo, jevStateOf, logicOf, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, ROUTE_SCRATCH, JEV_UNSURE, CHECK_NONE, CHECK_OFF, CHECK_YESNO,
+import { expandRequest, ExpandResult, expandRequestsEnabled } from './VeraRequestExpand'
+import { RouteInfo, jevStateOf, logicOf, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, ROUTE_SCRATCH, JEV_UNSURE, JEV_UNAVAILABLE, CHECK_NONE, CHECK_OFF, CHECK_YESNO,
   CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED } from './VeraRoute'
 import { fillSectionsContent } from './VeraTemplateContent'
 import { compileVeraSource } from './VeraCompiler'
 import { smokeRun, SmokeResult } from './VeraSmokeRun'
-import { webSearch } from './VeraWebSearch'
+import { webSearch, SEARCH_CHARS, SEARCH_CHARS_DATA } from './VeraWebSearch'
 import { deepseek, discoveryToolResult } from './DeepSeekEngine'
 import { holesOf, holeValues, holeBodiesBySlot, fillHoles, HoleFill, HoleInstance } from './VeraHoles'
 import { Composition, Block, compositionToJson } from './VeraComposition'
 import { fillIntentRows, IntentRowsFill } from './VeraIntentPanel'
+import { checkLiveProvenance } from './VeraLive'
 
 export const BUILD_TEMPLATE: string = 'template'
 export const BUILD_COMPLETE: string = 'complete'
@@ -52,6 +54,8 @@ export class TemplateBuild {
   verifyMs: number = 0
   /** -1 when no search was made. */
   searchMs: number = -1
+  /** The search results the text was filled from ('' when no search was made or it found nothing), so a completion does not search again. */
+  searchText: string = ''
   contentMs: number = 0
   /** The composition record (VeraComposition.ets) as JSON, for template and complete; the program above is rebuilt from it. */
   composition: string = ''
@@ -90,6 +94,23 @@ const SOFT_NEEDS: Map<string, string> = new Map<string, string>([
   ['needs_integration', 'has the phone or another app do what the request asks']
 ])
 
+/** Blocks that show what they were filled with and do nothing else. */
+const DISPLAY_ONLY_KINDS: string[] = ['key_facts', 'spotlight', 'metrics', 'trend_chart', 'bar_chart', 'data_table', 'timeline']
+
+/**
+ * Whether the soft vetoes that asked for a completion are all "needs_integration" and every block only displays: the
+ * request wanted real-world numbers and the blocks were filled with them. Any other veto (a calculation, a form, a second
+ * counter) or any block with taps and inputs still needs the model.
+ */
+export function groundedDisplayOnly(kinds: string[], logicTags: string[]): boolean {
+  if (logicTags.length === 0) { return false }
+  for (let tag of logicTags) { if (tag !== 'needs_integration') { return false } }
+  let shown = kinds.filter((k: string): boolean => k !== 'none')
+  if (shown.length === 0) { return false }
+  for (let kind of shown) { if (DISPLAY_ONLY_KINDS.indexOf(kind) < 0) { return false } }
+  return true
+}
+
 function scratch(note: string, status: string, build: TemplateBuild, failure: string = ''): TemplateBuild {
   build.action = BUILD_SCRATCH
   build.route.route = ROUTE_SCRATCH
@@ -110,11 +131,41 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
   let build = new TemplateBuild()
   try {
     onStatus('Checking for a canned template...')
+    // A rewrite of the request starts with Jev's first answer and is read only if Jev picks nothing; otherwise it is dropped.
+    let expanding: Promise<ExpandResult> | null = expandRequestsEnabled() && mode === 'deepseek' && settings.hasApiKey() ? expandRequest(prompt) : null
     let jevStart = Date.now()
     // Jev's pick, unless the caller started it already (the route asks for it while the agent plans).
     let outcome: SectionPickOutcome = picked !== null ? await picked! : await selectSections(prompt, settings.getSelectorKey())
     build.jevMs = Date.now() - jevStart
     if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+    // What the model is shown as the request: the rewrite when it rescued the pick, else what the person typed.
+    // The web search, the phone-function lookup and the record keep the original wording.
+    let work = prompt
+    // Not when Jev did not answer at all (no key, timeout, an error): a second call to the same service would only wait out
+    // another timeout, 15 s on the phone.
+    if (outcome.sections === null && expanding !== null && jevStateOf(outcome) !== JEV_UNAVAILABLE) {
+      onStatus('Rewriting the request...')
+      let rewrite: ExpandResult = await expanding
+      if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+      build.route.expandMs = rewrite.ms
+      if (rewrite.text.length > 0) {
+        let retryStart = Date.now()
+        let second: SectionPickOutcome = await selectSections(rewrite.text, settings.getSelectorKey())
+        build.jevMs = build.jevMs + (Date.now() - retryStart)
+        if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+        // Only a pick counts: a veto or another nothing keeps the first answer, so a correct veto is never lost. A pick Jev
+        // only "wanted" (no section chose it, the best guess above the floor) does not count either: a rewrite made "animated
+        // dice" an intent panel at 0.62, where the first answer, nothing, was right and led to a program written from scratch.
+        let picked = second.sections !== null && second.wanted.length === 0 &&
+          second.sections.some((p: SectionPick): boolean => p.kind !== 'none')
+        console.info('VERA-EXPAND used=' + picked.toString() + ' first=' + outcome.note + ' second=' + second.note)
+        if (picked) {
+          outcome = second
+          work = rewrite.text
+          build.route.expanded = rewrite.text
+        }
+      }
+    }
     build.route.jev = jevStateOf(outcome)
     build.route.note = outcome.note
     build.route.weak = outcome.weakKinds
@@ -158,7 +209,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     // said: its gate is one probability on the whole request and can miss on an identical prompt
     // from one run to the next, and a chart of invented round numbers is never what a chart request
     // wants.
-    let needsGrounding = outcome.needsRealData || build.kinds.indexOf('trend_chart') >= 0
+    let needsGrounding = outcome.needsRealData || build.kinds.indexOf('trend_chart') >= 0 || build.kinds.indexOf('live_facts') >= 0
     let canGround = needsGrounding && mode !== 'server' && settings.hasExaKey()
     if (needsGrounding && !canGround) {
       return scratch(outcome.note + ' (needs real data, no search available; generating normally)', '', build,
@@ -168,7 +219,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     if (needsGrounding) {
       onStatus('Looking up real data...')
       let searchStart = Date.now()
-      searchText = await webSearch(prompt)
+      searchText = await webSearch(prompt, build.kinds.indexOf('trend_chart') >= 0 ? SEARCH_CHARS_DATA : SEARCH_CHARS)
       build.searchMs = Date.now() - searchStart
       if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
     }
@@ -181,7 +232,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
         (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 600))
     }
     let contentStart = Date.now()
-    let content = await fillSectionsContent(build.kinds, prompt, mode, searchText)
+    let content = await fillSectionsContent(build.kinds, work, mode, searchText)
     build.contentMs = Date.now() - contentStart
     if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
 
@@ -189,11 +240,14 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     outcome.globalValues.forEach((v: string, k: string) => { globalValues.set(k, v) })
     content.globalValues.forEach((v: string, k: string) => { globalValues.set(k, v) })
     let instanceValues: Map<string, string>[] = []
+    let liveNotes: string[] = []
     for (let i = 0; i < sections.length; i++) {
       let merged: Map<string, string> = new Map<string, string>()
       sections[i].slotValues.forEach((v: string, k: string) => { merged.set(k, v) })
       let contentForSlot = content.instanceValues[i]
       if (contentForSlot !== undefined) { contentForSlot.forEach((v: string, k: string) => { merged.set(k, v) }) }
+      // The first figures and the source of a live block are shown as found only if the search said so.
+      if (sections[i].kind === 'live_facts') { liveNotes.push(checkLiveProvenance(merged, searchText, prompt)) }
       instanceValues.push(merged)
     }
     let searchTag = ''
@@ -201,8 +255,9 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
       let searchOk = searchText.length > 0 && !searchText.startsWith('Search failed:') && searchText !== 'No results.'
       searchTag = ' search=' + (searchOk ? 'ok' : 'empty')
       build.route.searched = searchOk
+      if (searchOk) { build.searchText = searchText }
     }
-    let note = outcome.note + searchTag + (content.note.length > 0 ? ' ' + content.note : '')
+    let note = outcome.note + searchTag + (content.note.length > 0 ? ' ' + content.note : '') + (liveNotes.length > 0 ? ' ' + liveNotes.join(' ') : '')
     let shown = build.kinds.filter((k: string): boolean => k !== 'none').join('+')
 
     // Holes: function bodies the model writes for the chosen blocks (the filter's match rule), settled
@@ -222,7 +277,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
             break
           }
         }
-        let fill: HoleFill = await fillHoles(prompt, kinds,
+        let fill: HoleFill = await fillHoles(work, kinds,
           (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 500, 'Function bodies for the blocks'),
           (bodies: Map<string, string>): string => composeProgram(kinds, globalValues, mergeHoleValues(instanceValues, holeValues(kinds, bodies))),
           instanceValues, sdkContext)
@@ -276,7 +331,12 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     for (let i = 0; i < build.kinds.length; i++) { record.blocks.push(new Block(build.kinds[i], baseValues[i], bodiesBySlot[i])) }
     build.composition = compositionToJson(record)
 
-    if (outcome.needsLogic) {
+    // A block that only shows facts, filled from a search that found them, is finished: the one soft veto left is "needs
+    // the real world" (needs_integration, below the hard bar), and the search has just been to the real world. Without this
+    // the model searched again and rewrote the whole screen (the weather screen: 27 s, 18 s of it the rewrite).
+    let filledFromSearch = outcome.needsLogic && build.route.searched && groundedDisplayOnly(build.kinds, outcome.softVetoes)
+    if (filledFromSearch) { note = note + ' (data filled from search, no completion)' }
+    if (outcome.needsLogic && !filledFromSearch) {
       for (let key of outcome.softVetoes) { plan.addToWrite('missing.' + key, SOFT_NEEDS.get(key) ?? key, key === 'needs_integration') }
       build.action = BUILD_COMPLETE
       build.route.route = ROUTE_BLOCKS_MODEL

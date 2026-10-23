@@ -645,7 +645,7 @@ export class DeepSeekEngine {
         // offered tools, the model re-ran a search it already had (egg-3, 5 s).
         // Defined but not callable, so the cached prompt prefix still matches.
         turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken,
-          request.repairByEdit ? TOOLS_NONE : TOOLS_AUTO, 'gen', round)
+          request.repairByEdit || request.toolsOff ? TOOLS_NONE : TOOLS_AUTO, 'gen', round)
       } catch (e) {
         this.generating = false
         throw e as Error

@@ -136,6 +136,11 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   // line out, the same way ui.Divider and ui.Scroll already do.
   ['skeleton', ['default']],
   ['spinner', ['default', 'accent']],
+  // The preset is the style, so the compiler validates it and the prompt lists it. See VeraMotion.ets.
+  ['motion', ['tumble', 'flip', 'shake', 'bounce', 'pop', 'fade']],
+  // transform: solid hides a layer while its back is to the viewer (the far faces of a cube); stage has no variants.
+  ['transform', ['default', 'solid']],
+  ['stage', ['default', 'floor']],
   ['snackbar', ['default', 'success', 'warning', 'danger']],
   ['sparkline', ['default', 'accent', 'success', 'warning', 'danger']],
 ])
@@ -210,6 +215,22 @@ export const CATALOG: ComponentSpec[] = [
     [style('grid'), new PropSpec('columns', 'number'), new PropSpec('children', 'view[]')],
     'lays its children out in N equal columns, wrapping onto new rows', '',
     'For anything laid out in equal columns -- a board, a calendar, a keypad -- rather than building rows by hand.'),
+  new ComponentSpec('Motion', 'motion',
+    [style('motion'), new PropSpec('trigger', 'number'), new PropSpec('children', 'view[]')],
+    'plays an animation on its children each time the trigger number changes: tumble, flip, shake, bounce, pop or fade; a wrong-answer shake, a counter that pops, a new row that bounces',
+    '',
+    'Wrap the one thing that should animate: a rolled die, a flashcard, a result, a new row. Never wrap a board, grid, list, form or whole screen, and do not bump the trigger on every tap or move: a game board that pops on each move makes every square jump under the player\'s finger. Animate only what the person should notice -- a win message, a wrong answer, the die that was just thrown -- and keep the Motion around that one item, not around the controls they are pressing. The style is the animation. tumble spins and hops and lands (a die or coin being thrown), flip turns the new content into view (a card turned over, a question replaced by its answer), shake wobbles sideways (a wrong answer, a refusal), bounce drops and settles (something added), pop swells and returns (a counter that just changed), fade brings the content in. The children are drawn normally; when the trigger changes they arrive with the animation, so change the content and the trigger in the same handler: keep a number in state, add 1 to it each time, and pass it as trigger. The first time the screen is drawn nothing animates, and a change of content without a new trigger does not animate either. A die is not a Motion: build the solid with ui.Stage and ui.Transform. Do not nest one Motion in another.'),
+  new ComponentSpec('Transform', 'transform',
+    [style('transform'), new PropSpec('pose', 'number[]'), new PropSpec('durationMs', 'number'), new PropSpec('size', 'number'),
+      new PropSpec('children', 'view[]')],
+    'turns, tilts and moves its children in 3D from a list of numbers and glides to the new numbers whenever they change: a card flipping over, a die, dice or coin tumbling, a spinning or rolling animation',
+    '',
+    'pose is [rotateX, rotateY, rotateZ, moveX, moveY, moveZ, scale, opacity]: degrees, points, 1 and 1 for the last two; leave out what you do not need ([0, 40] turns it 40 degrees about the vertical axis). The layer is scaled, turned about its own centre, then moved by the three moves (moveZ is towards the viewer), so one pose both spins a body and carries it to where it is. durationMs is how long the glide takes (0 = at once, 600 is a good turn; a body you move every few milliseconds from a ticker wants about the tick). size is the width and height of the layer in points (0 = as big as its content). When state changes the pose, the old pose glides to the new one by itself, so you only keep the numbers in state and change them in a handler. Angles glide by value, so 720 more is two whole extra turns. The first time the screen is drawn there is no glide. Style solid hides the layer while its back faces the viewer, for the far faces of a solid. A Transform holds either content or other Transforms, and a Transform inside a Transform is turned and moved with it. A flip card: ui.Transform("default", [0, state.turn], 500, 0, [the card]) with state.turn going 0, 180, 360 ... and the card showing the question or the answer by ui.When on the same state. Put it directly around the thing that moves, not around a wide card.'),
+  new ComponentSpec('Stage', 'stage',
+    [style('stage'), new PropSpec('perspective', 'number'), new PropSpec('height', 'number'), new PropSpec('children', 'view[]')],
+    'a 3D scene for building solid bodies from layers: a 3D cube, a die or dice that rolls and tumbles, a box, a coin; its Transforms share one viewpoint',
+    '',
+    'Use it when several Transforms make one body, such as a cube or a coin, or when several bodies share a space; a single card turning needs no Stage. perspective is the viewer distance in points (0 = 900; smaller is more dramatic). height is the height of the scene in points: everything in it is centred in a box that wide and that tall, and the moves of the bodies are measured from that centre, so give it room for the whole area they travel (0 = just as tall as its biggest layer). Style floor draws the box as a table or board with a frame and clips what leaves it. Children are Transforms only. Bodies nearer the viewer are drawn over farther ones by themselves. A cube of side 120 is one Transform whose pose [turnX, turnY, turnZ, x, y, z] is kept in state, holding six faces. A face is two nested Transforms: the outer turns it, the inner pushes it out by half the side, style solid, size 120, holding the picture of the face. Write that once as a function: face(turnX, turnY, n) returns ui.Transform(\"default\", [turnX, turnY], 0, 0, [ui.Transform(\"solid\", [0, 0, 0, 0, 0, 60], 0, 120, [faceView(n)])]). The six faces of a die are face(0, 0, 1) front, face(0, 180, 6) back, face(0, 90, 3) right, face(0, -90, 4) left, face(90, 0, 2) top, face(-90, 0, 5) bottom: copy these six calls exactly, in that order, with those numbers, because the landing table below is right only for them, and swapping the top with the bottom, or any two faces, makes the die land on the wrong number. faceView(n) is a function you write that returns a ui.Canvas for the face of n pips; its style must be \"large\", the only one that draws across the whole layer (\"default\" and \"small\" draw a smaller picture in the corner, which leaves gaps between the faces). Its first child is the body, which must fill the whole face edge to edge with square corners, no inset, no rounding and no outline, because the faces meet along their edges and any gap or rounded corner makes the cube fall apart into six separate pictures: ui.Path(\"light\", \"M0 0 L100 0 L100 100 L0 100 Z\"). Then one ui.Path(\"default\", ...) circle per pip on top of it, kept well inside the square (centres 25, 50 and 75). The Stage shades the faces by itself, so draw no shadows, borders or highlights. To show face n the cube pose [turnX, turnY] is: 1 [0, 0]; 6 [0, 180]; 3 [0, -90]; 4 [0, 90]; 2 [-90, 0]; 5 [90, 0]; for a roll add whole turns to both, such as 720 times the roll count so it tumbles, and glide for 900. Pick the face with math.randomBelow(seed, 6) + 1 and keep the seed in state. A thrown die moving across a table: the same cube Transform with its x, y and z in the pose, inside ui.Stage(\"floor\", 0, 260, [the dice]).'),
   new ComponentSpec('ListItem', 'listitem',
     [style('listitem'), new PropSpec('text', 'string'), new PropSpec('label', 'string'),
       new PropSpec('value', 'string'), new PropSpec('action', 'string'),
@@ -536,6 +557,9 @@ export const CHILD_RULES: ChildRule[] = [
   // A card inside a card is the nesting deal-studio calls out by name: two
   // frames, two paddings, and no more meaning than one.
   new ChildRule('Card', [], ['Card']),
+  new ChildRule('Motion', [], ['Motion']),
+  new ChildRule('Stage', ['Transform'], ['Stage']),
+  new ChildRule('Transform', [], ['Stage']),
   // One look per program.
   new ChildRule('AppTheme', [], ['AppTheme']),
 ]

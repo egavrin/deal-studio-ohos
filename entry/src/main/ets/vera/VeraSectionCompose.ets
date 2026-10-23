@@ -35,6 +35,7 @@
 
 import http from '@ohos.net.http'
 import hilog from '@ohos.hilog'
+import { BusinessError } from '@ohos.base'
 import { layouts, arrangeInLayout, completeRequiredSlots, swapForLayout, layoutKinds, kindsOfLayout, placeKinds, fitToSlots, LAYOUT_NONE, LAYOUT_STACK } from './VeraLayouts'
 import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, fragments, vetoes, bannerSectionView } from './VeraTemplates'
 
@@ -84,7 +85,7 @@ const COVERING_PICK_ABOVE: number = 0.25
  * (eval/results/2026-10-15-jev-baseline.json): with every veto hard, 23 of 49 prompts left the
  * template path, 12 of them on needs_search_or_form alone.
  */
-const SOFT_VETOES: string[] = ['needs_integration', 'needs_search_or_form', 'needs_multiple_counters', 'needs_live_ticking', 'needs_logic']
+const SOFT_VETOES: string[] = ['needs_integration', 'needs_search_or_form', 'needs_multiple_counters', 'needs_multiple_series', 'needs_live_ticking', 'needs_logic']
 /**
  * Above this probability needs_integration stays a hard veto: a request that is mostly a phone API or
  * another app (camera, video call, navigation) has no fragment worth keeping as a base. The baseline's
@@ -99,7 +100,7 @@ const INTEGRATION_HARD_ABOVE: number = 0.9
  * call is exactly what those requests need.
  */
 const SOFT_MIN_ABOVE: number = 0.7
-const SOFT_FLOORED: string[] = ['needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters']
+const SOFT_FLOORED: string[] = ['needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_multiple_series']
 
 const GLOBAL_THEME_VALUES: string[] = ['clean', 'soft', 'expressive', 'editorial', 'technical', 'playful']
 
@@ -118,13 +119,6 @@ function globalHeaderStyleCriteria(): Map<string, string> {
   let m: Map<string, string> = new Map<string, string>()
   m.set('default', 'left-aligned')
   m.set('center', 'centered')
-  return m
-}
-
-function globalBannerCriteria(): Map<string, string> {
-  let m: Map<string, string> = new Map<string, string>()
-  m.set('true', 'yes, show one')
-  m.set('false', 'no')
   return m
 }
 
@@ -277,12 +271,6 @@ export function buildSectionRequest(prompt: string): string {
   headerQuestion['instructions'] = 'Should the title block be left-aligned (default) or centered?'
   headerQuestion['criteria'] = criteriaRecord(globalHeaderStyleCriteria())
   questions['__HEADER_STYLE__'] = headerQuestion
-
-  let bannerQuestion: Record<string, Object> = {}
-  bannerQuestion['type'] = 'noul'
-  bannerQuestion['instructions'] = 'Does this app need a standing info note visible at all times?'
-  bannerQuestion['criteria'] = criteriaRecord(globalBannerCriteria())
-  questions['__BANNER_SECTION__'] = bannerQuestion
 
   for (let veto of vetoes()) {
     let question: Record<string, Object> = {}
@@ -617,7 +605,8 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
   let globals: Map<string, string> = new Map<string, string>()
   globals.set('__THEME__', readChoiceValue(answers, '__THEME__', GLOBAL_THEME_VALUES, SLOT_PICK_ABOVE, 'clean'))
   globals.set('__HEADER_STYLE__', readChoiceValue(answers, '__HEADER_STYLE__', ['default', 'center'], SLOT_PICK_ABOVE, 'default'))
-  globals.set('__BANNER_SECTION__', readNoulValue(answers, '__BANNER_SECTION__', SLOT_PICK_ABOVE) ? 'show' : 'hide')
+  // The banner's text is a canned placeholder ("Demo banner"), so a composed screen never shows it.
+  globals.set('__BANNER_SECTION__', 'hide')
 
   let note = notes.join(' ') + layoutNote
   if (needsRealData) { note = note + ' needs_real_data=' + realDataProbability.toFixed(2) }
@@ -977,25 +966,44 @@ function rawAnswers(body: string): string {
  * Live call. Never throws and never rejects -- a selector that cannot answer must not stop
  * generation, same rule VeraTemplateSelect.ets's selectTemplate and JevSelector.ets follow.
  */
+/**
+ * After a failed call, Jev is not asked again for a minute. A phone on a network the service refuses (HTTP 451 "not available in
+ * your region", seen as a 15 s read timeout for this 72 KB request) otherwise waited out the timeout on every generation, twice
+ * with the request rewrite; now the first generation pays it and the following ones go straight on to the model.
+ */
+const RETRY_AFTER_FAILURE_MS: number = 60000
+let failedAt: number = 0
+
 export async function selectSections(prompt: string, apiKey: string): Promise<SectionPickOutcome> {
   let emptyGlobals: Map<string, string> = new Map<string, string>()
   if (apiKey.length === 0 || prompt.trim().length === 0) { return new SectionPickOutcome(null, emptyGlobals, 'none (no key or prompt)') }
+  if (failedAt > 0 && Date.now() - failedAt < RETRY_AFTER_FAILURE_MS) {
+    return new SectionPickOutcome(null, emptyGlobals, 'none (selector unreachable, not asked again for a minute)')
+  }
   let client = http.createHttp()
+  let failStart = Date.now()
   try {
     let headers: Record<string, string> = {}
     headers['Content-Type'] = 'application/json'
     headers['Authorization'] = 'Bearer ' + apiKey
     let started = Date.now()
+    let body = buildSectionRequest(prompt)
+    // When the answer does not come: how long until the headers, and how long in all (VERA-SECTIONS-NET lines).
+    let headersAt = 0
+    client.on('headersReceive', (): void => { headersAt = Date.now() - started })
     let response = await client.request(ENDPOINT, {
       method: http.RequestMethod.POST,
       header: headers,
-      extraData: buildSectionRequest(prompt),
+      extraData: body,
       connectTimeout: 5000,
-      readTimeout: 15000
+      readTimeout: 10000
     })
+    hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS-NET bodyChars=' + body.length.toString() + ' headersMs=' + headersAt.toString() +
+      ' totalMs=' + (Date.now() - started).toString() + ' http=' + (response.responseCode as number).toString())
     let code = response.responseCode as number
     if (code !== 200) {
       hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS http ' + code.toString())
+      failedAt = Date.now()
       return new SectionPickOutcome(null, emptyGlobals, 'none (selector answered ' + code.toString() + ')')
     }
     let outcome = readSectionPick(response.result as string)
@@ -1004,7 +1012,9 @@ export async function selectSections(prompt: string, apiKey: string): Promise<Se
     hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS raw ' + rawAnswers(response.result as string))
     return outcome
   } catch (e) {
-    hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS failed: ' + (e as Error).message)
+    let err = e as BusinessError
+    hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS failed: ' + err.message + ' code=' + String(err.code) + ' after=' + (Date.now() - failStart).toString() + 'ms')
+    failedAt = Date.now()
     return new SectionPickOutcome(null, emptyGlobals, 'none (selector unreachable)')
   } finally {
     client.destroy()

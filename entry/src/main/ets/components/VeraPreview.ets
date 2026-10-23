@@ -26,6 +26,9 @@ import { ResolvedTheme, resolveTheme, containerFill, toneFill, toneEdge, toneInk
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { LiveNode, toLive, reconcile } from './VeraLiveTree'
+import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
+  columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
+import matrix4 from '@ohos.matrix4'
 
 /**
  * The rotation of every spinning shape on screen.
@@ -38,6 +41,46 @@ import { LiveNode, toLive, reconcile } from './VeraLiveTree'
 @ObservedV2
 class SpinAngle {
   @Trace angle: number = 0
+}
+
+/**
+ * The clock of every ui.Motion on screen: the current time, advanced from a timer while any animation is running.
+ * Observed for the same reason SpinAngle is: the motion branch of renderNode reads it, so mutating it redraws that branch.
+ */
+@ObservedV2
+class MotionClock {
+  @Trace now: number = 0
+}
+
+/** The glide of one ui.Transform: from the pose it had when the program changed its numbers to the new ones. */
+class PoseAnim {
+  from: number[]
+  to: number[]
+  start: number
+  duration: number
+  constructor(from: number[], to: number[], start: number, duration: number) {
+    this.from = from; this.to = to; this.start = start; this.duration = duration
+  }
+}
+
+/** One drawn layer of a scene: the node whose children are its content, and what the pose made of it this frame. */
+class SceneLayer {
+  node: LiveNode
+  side: number = 0
+  shade: number = 1
+  depth: number = 0
+  rank: number = 0
+  matrix: number[]
+  opacity: number
+  visible: boolean
+  constructor(node: LiveNode, matrix: number[], opacity: number, visible: boolean) {
+    this.node = node; this.matrix = matrix; this.opacity = opacity; this.visible = visible
+  }
+}
+
+class SceneFrame {
+  at: number = -1
+  layers: SceneLayer[] = []
 }
 
 /**
@@ -199,6 +242,8 @@ export struct VeraPreview {
    * size once it does.
    */
   @State sparklineWidth: number = 0
+  /** Width of the y-axis caption column, so the x-axis captions start where the plotting box does. */
+  @State sparklineAxisWidth: number = 0
   @State canvasWidth: number = 0
   /**
    * The call waiting for the person to allow it, and the calls queued behind it.
@@ -216,6 +261,12 @@ export struct VeraPreview {
   @State pending: HostEffect | null = null
   private heldEffects: HostEffect[] = []
   private spinTimer: number = -1
+  private motionClock: MotionClock = new MotionClock()
+  private motionTimer: number = -1
+  /** The trigger each Motion had when last seen, by its place in the tree; a change starts its animation. */
+  private motionTriggers: Map<string, number> = new Map<string, number>()
+  private poseAnims: Map<LiveNode, PoseAnim> = new Map<LiveNode, PoseAnim>()
+  private sceneFrames: Map<LiveNode, SceneFrame> = new Map<LiveNode, SceneFrame>()
   private spinPeriod: number = 0
 
   // Kinds renderNode has a branch for. Checked against the catalogue on mount so
@@ -229,7 +280,7 @@ export struct VeraPreview {
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
     'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
-    'table', 'tablerow']
+    'table', 'tablerow', 'motion', 'transform', 'stage']
 
   aboutToAppear(): void {
     let missing: string[] = []
@@ -353,6 +404,189 @@ export struct VeraPreview {
     }, 50)
   }
 
+  /**
+   * Start the arrival animation of every Motion whose trigger changed and the glide of every Transform whose pose changed, and
+   * keep the clock running until the last one ends.
+   *
+   * The first time either is seen it only records itself, so a screen never animates on opening. A Motion's identity is its
+   * place in the tree; a Transform's is its node (reconcile keeps a node across frames), and a glide that is retargeted
+   * mid-flight continues from the pose being shown, so nothing jumps.
+   */
+  private reconcileMotion(): void {
+    let root = this.liveRoot
+    if (root === null) { return }
+    let now = Date.now()
+    let next: Map<LiveNode, PoseAnim> = new Map<LiveNode, PoseAnim>()
+    let started = this.visitMotion(root!, '', now, next)
+    this.poseAnims = next
+    this.sceneFrames.clear()
+    if (started) { this.motionClock.now = now }
+    if (this.motionTimer < 0 && this.motionRunning(root!, now)) {
+      this.motionTimer = setInterval(() => {
+        let at = Date.now()
+        this.motionClock.now = at
+        let top = this.liveRoot
+        if (top === null || !this.motionRunning(top!, at)) {
+          clearInterval(this.motionTimer)
+          this.motionTimer = -1
+        }
+      }, 33)
+    }
+  }
+
+  private visitMotion(node: LiveNode, path: string, now: number, next: Map<LiveNode, PoseAnim>): boolean {
+    let started = false
+    if (node.kind === 'motion') {
+      let seen = this.motionTriggers.get(path)
+      if (seen !== undefined && seen !== node.numberValue && motionDuration(node.style) > 0) {
+        node.motionStart = now
+        started = true
+      }
+      this.motionTriggers.set(path, node.numberValue)
+    } else if (node.kind === 'transform') {
+      let target = poseFromArray(node.series)
+      let before = this.poseAnims.get(node)
+      if (before === undefined) {
+        next.set(node, new PoseAnim(target, target, -1, 0))
+      } else if (samePose(before.to, target)) {
+        next.set(node, before)
+      } else {
+        let shown = animatedPose(before.from, before.to, before.start, before.duration, now)
+        next.set(node, new PoseAnim(shown, target, now, node.numberValue))
+        started = true
+      }
+    }
+    for (let i = 0; i < node.children.length; i++) {
+      if (this.visitMotion(node.children[i], path + '/' + i.toString(), now, next)) { started = true }
+    }
+    return started
+  }
+
+  private motionRunning(node: LiveNode, now: number): boolean {
+    if (node.kind === 'motion' && node.motionStart >= 0 && now - node.motionStart < motionDuration(node.style)) { return true }
+    if (node.kind === 'transform') {
+      let anim = this.poseAnims.get(node)
+      if (anim !== undefined && anim.start >= 0 && now - anim.start < anim.duration) { return true }
+    }
+    for (let child of node.children) {
+      if (this.motionRunning(child, now)) { return true }
+    }
+    return false
+  }
+
+  /** The pose of a Motion now; the identity pose when it is not playing. Reads the clock, so the branch redraws with it. */
+  private motionPoseOf(node: LiveNode): MotionPose {
+    let now = this.motionClock.now
+    if (node.motionStart < 0) { return new MotionPose() }
+    let duration = motionDuration(node.style)
+    if (duration <= 0) { return new MotionPose() }
+    return motionPose(node.style, (now - node.motionStart) / duration)
+  }
+
+  /** The pose a Transform shows at `now`. */
+  private shownPose(node: LiveNode, now: number): number[] {
+    let anim = this.poseAnims.get(node)
+    if (anim === undefined) { return poseFromArray(node.series) }
+    return animatedPose(anim.from, anim.to, anim.start, anim.duration, now)
+  }
+
+  /**
+   * Every layer of a scene this frame, flat. A Transform's matrix is composed with its parents' here, in code, and each layer
+   * is then drawn as a sibling with its final matrix: ArkUI is asked for one transform per layer and never has to compose
+   * nested 3D ones. Cached by clock value, because every attribute of every layer asks for it.
+   */
+  private sceneFrame(root: LiveNode): SceneFrame {
+    let now = this.motionClock.now
+    let cached = this.sceneFrames.get(root)
+    if (cached !== undefined && cached.at === now) { return cached }
+    let frame = new SceneFrame()
+    frame.at = now
+    let density = this.getUIContext().vp2px(1)
+    let distance = stageDistance(root.kind === 'stage' ? root.numberValue : 0) * density
+    if (root.kind === 'stage') {
+      for (let child of root.children) {
+        if (child.kind === 'transform') { this.collectLayers(child, identityMatrix(), 1, distance, density, now, frame) }
+      }
+    } else {
+      this.collectLayers(root, identityMatrix(), 1, distance, density, now, frame)
+    }
+    let depths: number[] = []
+    for (let layer of frame.layers) { depths.push(layer.depth) }
+    let ranks = depthRanks(depths)
+    for (let i = 0; i < frame.layers.length; i++) { frame.layers[i].rank = ranks[i] }
+    this.sceneFrames.set(root, frame)
+    return frame
+  }
+
+  private collectLayers(node: LiveNode, parent: number[], opacity: number, distance: number, density: number, now: number,
+      frame: SceneFrame): void {
+    let pose = poseToPixels(this.shownPose(node, now), density)
+    let composed = multiplyMatrices(parent, poseMatrix(pose))
+    let alpha = opacity * pose[7]
+    let hasContent = false
+    for (let child of node.children) { if (child.kind !== 'transform') { hasContent = true } }
+    if (hasContent) {
+      let visible = node.style !== 'solid' || facesViewer(composed, distance)
+      let layer = new SceneLayer(node, multiplyMatrices(perspectiveMatrix(distance), composed), alpha, visible)
+      layer.side = node.minimum
+      layer.depth = composed[11]
+      if (node.style === 'solid') { layer.shade = faceShade(composed) }
+      frame.layers.push(layer)
+    }
+    for (let child of node.children) {
+      if (child.kind === 'transform') { this.collectLayers(child, composed, alpha, distance, density, now, frame) }
+    }
+  }
+
+  private layerAt(root: LiveNode, index: number): SceneLayer | null {
+    let frame = this.sceneFrame(root)
+    return index < frame.layers.length ? frame.layers[index] : null
+  }
+
+  private layerOpacity(root: LiveNode, index: number): number {
+    let layer = this.layerAt(root, index)
+    return layer !== null ? layer!.opacity : 0
+  }
+
+  private layerRank(root: LiveNode, index: number): number {
+    let layer = this.layerAt(root, index)
+    return layer !== null ? layer!.rank : 0
+  }
+
+  private layerSide(root: LiveNode, index: number): number {
+    let layer = this.layerAt(root, index)
+    return layer !== null ? layer!.side : 0
+  }
+
+  private layerShade(root: LiveNode, index: number): number {
+    let layer = this.layerAt(root, index)
+    return layer !== null ? layer!.shade : 1
+  }
+
+  private layerVisible(root: LiveNode, index: number): boolean {
+    let layer = this.layerAt(root, index)
+    return layer !== null && layer!.visible
+  }
+
+  private layerTransform(root: LiveNode, index: number): Object {
+    let layer = this.layerAt(root, index)
+    let m = columnMajor(layer !== null ? layer!.matrix : identityMatrix())
+    return matrix4.init([m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]])
+  }
+
+  /** The ids of a scene's layers, in order: when the set of layers changes the drawn layers are rebuilt. */
+  private layerKeys(root: LiveNode): string[] {
+    let keys: string[] = []
+    let frame = this.sceneFrame(root)
+    for (let i = 0; i < frame.layers.length; i++) { keys.push(i.toString() + ':' + frame.layers[i].node.children.length.toString()) }
+    return keys
+  }
+
+  private layerNode(root: LiveNode, index: number): LiveNode {
+    let layer = this.layerAt(root, index)
+    return layer !== null ? layer!.node : root
+  }
+
   /** First spinning shape wins; one shared angle is enough. */
   private findSpinPeriod(node: VeraUiNode): number {
     if (node.kind === 'path' && node.spinPeriodMs > 0) { return node.spinPeriodMs }
@@ -435,6 +669,10 @@ export struct VeraPreview {
     for (let id of Array.from(this.timers.keys())) { this.stopTimer(id) }
     if (this.spinTimer >= 0) { clearInterval(this.spinTimer); this.spinTimer = -1 }
     this.spinPeriod = 0
+    if (this.motionTimer >= 0) { clearInterval(this.motionTimer); this.motionTimer = -1 }
+    this.motionTriggers.clear()
+    this.poseAnims.clear()
+    this.sceneFrames.clear()
   }
 
   aboutToDisappear(): void {
@@ -525,6 +763,7 @@ export struct VeraPreview {
       this.revision += 1
       this.reconcileTimers(this.previewOnly ? null : root)
       this.reconcileSpin(root)
+      this.reconcileMotion()
       this.reconcileBackHandler(root)
     } catch (e) {
       this.error = 'View error: ' + (e as Error).message
@@ -1084,6 +1323,13 @@ export struct VeraPreview {
    * SPARKLINE_HEIGHT alone would.
    */
   private static readonly SPARKLINE_HEIGHT: number = 260
+  /** Room a line chart keeps above its top and below its bottom gridline, so the stroke and the dots are not clipped. */
+  private static readonly SPARKLINE_INSET: number = 16
+  private static readonly SPARKLINE_DOT: number = 5
+  /** The most x-axis captions a line chart prints; past that, every other one (or third...) is left out. */
+  private static readonly SPARKLINE_LABELS: number = 6
+  /** Width a caption may use, wider than its slot: it is centred on its point and may reach over the empty slots beside it. */
+  private static readonly SPARKLINE_LABEL_BOX: number = 64
   /** Room a bars: true chart keeps above and below the tallest bar for its value and its name. */
   private static readonly BAR_LABEL_ROOM: number = 48
 
@@ -1114,57 +1360,84 @@ export struct VeraPreview {
    * 1/density of the box it sat in -- correct in proportion, pinned to the
    * top-left corner of a box several times its own size, which is what reads
    * as "a tiny line and a lot of empty space" on any screen whose density
-   * isn't 1. vp2px(1) is that density, so multiplying both axes by it before
+   * isn't 1. this.getUIContext().vp2px(1) is that density, so multiplying both axes by it before
    * building the path is what makes the drawing fill the box it is declared
    * to fill.
    */
   private sparklineCommands(series: number[], maximum: number, floor: number, width: number): string {
     if (series.length === 0) { return '' }
-    let max = maximum > floor ? maximum : floor + 1
-    let scale = this.getUIContext().vp2px(1)
-    let h = VeraPreview.SPARKLINE_HEIGHT * scale
-    let w = width * scale
-    let n = series.length
     let cmds: string[] = []
-    for (let i = 0; i < n; i++) {
-      let x = n > 1 ? (i / (n - 1)) * w : w / 2
-      let v = series[i] < floor ? floor : (series[i] > max ? max : series[i])
-      let y = h - ((v - floor) / (max - floor)) * h
-      cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
+    for (let i = 0; i < series.length; i++) {
+      cmds.push((i === 0 ? 'M ' : 'L ') + this.sparklinePoint(series, i, maximum, floor, width))
     }
     return cmds.join(' ')
   }
 
   /**
-   * sparklineCommands's own points, closed down to the bottom edge of the
-   * same box and back to the start -- the area a chart's fill reads against,
-   * computed from the line itself rather than left to an implicit close the
-   * way the plain 'path' branch's fill is.
+   * Point i of a line-mode ui.Sparkline as "x y" in px. Each point sits in the middle of its own equal
+   * slot (the x-axis captions are laid out in the same slots, so a caption is always under its point),
+   * and the line is kept SPARKLINE_INSET inside the box above and below so the stroke and the dots are
+   * not cut off at the top and bottom gridlines.
+   */
+  private sparklinePoint(series: number[], i: number, maximum: number, floor: number, width: number): string {
+    let max = maximum > floor ? maximum : floor + 1
+    let scale = this.getUIContext().vp2px(1)
+    let inset = VeraPreview.SPARKLINE_INSET * scale
+    let h = VeraPreview.SPARKLINE_HEIGHT * scale
+    let x = (i + 0.5) / series.length * width * scale
+    let v = series[i] < floor ? floor : (series[i] > max ? max : series[i])
+    let y = inset + (1 - (v - floor) / (max - floor)) * (h - 2 * inset)
+    return x.toFixed(2) + ' ' + y.toFixed(2)
+  }
+
+  /**
+   * sparklineCommands's own points, closed down to the floor gridline and back to the start -- the area
+   * a chart's fill reads against, computed from the line itself rather than left to an implicit close.
    */
   private sparklineAreaCommands(series: number[], maximum: number, floor: number, width: number): string {
     if (series.length === 0) { return '' }
-    let max = maximum > floor ? maximum : floor + 1
     let scale = this.getUIContext().vp2px(1)
-    let h = VeraPreview.SPARKLINE_HEIGHT * scale
-    let w = width * scale
-    let n = series.length
+    let bottom = (VeraPreview.SPARKLINE_HEIGHT - VeraPreview.SPARKLINE_INSET) * scale
     let cmds: string[] = []
-    let firstX = 0
-    let lastX = w
-    for (let i = 0; i < n; i++) {
-      let x = n > 1 ? (i / (n - 1)) * w : w / 2
-      let v = series[i] < floor ? floor : (series[i] > max ? max : series[i])
-      let y = h - ((v - floor) / (max - floor)) * h
-      if (i === 0) { firstX = x }
-      if (i === n - 1) { lastX = x }
-      cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
+    for (let i = 0; i < series.length; i++) {
+      cmds.push((i === 0 ? 'M ' : 'L ') + this.sparklinePoint(series, i, maximum, floor, width))
     }
-    cmds.push('L ' + lastX.toFixed(2) + ' ' + h.toFixed(2))
-    cmds.push('L ' + firstX.toFixed(2) + ' ' + h.toFixed(2))
+    let first = this.sparklinePoint(series, 0, maximum, floor, width).split(' ')[0]
+    let last = this.sparklinePoint(series, series.length - 1, maximum, floor, width).split(' ')[0]
+    cmds.push('L ' + last + ' ' + bottom.toFixed(2))
+    cmds.push('L ' + first + ' ' + bottom.toFixed(2))
     cmds.push('Z')
     return cmds.join(' ')
   }
 
+  /** One filled circle per point, so a chart of two or three values still reads as points, not as a bare slope. */
+  private sparklineDotCommands(series: number[], maximum: number, floor: number, width: number): string {
+    let r = VeraPreview.SPARKLINE_DOT * this.getUIContext().vp2px(1)
+    let cmds: string[] = []
+    for (let i = 0; i < series.length; i++) {
+      let xy = this.sparklinePoint(series, i, maximum, floor, width).split(' ')
+      let x = parseFloat(xy[0])
+      cmds.push('M ' + (x - r).toFixed(2) + ' ' + xy[1] + ' a ' + r.toFixed(2) + ' ' + r.toFixed(2) + ' 0 1 0 ' +
+        (2 * r).toFixed(2) + ' 0 a ' + r.toFixed(2) + ' ' + r.toFixed(2) + ' 0 1 0 ' + (-2 * r).toFixed(2) + ' 0')
+    }
+    return cmds.join(' ')
+  }
+
+  /**
+   * The x-axis captions, one per point (cut or padded to the series), each laid out in its point's slot. With
+   * more than SPARKLINE_LABELS points only every step-th caption is kept (the rest are empty, their slots stay),
+   * so the ones that remain have room to be read in full.
+   */
+  private sparklineLabels(node: LiveNode): string[] {
+    let n = node.series.length
+    let step = n > VeraPreview.SPARKLINE_LABELS ? Math.ceil((n - 1) / (VeraPreview.SPARKLINE_LABELS - 1)) : 1
+    let labels: string[] = []
+    for (let i = 0; i < n; i++) {
+      let text = i < node.categories.length ? node.categories[i] : ''
+      labels.push(i % step === 0 ? text : '')
+    }
+    return labels
+  }
 
   /**
    * The real width to draw a ui.Sparkline's path commands in, in vp.
@@ -1230,38 +1503,32 @@ export struct VeraPreview {
     return items
   }
 
-  /** ui.Sparkline's x-axis caption, its categories joined the same way a program would build it by hand. */
-  private sparklineAxisText(node: LiveNode): string {
-    return node.categories.join(' · ')
-  }
-
   /**
    * Four evenly spaced y-axis values for a line-mode ui.Sparkline, maximum
    * first -- the order the label column draws top to bottom, over the same
    * range sparklineGridCommands draws its lines across.
    */
-  private sparklineTicks(maximum: number, floor: number): number[] {
+  private sparklineTicks(maximum: number, floor: number): string[] {
     let max = maximum > floor ? maximum : floor + 1
     let step = (max - floor) / 3
-    return [
-      Math.round(max),
-      Math.round(floor + step * 2),
-      Math.round(floor + step),
-      Math.round(floor),
-    ]
+    let ticks: string[] = []
+    for (let i = 3; i >= 0; i--) {
+      let v = floor + step * i
+      // A narrow range needs a decimal or the four labels repeat (172, 172, 173, 173).
+      ticks.push(max - floor >= 6 ? Math.round(v).toString() : (Math.round(v * 10) / 10).toString())
+    }
+    return ticks
   }
 
   /** One horizontal line per sparklineTicks value, in the same px-corrected space sparklineCommands draws in. */
   private sparklineGridCommands(maximum: number, floor: number, width: number): string {
-    let max = maximum > floor ? maximum : floor + 1
     let scale = this.getUIContext().vp2px(1)
+    let inset = VeraPreview.SPARKLINE_INSET * scale
     let h = VeraPreview.SPARKLINE_HEIGHT * scale
     let w = width * scale
-    let step = (max - floor) / 3
     let cmds: string[] = []
     for (let i = 0; i <= 3; i++) {
-      let v = floor + step * i
-      let y = h - ((v - floor) / (max - floor)) * h
+      let y = inset + (i / 3) * (h - 2 * inset)
       cmds.push('M 0 ' + y.toFixed(2) + ' L ' + w.toFixed(2) + ' ' + y.toFixed(2))
     }
     return cmds.join(' ')
@@ -1504,6 +1771,45 @@ export struct VeraPreview {
       .border({ width: this.t().borderWidth, color: this.t().lineSoft })
       .borderRadius(this.t().radiusCard)
       .shadow({ radius: this.t().shadowRadius, color: this.t().shadowColor, offsetY: this.t().shadowOffsetY })
+    } else if (node.kind === 'stage' || (node.kind === 'transform' && parentKind !== 'stage' && parentKind !== 'transform')) {
+      // A scene: every layer is a flat sibling in a centred stack with its own final matrix (see sceneFrame). A Transform
+      // outside a Stage is a scene of one layer, with the default viewer distance.
+      Stack() {
+        ForEach(this.layerKeys(node), (key: string, index: number) => {
+          Column() {
+            this.renderChildren(this.layerNode(node, index))
+          }
+          .alignItems(HorizontalAlign.Center)
+          .width(this.layerSide(node, index) > 0 ? this.layerSide(node, index) : undefined)
+          .height(this.layerSide(node, index) > 0 ? this.layerSide(node, index) : undefined)
+          .opacity(this.layerOpacity(node, index))
+          .brightness(this.layerShade(node, index))
+          .zIndex(this.layerRank(node, index))
+          .visibility(this.layerVisible(node, index) ? Visibility.Visible : Visibility.Hidden)
+          .transform(this.layerTransform(node, index))
+        }, (key: string) => key)
+      }
+      .width('100%')
+      .height(node.kind === 'stage' && node.minimum > 0 ? node.minimum : undefined)
+      .clip(node.kind === 'stage' && node.style === 'floor')
+      .backgroundColor(node.kind === 'stage' && node.style === 'floor' ? this.t().surface : Color.Transparent)
+      .border({ width: node.kind === 'stage' && node.style === 'floor' ? this.t().borderWidth : 0, color: this.t().line })
+      .borderRadius(node.kind === 'stage' && node.style === 'floor' ? this.t().radiusCard : 0)
+    } else if (node.kind === 'transform') {
+      // Inside a Stage or another Transform: drawn by the scene that owns it, not here.
+    } else if (node.kind === 'motion') {
+      // The children are drawn as they are; only the pose around them moves. Drawn inline, no component of its own.
+      Column() {
+        this.renderChildren(node)
+      }
+      .width(parentKind === 'row' ? undefined : '100%')
+      .layoutWeight(parentKind === 'row' ? 1 : 0)
+      .alignItems(HorizontalAlign.Center)
+      .rotate({ x: this.motionPoseOf(node).axisX, y: this.motionPoseOf(node).axisY, z: this.motionPoseOf(node).axisZ,
+                angle: this.motionPoseOf(node).angle, centerX: '50%', centerY: '50%', perspective: 2400 })
+      .scale({ x: this.motionPoseOf(node).scale, y: this.motionPoseOf(node).scale, centerX: '50%', centerY: '50%' })
+      .translate({ x: this.motionPoseOf(node).dx, y: this.motionPoseOf(node).dy })
+      .opacity(this.motionPoseOf(node).opacity)
     } else if (node.kind === 'text') {
       Text(node.text)
         .fontSize(this.renderTextSize(node.style))
@@ -2863,14 +3169,21 @@ export struct VeraPreview {
             // into the same four levels, so a label and its gridline always
             // land at the same height without either one measuring the other.
             Column() {
-              ForEach(this.sparklineTicks(node.maximum, node.minimum), (v: number, _index: number) => {
-                Text(v.toString()).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+              ForEach(this.sparklineTicks(node.maximum, node.minimum), (v: string, _index: number) => {
+                Text(v).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
                   .fontColor(this.t().inkMuted)
-              }, (v: number, index: number) => index.toString())
+              }, (v: string, index: number) => index.toString() + v)
             }
             .height(VeraPreview.SPARKLINE_HEIGHT)
+            // The gridlines sit SPARKLINE_INSET inside the box; a caption is about 16vp tall, so half of it is
+            // taken off that to put each caption's middle on its gridline.
+            .padding({ top: VeraPreview.SPARKLINE_INSET - 8, bottom: VeraPreview.SPARKLINE_INSET - 8 })
             .justifyContent(FlexAlign.SpaceBetween)
             .alignItems(HorizontalAlign.End)
+            .onAreaChange((_old: Area, now: Area) => {
+              let w = now.width as number
+              if (Math.abs(w - this.sparklineAxisWidth) >= 1) { this.sparklineAxisWidth = w }
+            })
 
             Shape() {
               Path({ commands: this.sparklineGridCommands(node.maximum, node.minimum, this.chartWidth()) })
@@ -2895,6 +3208,12 @@ export struct VeraPreview {
                   .strokeWidth('3px')
                   .strokeLineCap(LineCapStyle.Round)
                   .strokeLineJoin(LineJoinStyle.Round)
+                Path({ commands: this.sparklineDotCommands(node.series, node.maximum, node.minimum, this.chartWidth()) })
+                  .fill(toneEdge(this.t(), node.style, this.t().primary))
+                  .stroke(Color.Transparent)
+                Path({ commands: this.sparklineDotCommands(node.series2, node.maximum, node.minimum, this.chartWidth()) })
+                  .fill(toneEdge(this.t(), node.series2Style, this.t().primary))
+                  .stroke(Color.Transparent)
               } else {
                 // The same line, closed down to the bottom edge and filled with
                 // the tone's soft background -- this is why it reads as a chart
@@ -2911,6 +3230,9 @@ export struct VeraPreview {
                   .strokeWidth('3px')
                   .strokeLineCap(LineCapStyle.Round)
                   .strokeLineJoin(LineJoinStyle.Round)
+                Path({ commands: this.sparklineDotCommands(node.series, node.maximum, node.minimum, this.chartWidth()) })
+                  .fill(toneEdge(this.t(), node.style, this.t().primary))
+                  .stroke(Color.Transparent)
               }
             }
             .layoutWeight(1)
@@ -2938,8 +3260,20 @@ export struct VeraPreview {
           .width('100%')
         }
         if (node.categories.length > 0 && !node.bars) {
-          Text(this.sparklineAxisText(node)).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
-            .fontColor(this.t().inkSoft).width('100%')
+          // One caption per point, each in the same equal slot its point is drawn in, so it stands under it.
+          Row() {
+            ForEach(this.sparklineLabels(node), (label: string, _index: number) => {
+              Column() {
+                Text(label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+                  .fontColor(this.t().inkSoft).maxLines(1).textAlign(TextAlign.Center)
+                  .width(VeraPreview.SPARKLINE_LABEL_BOX)
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Center)
+            }, (label: string, index: number) => index.toString() + ':' + label)
+          }
+          .width('100%')
+          .padding({ left: this.sparklineAxisWidth + this.t().gapTight })
         }
       }
       .width('100%')

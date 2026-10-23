@@ -115,6 +115,16 @@ function escapeListCell(raw: string, maxLength: number): string {
 }
 
 /** A decimal such as "31.2397" or "-121.5" within [-limit, limit], else ''. Text kept as written, only trimmed. */
+/** A number with an optional fraction, as the model wrote it ("176.5", "144,104,100", "12 cm"); '0' when there is none. */
+function checkedNumber(raw: string): string {
+  let text = raw.split(',').join('').split(' ').join('')
+  let found = text.match(/-?[0-9]+(\.[0-9]+)?/)
+  if (found === null) { return '0' }
+  let value = parseFloat(found[0])
+  if (!isFinite(value) || value > 1000000000 || value < -1000000000) { return '0' }
+  return (Math.round(value * 100) / 100).toString()
+}
+
 function checkedCoordinate(raw: string, limit: number): string {
   let text = raw.trim()
   if (!/^-?[0-9]{1,3}(\.[0-9]{1,8})?$/.test(text)) { return '' }
@@ -126,6 +136,7 @@ function checkedCoordinate(raw: string, limit: number): string {
 /** One cell of a row as it is spliced: a number literal, a checked value or escaped text, by the column's kind and check. */
 function renderCell(spec: ListFieldSpec, column: number, cell: string): string {
   let check = column < spec.columnChecks.length ? spec.columnChecks[column] : ''
+  if (check === 'number') { return checkedNumber(cell) }
   if (check === 'lat') { return checkedCoordinate(cell, 90) }
   if (check === 'lon') { return checkedCoordinate(cell, 180) }
   if (check === 'minutes') {

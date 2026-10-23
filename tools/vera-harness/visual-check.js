@@ -135,9 +135,9 @@ if (!baseline) {
    assert(renderer.includes('private darkListener: mediaquery.MediaQueryListener | null'))
    assert(renderer.includes('this.getUIContext().showTimePickerDialog({'))
    assert(renderer.includes('x: this.getUIContext().vp2px(this.canvasSide(node.style)) / 100, y: this.getUIContext().vp2px(this.canvasSide(node.style)) / 100'))
-   const names=['watchDarkMode','sparklineCommands','sparklineAreaCommands','sparklineGridCommands']
+   const names=['watchDarkMode','sparklinePoint','sparklineCommands','sparklineAreaCommands','sparklineGridCommands']
    const body=names.map(n=>declaration(renderer,'  private '+n+'(').replace('  private ','')).join('\n')+'\n'+declaration(renderer,'  aboutToDisappear(')
-   const code=ts.transpileModule('class Probe { static SPARKLINE_HEIGHT=200; '+body+' }',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText
+   const code=ts.transpileModule('class Probe { static SPARKLINE_HEIGHT=200; static SPARKLINE_INSET=16; '+body+' }',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText
    const Probe=new Function(code+'; const VeraPreview=Probe; return Probe')(), probe=new Probe(), queries=[], events=[]
    let change, renders=0, density=1
    const listener={matches:true,on(event,cb){events.push(event);change=cb},off(event){events.push('off:'+event)}}
@@ -146,11 +146,12 @@ if (!baseline) {
    probe.watchDarkMode();assert.deepEqual(queries,['(dark-mode: true)']);assert.equal(probe.dark,true);assert.equal(probe.darkListener,listener)
    change({matches:true});assert.equal(renders,0);change({matches:false});assert.equal(renders,1);assert.equal(probe.dark,false)
    for(density of [1,2,3.5]) {
-    assert.equal(probe.sparklineCommands([0,10],10,0,100),`M 0.00 ${(200*density).toFixed(2)} L ${(100*density).toFixed(2)} 0.00`)
-    assert.equal(probe.sparklineCommands([10],10,0,100),`M ${(50*density).toFixed(2)} 0.00`)
+    const low=(184*density).toFixed(2), high=(16*density).toFixed(2), x1=(25*density).toFixed(2), x2=(75*density).toFixed(2)
+    assert.equal(probe.sparklineCommands([0,10],10,0,100),`M ${x1} ${low} L ${x2} ${high}`)
+    assert.equal(probe.sparklineCommands([10],10,0,100),`M ${(50*density).toFixed(2)} ${high}`)
     assert.equal(probe.sparklineCommands([],10,0,100),'')
-    assert.equal(probe.sparklineAreaCommands([0,10],10,0,100),`M 0.00 ${(200*density).toFixed(2)} L ${(100*density).toFixed(2)} 0.00 L ${(100*density).toFixed(2)} ${(200*density).toFixed(2)} L 0.00 ${(200*density).toFixed(2)} Z`)
-    assert(probe.sparklineGridCommands(10,0,100).startsWith(`M 0 ${(200*density).toFixed(2)} L ${(100*density).toFixed(2)} ${(200*density).toFixed(2)}`))
+    assert.equal(probe.sparklineAreaCommands([0,10],10,0,100),`M ${x1} ${low} L ${x2} ${high} L ${x2} ${low} L ${x1} ${low} Z`)
+    assert(probe.sparklineGridCommands(10,0,100).startsWith(`M 0 ${high} L ${(100*density).toFixed(2)} ${high}`))
    }
    probe.aboutToDisappear();assert.equal(probe.disposed,true);assert.equal(probe.darkListener,null);assert.deepEqual(events,['change','stop','off:change'])
    change({matches:true});assert.equal(renders,1)

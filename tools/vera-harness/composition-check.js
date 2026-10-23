@@ -23,7 +23,7 @@ function jev(sections, layout) {
   const answers = {}
   sections.forEach((k, i) => { answers['section' + (i + 1)] = {choice: k, confidence: 0.9} })
   if (layout) answers.__LAYOUT__ = {choice: layout, confidence: 0.9}
-  for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_logic']) answers['veto.' + k] = {noul: 0}
+  for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_multiple_series', 'needs_logic']) answers['veto.' + k] = {noul: 0}
   return compose.readSectionPick(JSON.stringify({answers}))
 }
 const built = async (outcome) => {

@@ -47,6 +47,10 @@ export class RouteInfo {
   failure: string = ''
   /** Jev's own note, for the reasons that quote it. */
   note: string = ''
+  /** The rewrite of the request that gave Jev something to pick ('' when the request as typed was used). */
+  expanded: string = ''
+  /** Milliseconds the rewrite took, -1 when none was made. */
+  expandMs: number = -1
 }
 
 /** How Jev's answer reads: sure, unsure (named something weakly, or a yes/no question had to decide), nothing fits, a veto, no answer. */
@@ -81,6 +85,7 @@ export function vetoWords(tag: string): string {
   else if (name === 'needs_search_or_form') { words = 'search, filtering or a multi-field form' }
   else if (name === 'needs_live_ticking') { words = 'a live ticking display' }
   else if (name === 'needs_multiple_counters') { words = 'several separate counters' }
+  else if (name === 'needs_multiple_series') { words = 'a chart of several data series' }
   else if (name === 'needs_real_data') { words = 'real data' }
   return parts.length > 1 ? words + ' (' + parts[1] + ')' : words
 }
@@ -141,7 +146,10 @@ export function routeWhy(info: RouteInfo): string {
   let weak = info.weak.join(', ')
   if (info.route === ROUTE_BLOCKS || info.route === ROUTE_BLOCKS_MODEL) {
     let first = ''
-    if (info.jev === JEV_SURE) {
+    if (info.expanded.length > 0) {
+      first = 'Jev found nothing for the request as typed. DeepSeek rewrote it as "' + info.expanded.substring(0, 140) +
+        '" and then Jev chose ' + built + '.'
+    } else if (info.jev === JEV_SURE) {
       first = 'Jev was sure: it chose ' + built + '.'
     } else if (info.check === CHECK_CONFIRMED) {
       first = 'Jev was unsure (' + weak + '), DeepSeek checked it and confirmed ' + built + '.'
