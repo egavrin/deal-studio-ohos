@@ -144,7 +144,7 @@ async function one([label, prompt]) {
   fs.writeFileSync(path.join(dir, 'holes.jsonl'), (log.holes || []).map(h => JSON.stringify(Object.assign({label}, h)) + '\n').join(''))
   fs.writeFileSync(path.join(dir, 'program.vera'), c.source || '')
   const fill = r.blockFill
-  const result = {label, prompt, widget, served: r.vbc2.length > 0, note: r.note, errors: r.errors, blocks: r.blocks,
+  const result = {label, prompt, widget, served: r.vbc2.length > 0, recorded: r.record !== null && r.record !== undefined, note: r.note, errors: r.errors, blocks: r.blocks,
     sketchMs: c.sketchMs, jevMs: c.jevMs, searchMs: fill ? fill.searchMs : -1, contentMs: fill ? fill.contentMs : 0,
     holesMs: fill ? fill.holesMs : 0, custom: r.custom ? {attempts: r.custom.attempts, ms: r.custom.ms, failed: r.custom.failed} : null,
     planned: (JSON.parse(c.sketch || '{}').questions || []).length, asked: r.asked.map(a => a.question + ' -> ' + a.answer), replanned: c.replanned,

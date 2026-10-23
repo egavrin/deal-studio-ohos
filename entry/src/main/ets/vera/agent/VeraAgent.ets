@@ -19,6 +19,8 @@ import { ScreenPlan, assemblePlan } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
 import { Repaired, settleProgram } from './AgentRepair'
 import { AlignResult, alignIsEnabled, alignLeftovers } from './AgentAlign'
+import { Composition as ScreenRecord, compositionFromPlan, rebuilds } from '../VeraComposition'
+import { holeBodiesBySlot } from '../VeraHoles'
 
 export class AgentRequest {
   /** What to build, in the person's words (or the chat's request for them). */
@@ -55,10 +57,34 @@ export class AgentResult {
   asked: Asked[] = []
   /** The screen's plan (ScreenPlan.ets) as far as it got: every slot and what fills it; null when Jev chose nothing. */
   screen: ScreenPlan | null = null
+  /** The record of the served screen (VeraComposition.ets), for edits that change its structure; null when there is none that rebuilds this very program. */
+  record: ScreenRecord | null = null
   firstPreviewMs: number = 0
   previews: number = 0
   checkMs: number = 0
   ms: number = 0
+}
+
+/**
+ * The record of the screen the agent served: its plan's components in order, the catalogue's blocks with the values and hole
+ * bodies they were filled with. Null unless it rebuilds exactly the served program, so a screen no edit can be made to
+ * through the record is never claimed to have one.
+ */
+function recordOf(result: AgentResult, comp: Composition, prompt: string): ScreenRecord | null {
+  if (result.screen === null) { return null }
+  let base: Map<string, string>[] = []
+  let holes: Map<string, string>[] = []
+  let fill = result.blockFill
+  if (fill !== null && comp.blocks.length > 0) {
+    let kinds: string[] = []
+    let offset = partCount(comp)
+    for (let i = 0; i < offset; i++) { kinds.push('none') }
+    kinds = kinds.concat(comp.blocks)
+    base = fill.baseValues
+    holes = holeBodiesBySlot(kinds, fill.holeBodies).slice(offset)
+  }
+  let record = compositionFromPlan(result.screen!, prompt, base, holes)
+  return rebuilds(record, result.source) ? record : null
 }
 
 export async function runAgent(request: AgentRequest, host: AgentHost): Promise<AgentResult> {
@@ -143,6 +169,8 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     if (settled.errors.length === 0) {
       result.source = settled.source
       result.vbc2 = settled.vbc2
+      // A program the repair edited is no longer the plan's: there is no record of it.
+      if (settled.repair === null && composed.composition !== null) { result.record = recordOf(result, composed.composition!, request.prompt) }
     } else {
       result.note += '; ' + settled.errors
     }

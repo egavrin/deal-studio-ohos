@@ -25,6 +25,7 @@ import { buildFromTemplates, markComplete, TemplateBuild, BUILD_TEMPLATE, BUILD_
 import { assemblePlan, PlanSlot, ScreenPlan } from '../ScreenPlan'
 import { wholeScreenPlan, sketchConstants } from '../VeraCompose'
 import { settleProgram } from './AgentRepair'
+import { compositionFromJson, compositionFromPlan, compositionToJson, rebuilds, Composition as ScreenRecord } from '../VeraComposition'
 
 /** The agent's program is the result. */
 export const OUTCOME_AGENT: string = 'agent'
@@ -135,8 +136,26 @@ async function writeWholeScreen(request: RouteRequest, host: AgentHost, outcome:
   agent!.composed.source = settled.source
   agent!.errors = ''
   agent!.screen = plan
+  // The whole screen is one written section: a record of it lets a section be added beside it, or it be taken away.
+  let record = compositionFromPlan(plan, prompt, [], [])
+  agent!.record = settled.repair === null && rebuilds(record, settled.source) ? record : null
   agent!.note += '; whole screen written in ' + written.attempts.toString() + ' attempt(s)'
   return true
+}
+
+/** The JSON of the blocks' record carried over the plan's written components; '' when it would not rebuild `build.source`. */
+function recordWithWritten(build: TemplateBuild, plan: ScreenPlan, unrepaired: boolean): string {
+  let own = compositionFromJson(build.composition)
+  if (own === null || !unrepaired) { return '' }
+  let base: Map<string, string>[] = []
+  let holes: Map<string, string>[] = []
+  for (let b of own.blocks) {
+    base.push(b.values)
+    holes.push(b.holes)
+  }
+  let record: ScreenRecord = compositionFromPlan(plan, own.prompt, base, holes)
+  record.layout = own.layout
+  return rebuilds(record, build.source) ? compositionToJson(record) : ''
 }
 
 /**
@@ -162,8 +181,9 @@ async function finishBlocks(build: TemplateBuild, prompt: string, host: AgentHos
   build.vbc2 = settled.vbc2
   build.source = settled.source
   build.action = BUILD_TEMPLATE
-  // The composition record has no place for a written section: a structural edit would drop it, so there is none.
-  build.composition = ''
+  // The blocks' own record, with the section the model wrote (and any notice) recorded as it is after them: kept only if it
+  // rebuilds exactly this program, as the record of a screen with nothing written does.
+  build.composition = recordWithWritten(build, plan, settled.repair === null)
   build.note += written.section !== null ? '; written section in ' + written.attempts.toString() + ' attempt(s)' :
     '; reported on the screen (' + written.failed + ')'
   build.status = 'Composed ' + build.kinds.join('+') + (written.section !== null ? ' with a section written for the rest' :

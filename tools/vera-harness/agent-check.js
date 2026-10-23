@@ -290,7 +290,16 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(o.blocks.action, 'template')
     assert.match(o.blocks.source, /c_people/)
     assert.ok(o.blocks.vbc2.length > 0)
-    assert.equal(o.blocks.composition, '')
+    // The record carries the written section as it is, and rebuilds exactly the program that is served.
+    {
+      const record = loadVera('VeraComposition').compositionFromJson(o.blocks.composition)
+      assert.notEqual(record, null)
+      assert.deepEqual(record.kinds(), ['metrics', 'custom'])
+      assert.equal(record.blocks[1].literal.kind, 'custom')
+      assert.match(record.blocks[1].literal.criteria, /^a part written for this request that does: works out/)
+      assert.equal(loadVera('VeraComposition').composeFrom(record), o.blocks.source)
+      assert.deepEqual(record.targetKinds(), ['metrics', 'custom'])
+    }
     assert.equal(o.hole.attempts, 1)
     assert.match(asked[0], /works out what the request asks to be calculated/)
     assert.ok(o.blocks.plan.slots.some(s => s.id === 'missing.needs_logic' && s.fill === 'hole'))
@@ -416,6 +425,9 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match(asks[0].user, /your section is the whole screen/)
     assert.ok(o.agent.screen.slots.length > 1 && o.agent.screen.slots.every(s => s.fill === 'hole'))
     assert.match(o.agent.source, /ui\.Header\(/)
+    // The screen is one written section, and the record says so: a section can be added beside it.
+    assert.deepEqual(o.agent.record.kinds(), ['custom'])
+    assert.equal(loadVera('VeraComposition').composeFrom(o.agent.record), o.agent.source)
     // Jev does not read it as doing what the sketch says: not built.
     ;({host} = wholeHost(0.2))
     o = await route.buildScreen(routeRequest('tip calculator', false), host)

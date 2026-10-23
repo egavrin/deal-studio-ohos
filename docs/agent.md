@@ -61,6 +61,12 @@ the more of it the model writes, down to the whole screen.
 6. **Check.** The assembled program is compiled, started, drawn and run with every handler tapped (`VeraSmoke.ets`); one
    that fails, or draws an empty screen, is repaired with SEARCH/REPLACE edits, at most twice (`settleProgram`). Every
    program served goes through it, whoever assembled it: the agent, the blocks, a written section or the whole screen.
+   **Record.** A served screen that rebuilds exactly from its plan gets a record (`VeraComposition.ets`, `AgentResult.record`):
+   the plan's components in order, the catalogue's blocks with their values and hole bodies, everything else (the composer's
+   parts, a written section, a notice) as it is. A request to add a section, take one away, swap or move one is then
+   answered without the model (`tryStructuralEdit`); it may point at the catalogue's blocks and the written section or
+   notice, never at a part (the parts hold each other's state). No record when the repair edited the program, and none is
+   kept that does not rebuild the served one. A chat widget is not edited this way.
 7. **Blocks**, when the agent did not build it: a plain template is served; when the sections are right but the
    request needs more (a soft veto, an intent panel with no rows, buttons only), or the agent's plan names a phone
    action they do not do, the layout stays and a section hole is written into it.
