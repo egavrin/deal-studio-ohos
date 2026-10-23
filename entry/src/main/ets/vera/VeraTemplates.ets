@@ -1646,7 +1646,10 @@ function balancesIDX(state: AppState): number[] {
     ['import * as strings from "std/strings"'],
     [new ListFieldSpec('__LABELS_IDX__', 'labels',
       'The named people or categories a record can be tagged with, taken from the request (2 to 8); exactly one entry when the ' +
-      'records are one plain running list not tied to people or categories',
+      'records are one plain running list not tied to people or categories. When the request has people share or settle costs ' +
+      '(roommates, friends, a team, players), they are the people: the names the request gives, else numbered stand-ins such as ' +
+      'Roommate 1, Roommate 2 -- never the kinds of cost or points that are being shared. When it asks for a breakdown by ' +
+      'category (a budget, exercises, expense types), they are those categories',
       ['name of the person or category (1-2 words)'], [16], '"{0}"', ', ', 1, 8,
       [['Person 1'], ['Person 2'], ['Person 3']])],
     [new PortSpec('writes', 'labels', 'string[]', 'labelsIDX'),
