@@ -2,12 +2,13 @@
 // with fetch for DeepSeek ($ARKESTR_API_KEY), Jev ($TYPESAFE_API_KEY) and Exa ($EXA_API_KEY, optional: without it a
 // request whose sections need real data is refused, as on a phone with no search key).
 //
-//   node tools/vera-harness/agent-run.js [-o OUTDIR] [-p PROMPTS.tsv] [-w] [-r] [-j JOBS] [label ...]
+//   node tools/vera-harness/agent-run.js [-o OUTDIR] [-p PROMPTS.tsv] [-w] [-r] [-b] [-j JOBS] [label ...]
 //
 // Each written hole goes to OUTDIR/<label>/holes.jsonl, which tools/vera-harness/hole-report.py groups. -w builds each as a
 // chat widget. -r runs the whole route (agent/VeraBuildRoute.ets): the agent, then the blocks
 // (VeraTemplatePipeline.ets, with Jev's section pick and the content call made here), then a section written for what
-// the blocks' layout lacks; result.json then says which way it went (route). Prompts come from tools/vera-bench/prompts.tsv unless -p names another
+// the blocks' layout lacks; result.json then says which way it went (route). -b (with -r) puts the blocks before the agent, and
+// blocks-base.vera keeps the blocks' composed program whether or not it was served as it is. Prompts come from tools/vera-bench/prompts.tsv unless -p names another
 // label<TAB>prompt file. Each run writes sketch.json, jev-answer.json (when Jev was asked), program.vera and
 // result.json into OUTDIR/<label>/ and prints one line.
 'use strict'
@@ -30,6 +31,7 @@ const jobs = Number(option('-j', '4'))
 const flag = name => { const i = args.indexOf(name); if (i < 0) return false; args.splice(i, 1); return true }
 const widget = flag('-w')
 const wholeRoute = flag('-r')
+const blocksFirst = flag('-b')
 const prompts = fs.readFileSync(promptFile, 'utf8').split('\n')
   .filter(l => l.trim() && !l.startsWith('#')).map(l => l.split('\t')).filter(([label]) => !args.length || args.includes(label))
 
@@ -78,6 +80,7 @@ function liveBlocks() {
 }
 if (wholeRoute) liveBlocks()
 const route = loadVera('agent/VeraBuildRoute')
+if (blocksFirst) route.setRouteOrder(route.ORDER_BLOCKS_FIRST)
 
 function host(log) {
   const h = new AgentHost()
@@ -121,6 +124,17 @@ async function one([label, prompt]) {
     }
   }
   catch (e) { fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({label, prompt, error: e.message})); return console.log(label.padEnd(24), 'ERROR', e.message.slice(0, 120)) }
+  if (r === null) {
+    // The blocks were first and served: the agent never ran.
+    const bb = o.blocks
+    if (bb && bb.source) fs.writeFileSync(path.join(dir, 'blocks-base.vera'), bb.source)
+    if (o.kind === route.OUTCOME_TEMPLATE) fs.writeFileSync(path.join(dir, 'blocks.vera'), bb.source)
+    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({label, prompt, widget, route: o.kind, served: o.kind === route.OUTCOME_TEMPLATE,
+      blocksRun: bb ? {action: bb.action, kinds: bb.kinds, note: bb.note, plan: bb.plan ? bb.plan.slots.map(s => s.id + ':' + s.fill).join(' ') : ''} : null,
+      hole: o.hole ? {attempts: o.hole.attempts, ms: o.hole.ms, failed: o.hole.failed} : null, ms: Date.now() - started}, null, 1))
+    return console.log(label.padEnd(24), o.kind.padEnd(9), (( Date.now() - started) / 1000).toFixed(1).padStart(5) + 's',
+      bb ? '[' + bb.kinds.join('+') + ' ' + bb.action + (o.hole ? ' hole:' + (o.hole.failed || 'ok') : '') + '] ' + bb.note.slice(0, 140) : '')
+  }
   const c = r.composed
   if (c.sketch) fs.writeFileSync(path.join(dir, 'sketch.json'), c.sketch)
   if (log.jevAnswer) fs.writeFileSync(path.join(dir, 'jev-answer.json'), log.jevAnswer)
@@ -139,6 +153,7 @@ async function one([label, prompt]) {
     if (b) result.blocksRun = {action: b.action, kinds: b.kinds, note: b.note, plan: b.plan ? b.plan.slots.map(s => s.id + ':' + s.fill).join(' ') : ''}
     if (o.hole) result.hole = {attempts: o.hole.attempts, ms: o.hole.ms, failed: o.hole.failed}
     if (o.kind === route.OUTCOME_TEMPLATE) fs.writeFileSync(path.join(dir, 'blocks.vera'), b.source)
+    if (b && b.source) fs.writeFileSync(path.join(dir, 'blocks-base.vera'), b.source)
   }
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 1))
   if (o) {
