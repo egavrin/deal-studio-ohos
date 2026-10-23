@@ -25,8 +25,8 @@ the more of it the model writes, down to the whole screen.
 ## The algorithm
 
 1. **Plan.** DeepSeek writes the sketch. One that is missing or does not parse is asked for again with what was wrong,
-   then once with thinking on. Jev's section pick for the blocks starts at the same moment, so it is ready if the
-   blocks are needed.
+   then once with thinking on. (The blocks' own Jev pick is made only if the blocks are reached: it used to start beside
+   the plan on every request and was thrown away whenever the agent served.)
 2. **Questions.** Jev keeps only the sketch's questions a default cannot stand in for; the person answers on a card,
    and an answer other than the default has the plan drawn again.
 3. **Choices.** One Jev call (asked twice if it does not answer) decides how each item is built. What the plan leaves
@@ -36,6 +36,15 @@ the more of it the model writes, down to the whole screen.
    - an event no effect does as asked, the person's own records, a figure nothing works out, an item of "other",
      a ready need with no section: a slot for the written section;
    - an input nothing uses is left out, with a note.
+3a. **Align** (`--ps veraAlign 1`, off by default; `AgentAlign.ets`). What the choices leave for the model to write -- a ready
+   need no section was chosen for, an event no effect does, an item of "other" -- is offered to the catalogue once more:
+   one Jev question per such need, whose answers are a ready-made section (the plan's ready kinds, `reminders`,
+   `calendar_event`) or none. A section at 0.5 or more is added once, whatever number of needs it does, and takes those
+   needs out of what is written; what Jev finds none for is still written. The person's own records and the figures
+   worked out by a written formula are never offered, and a section the screen already has does not stand in for a need.
+   When nothing is left to write, the inputs the composer kept only for the written section are dropped. Measured so far:
+   8 prompts live, one changed (`set an alarm for my medication every day` is a `reminders` section instead of a notice)
+   and none given a section wrongly; not yet run on the 121 prompts or on a phone.
 4. **Fill.** The catalogue sections' content is written (from a web search when it must be real) and their holes
    filled, by the one fill both the agent and the blocks use (`SectionFill.ets`): a trend chart or a live-facts block is
    always grounded in a search whatever the plan said (the chart with the longer results), a live-facts block shows only
@@ -85,12 +94,12 @@ the melody.
 ## Switches and tools
 
 - `--ps veraOrder blocks-first` puts the blocks before the agent; `--ps veraCustom 0` turns written sections off;
-  `--ps veraWhole 0` the whole-screen hole.
+  `--ps veraWhole 0` the whole-screen hole; `--ps veraAlign 1` offers what would be written to the catalogue first.
 - `tools/vera-harness/agent-run.js [-r] [-w]` runs the agent (or the whole route) live on the host: DeepSeek
   (`$ARKESTR_API_KEY`), Jev (`$TYPESAFE_API_KEY`), Exa (`$EXA_API_KEY`, optional).
 - Every written hole is recorded: a `hole` event in the app's trace, `holes.jsonl` beside each host run.
   `tools/vera-harness/hole-report.py` groups the needs that recur -- the blocks the catalogue lacks.
-- Host checks: `tools/vera-harness/{agent,plan,parts,compose,route,pipeline,section-fill}-check.js`; fixtures in
+- Host checks: `tools/vera-harness/{agent,plan,parts,compose,route,pipeline,section-fill,align,align-agent}-check.js`; fixtures in
   `tools/vera-harness/compose/`.
 
 ## Known limits

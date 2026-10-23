@@ -18,6 +18,7 @@ import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assemb
 import { ScreenPlan, assemblePlan } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
 import { Repaired, settleProgram } from './AgentRepair'
+import { AlignResult, alignIsEnabled, alignLeftovers } from './AgentAlign'
 
 export class AgentRequest {
   /** What to build, in the person's words (or the chat's request for them). */
@@ -42,6 +43,8 @@ export class AgentResult {
   blocks: string[] = []
   /** What filling them did, when there were any. */
   blockFill: BlockFill | null = null
+  /** What was left for the model to write that sections of the catalogue were then found for (AgentAlign.ets); null when not asked. */
+  align: AlignResult | null = null
   /** What writing the custom section did, when the composition needed one. */
   custom: CustomResult | null = null
   /** What repairing the assembled program by edits did, when it did not compile or run; null otherwise. */
@@ -85,6 +88,15 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   result.composed = composed
   result.note = composed.note
   result.plan = composed.parsed !== null && composePlanEnabled() ? sketchPlan(composed.parsed!) : ''
+  // What the composition leaves to be written is first offered to the catalogue: a section may do exactly that.
+  if (composed.composition !== null && alignIsEnabled() && !host.cancelled()) {
+    host.status('Looking for ready-made parts...')
+    let aligned = await alignLeftovers(composed.composition!, request.prompt, host.askJev)
+    if (aligned.asked.length > 0 || aligned.note.length > 0) {
+      result.align = aligned
+      result.note += aligned.note
+    }
+  }
   // Sections of the catalogue: their content written for the request (from a search when it needs real data), and
   // their holes, before the program is assembled.
   if (composed.composition !== null && !host.cancelled()) {

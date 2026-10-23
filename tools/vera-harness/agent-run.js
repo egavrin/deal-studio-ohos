@@ -2,7 +2,7 @@
 // with fetch for DeepSeek ($ARKESTR_API_KEY), Jev ($TYPESAFE_API_KEY) and Exa ($EXA_API_KEY, optional: without it a
 // request whose sections need real data is refused, as on a phone with no search key).
 //
-//   node tools/vera-harness/agent-run.js [-o OUTDIR] [-p PROMPTS.tsv] [-w] [-r] [-b] [-j JOBS] [label ...]
+//   node tools/vera-harness/agent-run.js [-o OUTDIR] [-p PROMPTS.tsv] [-w] [-r] [-b] [-a] [-j JOBS] [label ...]
 //
 // Each written hole goes to OUTDIR/<label>/holes.jsonl, which tools/vera-harness/hole-report.py groups. -w builds each as a
 // chat widget. -r runs the whole route (agent/VeraBuildRoute.ets): the agent, then the blocks
@@ -32,6 +32,8 @@ const flag = name => { const i = args.indexOf(name); if (i < 0) return false; ar
 const widget = flag('-w')
 const wholeRoute = flag('-r')
 const blocksFirst = flag('-b')
+// -a: what the plan leaves for the model to write is first offered to the catalogue (agent/AgentAlign.ets, `--ps veraAlign`).
+if (flag('-a')) loadVera('agent/AgentAlign').setAlignEnabled(true)
 const prompts = fs.readFileSync(promptFile, 'utf8').split('\n')
   .filter(l => l.trim() && !l.startsWith('#')).map(l => l.split('\t')).filter(([label]) => !args.length || args.includes(label))
 

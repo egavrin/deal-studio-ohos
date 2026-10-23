@@ -126,15 +126,14 @@ function scratch(note: string, status: string, build: TemplateBuild, failure: st
  * real data goes to scratch there.
  */
 export async function buildFromTemplates(prompt: string, mode: string, onStatus: (status: string) => void,
-    isCancelled: () => boolean, picked: Promise<SectionPickOutcome> | null = null): Promise<TemplateBuild> {
+    isCancelled: () => boolean): Promise<TemplateBuild> {
   let build = new TemplateBuild()
   try {
     onStatus('Checking for a canned template...')
     // A rewrite of the request starts with Jev's first answer and is read only if Jev picks nothing; otherwise it is dropped.
     let expanding: Promise<ExpandResult> | null = expandRequestsEnabled() && mode === 'deepseek' && settings.hasApiKey() ? expandRequest(prompt) : null
     let jevStart = Date.now()
-    // Jev's pick, unless the caller started it already (the route asks for it while the agent plans).
-    let outcome: SectionPickOutcome = picked !== null ? await picked! : await selectSections(prompt, settings.getSelectorKey())
+    let outcome: SectionPickOutcome = await selectSections(prompt, settings.getSelectorKey())
     build.jevMs = Date.now() - jevStart
     if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
     // What the model is shown as the request: the rewrite when it rescued the pick, else what the person typed.

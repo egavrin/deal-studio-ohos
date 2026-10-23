@@ -22,8 +22,6 @@ import { AgentRequest, AgentResult, runAgent } from './VeraAgent'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { buildFromTemplates, markComplete, TemplateBuild, BUILD_TEMPLATE, BUILD_COMPLETE, BUILD_CANCELLED } from '../VeraTemplatePipeline'
-import { selectSections, SectionPickOutcome } from '../VeraSectionCompose'
-import { settings } from '../SettingsStore'
 import { assemblePlan, PlanSlot, ScreenPlan } from '../ScreenPlan'
 import { wholeScreenPlan, sketchConstants } from '../VeraCompose'
 import { settleProgram } from './AgentRepair'
@@ -141,15 +139,6 @@ async function writeWholeScreen(request: RouteRequest, host: AgentHost, outcome:
   return true
 }
 
-/** Jev's pick of sections, never failing: one that cannot be made is the empty pick the blocks already handle. */
-async function earlyPick(prompt: string): Promise<SectionPickOutcome> {
-  try {
-    return await selectSections(prompt, settings.getSelectorKey())
-  } catch (e) {
-    return new SectionPickOutcome(null, new Map<string, string>(), 'none (' + (e as Error).message + ')')
-  }
-}
-
 /**
  * The blocks' layout with what it lacks written into it: true when the program is now whole, and `build` then holds
  * it as a finished template; false leaves `build` as it was.
@@ -185,9 +174,6 @@ async function finishBlocks(build: TemplateBuild, prompt: string, host: AgentHos
 export async function buildScreen(request: RouteRequest, host: AgentHost): Promise<RouteOutcome> {
   let outcome = new RouteOutcome()
   let steps: string[] = order === ORDER_BLOCKS_FIRST ? ['blocks', 'agent'] : ['agent', 'blocks']
-  // Jev's pick of sections is asked for at once, beside the agent's plan: when the blocks are needed after all, it is
-  // already there. Often nobody waits for it, so it must not fail (earlyPick).
-  let picked: Promise<SectionPickOutcome> | null = request.blocksPrompt.length > 0 ? earlyPick(request.blocksPrompt) : null
   for (let step of steps) {
     if (host.cancelled()) { outcome.kind = OUTCOME_CANCELLED; return outcome }
     if (step === 'agent' && request.agent !== null) {
@@ -197,7 +183,7 @@ export async function buildScreen(request: RouteRequest, host: AgentHost): Promi
       if (result.vbc2.length > 0) { outcome.kind = OUTCOME_AGENT; return outcome }
     }
     if (step === 'blocks' && request.blocksPrompt.length > 0) {
-      let build = await buildFromTemplates(request.blocksPrompt, request.mode, host.status, host.cancelled, picked)
+      let build = await buildFromTemplates(request.blocksPrompt, request.mode, host.status, host.cancelled)
       outcome.blocks = build
       if (build.action === BUILD_CANCELLED) { outcome.kind = OUTCOME_CANCELLED; return outcome }
       addAgentNeeds(build, outcome.agent)

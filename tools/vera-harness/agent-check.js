@@ -524,18 +524,25 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.deepEqual(recorded[0].phone, [true])
     assert.equal(recorded[0].why, 'This phone does not let apps set alarms.')
   }
-  // Jev's pick of sections starts with the agent's plan, not after it, and the blocks use that pick, not a second one.
+  // The blocks' Jev pick is made only if the blocks are reached: not at all when the agent serves, and once, after the plan, when it does not.
   {
     const compose = loadVera('VeraSectionCompose')
     const saved = compose.selectSections
     const order = []
     compose.selectSections = async () => { order.push('pick'); return new compose.SectionPickOutcome(null, new Map(), 'none') }
-    const {host} = replayHost('tip', {jev: ''})
-    const plan = host.askPlan
-    host.askPlan = async (...a) => { order.push('plan'); return plan(...a) }
-    const o = await route.buildScreen(routeRequest('tip calculator', true), host)
+    const run = async (label, opts) => {
+      order.length = 0
+      const {host} = replayHost(label, opts)
+      const plan = host.askPlan
+      host.askPlan = async (...a) => { order.push('plan'); return plan(...a) }
+      return route.buildScreen(routeRequest('tip calculator', true), host)
+    }
+    let o = await run('tip', {})
+    assert.equal(o.kind, route.OUTCOME_AGENT)
+    assert.deepEqual(order, ['plan'], 'the agent served: the pick of sections was never asked for')
+    o = await run('tip', {jev: ''})
     assert.equal(o.kind, route.OUTCOME_NOT_BUILT)
-    assert.deepEqual(order, ['pick', 'plan'])
+    assert.deepEqual(order, ['plan', 'pick'], 'the agent did not: the blocks ask once, after the plan')
     compose.selectSections = saved
   }
   // Blocks first: the blocks run before the agent, and the agent still serves what they do not.

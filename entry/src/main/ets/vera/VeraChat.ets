@@ -634,6 +634,18 @@ export function chatAgentSource(context: WidgetBuildContext): string {
   return context.currentRequest.trim().length > 0 ? 'message' : ''
 }
 
+/**
+ * What the blocks pick sections from for a chat widget: the words the agent sketches from (chatAgentSource), so both builders
+ * read the one request -- the marker's plain request, else the description, else the message, as the Generate screen reads
+ * the person's own words. '' for a revision: the blocks are never a replacement for a change to an existing widget.
+ */
+export function chatBlocksPrompt(context: WidgetBuildContext): string {
+  if (context.source.length > 0) { return '' }
+  if (context.request.trim().length > 0) { return context.request.trim() }
+  if (context.brief.trim().length > 0) { return context.brief.trim() }
+  return context.currentRequest.trim()
+}
+
 /** The agent's request for a chat widget, null when the agent is not to be tried (chatAgentSource). */
 export function chatAgentRequest(context: WidgetBuildContext): AgentRequest | null {
   let from = chatAgentSource(context)
