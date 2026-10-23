@@ -14,9 +14,11 @@ import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
 import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled } from '../vera/VeraCompose'
 import { setRouteOrder, routeOrder, setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
+import { setAlignEnabled } from '../vera/agent/AgentAlign'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
+import { setExpandRequests } from '../vera/VeraRequestExpand'
 
 const DOMAIN = 0x0000
 
@@ -48,6 +50,7 @@ export default class EntryAbility extends UIAbility {
     this.extractUiAb(want)
     this.extractCompose(want)
     this.extractTemplateSelect(want)
+    this.extractExpand(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -67,6 +70,7 @@ export default class EntryAbility extends UIAbility {
     this.extractUiAb(want)
     this.extractCompose(want)
     this.extractTemplateSelect(want)
+    this.extractExpand(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
     }
@@ -309,6 +313,12 @@ export default class EntryAbility extends UIAbility {
       setRouteOrder(String(order).trim())
       hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE order ' + routeOrder() + ' from launch parameter')
     }
+    let align = params['veraAlign']
+    if (align !== null && align !== undefined) {
+      let text = String(align).trim()
+      setAlignEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE align ' + text + ' from launch parameter')
+    }
     let whole = params['veraWhole']
     if (whole !== null && whole !== undefined) {
       let text = String(whole).trim()
@@ -335,6 +345,18 @@ export default class EntryAbility extends UIAbility {
       enableTemplateSelect()
       hilog.info(DOMAIN, 'VERA', 'VERA-TEMPLATE-SELECT enabled from launch parameter')
     }
+  }
+
+  /** `--ps veraExpand 0` switches the request rewrite off for this session (VeraRequestExpand.ets); on by default. */
+  private extractExpand(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraExpand']
+    if (flag === null || flag === undefined) { return }
+    let text = String(flag).trim()
+    let on = !(text === '0' || text === 'false' || text === 'off')
+    setExpandRequests(on)
+    hilog.info(DOMAIN, 'VERA', 'VERA-EXPAND ' + (on ? 'enabled' : 'disabled') + ' from launch parameter')
   }
 
   private extractProjectId(want: Want): void {

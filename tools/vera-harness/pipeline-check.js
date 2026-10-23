@@ -16,7 +16,7 @@ deepseek.extractTemplateContent = async () => JSON.stringify({title: 'Test', sec
 function jev(sections, vetoes) {
   const answers = {}
   sections.forEach((k, i) => { answers['section' + (i + 1)] = {choice: k, confidence: 0.9} })
-  for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_logic'])
+  for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_multiple_series', 'needs_logic'])
     answers['veto.' + k] = {noul: (vetoes || {})[k] || 0}
   return compose.readSectionPick(JSON.stringify({answers}))
 }
@@ -124,7 +124,7 @@ const run = async (outcome, opts = {}) => {
     }
     const timerJev = slot => compose.readSectionPick(JSON.stringify({answers: Object.assign({section1: {choice: 'timer', confidence: 0.9},
       'section1.timer.finish_action': {noul: slot}}, Object.fromEntries(['needs_integration', 'needs_real_data', 'needs_search_or_form',
-      'needs_live_ticking', 'needs_multiple_counters', 'needs_logic'].map(k => ['veto.' + k, {noul: k === 'needs_integration' ? 0.82 : 0}])))}))
+      'needs_live_ticking', 'needs_multiple_counters', 'needs_multiple_series', 'needs_logic'].map(k => ['veto.' + k, {noul: k === 'needs_integration' ? 0.82 : 0}])))}))
     ;({build} = await run(timerJev(0.9), 0.9))
     assert.equal(build.action, 'template', 'the finish action is covered by the hole: no model rewrite'); assert.equal(build.route.holes, true)
     assert.match(build.source, /sdk\.call\("SensorServiceKit\.vibrator\.vibrate"/); assert.match(build.source, /"onFinishedAnswer1"/)
@@ -140,7 +140,7 @@ const run = async (outcome, opts = {}) => {
   const verify = loadVera('VeraPickVerify')
   const weakBody = extra => JSON.stringify({answers: Object.assign({section1: {choice: 'checklist', confidence: 0.3}, section2: {choice: 'none', confidence: 0.6},
     'veto.needs_integration': {noul: 0}, 'veto.needs_real_data': {noul: 0}, 'veto.needs_search_or_form': {noul: 0}, 'veto.needs_live_ticking': {noul: 0},
-    'veto.needs_multiple_counters': {noul: 0}, 'veto.needs_logic': {noul: 0}}, extra || {})})
+    'veto.needs_multiple_counters': {noul: 0}, 'veto.needs_multiple_series': {noul: 0}, 'veto.needs_logic': {noul: 0}}, extra || {})})
   const weak = extra => { const o = compose.readSectionPick(weakBody(extra)); o.rawBody = weakBody(extra); return o }
   ;({build} = await run(jev(['checklist']), 0.9))
   assert.deepEqual([build.route.route, build.route.jev, build.route.check], ['blocks', 'sure', 'none']); assert.deepEqual(build.route.kinds, ['checklist'])
@@ -170,6 +170,72 @@ const run = async (outcome, opts = {}) => {
   // the yes/no question built the block
   ;({build} = await run(weak({'include.checklist': {noul: 0.6}}), 0.9))
   assert.deepEqual([build.route.route, build.route.jev, build.route.check, build.route.wanted], ['blocks', 'unsure', 'yesno', 'checklist'])
+
+  // data filled from a search into a block that only shows it: finished, not handed to the model (the weather screen cost
+  // 27 s because the model searched again and rewrote it); anything else the soft vetoes ask for still is
+  {
+    const search = loadVera('VeraWebSearch'), savedSearch = search.webSearch, savedExa = settings.hasExaKey
+    settings.hasExaKey = () => true
+    let searches = []
+    search.webSearch = async q => { searches.push(q); return searchAnswer }
+    let searchAnswer = 'Weather today: 18 C, light rain, wind 12 km/h.'
+    ;({build} = await run(jev(['key_facts'], {needs_real_data: 0.9, needs_integration: 0.5})))
+    assert.equal(build.action, 'template'); assert.match(build.note, /data filled from search, no completion/)
+    assert.equal(build.route.route, 'blocks'); assert.equal(build.searchText, searchAnswer); assert.equal(searches.length, 1)
+    // the same request with a calculation beside it is still the model's to finish, and keeps the results for it
+    ;({build} = await run(jev(['key_facts'], {needs_real_data: 0.9, needs_integration: 0.5, needs_logic: 0.95})))
+    assert.equal(build.action, 'complete'); assert.equal(build.searchText, searchAnswer)
+    // a block with inputs is not display-only
+    ;({build} = await run(jev(['checklist'], {needs_real_data: 0.9, needs_integration: 0.5})))
+    assert.equal(build.action, 'complete')
+    // a search that found nothing leaves the completion in place and gives it no results
+    searchAnswer = 'No results.'
+    ;({build} = await run(jev(['key_facts'], {needs_real_data: 0.9, needs_integration: 0.5})))
+    assert.equal(build.action, 'complete'); assert.equal(build.searchText, '')
+    // no search needed: the soft veto alone still completes
+    ;({build} = await run(jev(['key_facts'], {needs_integration: 0.5})))
+    assert.equal(build.action, 'complete'); assert.equal(build.searchText, '')
+    // a hard integration veto never reaches here
+    ;({build} = await run(jev(['key_facts'], {needs_real_data: 0.9, needs_integration: 0.95})))
+    assert.equal(build.action, 'scratch')
+    const {groundedDisplayOnly} = loadVera('VeraTemplatePipeline')
+    assert.equal(groundedDisplayOnly(['key_facts', 'none', 'trend_chart'], ['needs_integration']), true)
+    assert.equal(groundedDisplayOnly(['key_facts'], []), false)
+    assert.equal(groundedDisplayOnly(['key_facts'], ['needs_integration', 'needs_logic']), false)
+    assert.equal(groundedDisplayOnly(['none', 'none'], ['needs_integration']), false)
+    assert.equal(groundedDisplayOnly(['key_facts', 'intent_panel'], ['needs_integration']), false)
+    search.webSearch = savedSearch
+    settings.hasExaKey = savedExa
+  }
+
+  // a live-data block: grounded in a search whatever Jev said about real data, a finished template (it covers the integration and live
+  // ticking vetoes), its first figures and source checked against that search, and a source that is not in the results is blanked
+  {
+    const search = loadVera('VeraWebSearch'), savedSearch = search.webSearch, savedExa = settings.hasExaKey
+    const savedModel = deepseek.extractTemplateContent
+    settings.hasExaKey = () => true
+    const SEARCH = 'Web results for "usd rub".\n1. Bank of Russia (https://www.cbr.ru/currency_base/daily/)\nUSD 92,45 as of today\n'
+    let searches = 0
+    search.webSearch = async () => { searches++; return SEARCH }
+    let fill = {section1_label1: 'USD/RUB', section1_value1: '92,45', section1_query: 'usd rub exchange rate today', section1_source_name: 'bogus.org', section1_source_url: 'https://www.cbr.ru/currency_base/daily/'}
+    deepseek.extractTemplateContent = async () => JSON.stringify(fill)
+    ;({build} = await run(jev(['live_facts'], {needs_integration: 0.5, needs_live_ticking: 0.9})))
+    assert.equal(build.action, 'template', 'a live block is a finished template, not a completion'); assert.equal(searches, 1, 'grounded without needs_real_data')
+    assert.match(build.note, /live=checked\(source=ok figures=1\)/)
+    assert.match(build.source, /v1_1: "92,45"|let v11: string = "92,45"|"92,45"/); assert.match(build.source, /srcUrl.*https:\/\/www\.cbr\.ru\/currency_base\/daily\//s)
+    assert.doesNotMatch(build.source, /bogus\.org/, 'the model\'s source name is replaced by the address\'s own domain')
+    assert.match(build.source, /cbr\.ru/)
+    // an address and a figure the search did not contain are not shown as found
+    fill = {section1_label1: 'USD/RUB', section1_value1: '95,10', section1_query: '', section1_source_name: 'made.up', section1_source_url: 'https://made.up/rate'}
+    ;({build} = await run(jev(['live_facts'])))
+    assert.equal(build.action, 'template'); assert.match(build.note, /source=none figures=0/)
+    assert.doesNotMatch(build.source, /made\.up|95,10/); assert.match(build.source, /usd rub|grocery/, 'an empty query becomes the request')
+    // no search key: nowhere to refresh from, so the model writes it
+    settings.hasExaKey = () => false
+    ;({build} = await run(jev(['live_facts'])))
+    assert.equal(build.action, 'scratch')
+    search.webSearch = savedSearch; settings.hasExaKey = savedExa; deepseek.extractTemplateContent = savedModel
+  }
 
   console.log('pipeline-check: ok')
 })().catch(e => { console.error(e); process.exit(1) })

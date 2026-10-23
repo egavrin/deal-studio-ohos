@@ -10,7 +10,7 @@ import { ensureCapabilities } from '../vera/VeraCapabilities'
 import { modelSupportNote } from '../vera/VeraEmbeddings'
 import { WidgetBuildContext, WidgetReference, recentWidgetConversation } from '../vera/VeraWidgetContext'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
-import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp, chatAgentRequest, recordChatAgent } from '../vera/VeraChat'
+import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp, chatAgentRequest, chatBlocksPrompt, recordChatAgent } from '../vera/VeraChat'
 import { AttemptStat, ReplyStats, costOf, formatUsd, formatMs, speedOf } from '../vera/VeraChatStats'
 import { chats, StoredChat, StoredMessage } from '../vera/ChatStore'
 import { store } from '../vera/ProjectStore'
@@ -775,7 +775,7 @@ struct ChatPage {
           if (context.source.length > 0) {
             msg.templatePick = 'skipped (refine)'
           } else {
-            route.blocksPrompt = context.brief.length > 0 ? context.brief : context.currentRequest
+            route.blocksPrompt = chatBlocksPrompt(context)
           }
         }
         context.composeTried = true

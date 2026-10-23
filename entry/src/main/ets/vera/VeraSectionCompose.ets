@@ -1,11 +1,9 @@
 /**
- * Experiment only (experiment/jev-template-select branch): the dynamic-composition counterpart
- * to VeraTemplateSelect.ets. Instead of picking one of two whole-screen TemplateSpecs,
- * selectSections() asks Jev, in one batched request, which FragmentSpec (VeraTemplates.ets) goes
+ * Composition of a screen from sections. selectSections() asks Jev, in one batched request, which FragmentSpec (VeraTemplates.ets) goes
  * in each of SECTION_COUNT ordered slots -- or 'none' for an empty slot -- then composeProgram()
  * assembles the chosen fragments into one `.vera` program for compileVeraSource.
  *
- * Why a composer instead of TemplateSpec's plain substitute(): a fragment is not a whole program,
+ * Why a composer instead of a plain substitute(): a fragment is not a whole program,
  * it is one piece (state fields, an init() contribution, handler function(s), one view() block)
  * that has to be merged with zero or more other fragments' pieces into a single AppState/init/
  * view. Two mechanics make that merge safe:
@@ -25,7 +23,7 @@
  * Scope, so sibling blocks' same-named locals never collide -- confirmed by the host compile
  * sweep (tools/..., see conversation history) before this file was written, not assumed.
  *
- * Mirrors VeraTemplateSelect.ets's shape throughout: one POST, never throws, any doubt falls back
+ * One POST, never throws, any doubt falls back
  * to a null pick so the caller falls straight through to normal generation. Vetoes are the same
  * VeraTemplates.vetoes() list, asked once per request regardless of composition, with the same
  * meaning (a capability gate on the whole request) -- `needs_multiple_counters` still exists
@@ -35,6 +33,7 @@
 
 import http from '@ohos.net.http'
 import hilog from '@ohos.hilog'
+import { BusinessError } from '@ohos.base'
 import { layouts, arrangeInLayout, completeRequiredSlots, swapForLayout, layoutKinds, kindsOfLayout, placeKinds, fitToSlots, LAYOUT_NONE, LAYOUT_STACK } from './VeraLayouts'
 import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, fragments, vetoes, bannerSectionView } from './VeraTemplates'
 
@@ -56,7 +55,7 @@ const WEAK_FROM: number = 0.25
  * Provisional: calibrated on one prompt so far (see eval/results/2026-10-19-*want*).
  */
 const WANT_ABOVE: number = 0.5
-/** Per-slot cosmetic bar, same role as VeraTemplateSelect.ets's SLOT_PICK_ABOVE. */
+/** Per-slot cosmetic bar. */
 const SLOT_PICK_ABOVE: number = 0.25
 /**
  * Bar for a per-part "does the request ask for this" answer once a layout is chosen. These are independent yes/no
@@ -84,7 +83,7 @@ const COVERING_PICK_ABOVE: number = 0.25
  * (eval/results/2026-10-15-jev-baseline.json): with every veto hard, 23 of 49 prompts left the
  * template path, 12 of them on needs_search_or_form alone.
  */
-const SOFT_VETOES: string[] = ['needs_integration', 'needs_search_or_form', 'needs_multiple_counters', 'needs_live_ticking', 'needs_logic']
+const SOFT_VETOES: string[] = ['needs_integration', 'needs_search_or_form', 'needs_multiple_counters', 'needs_multiple_series', 'needs_live_ticking', 'needs_logic']
 /**
  * Above this probability needs_integration stays a hard veto: a request that is mostly a phone API or
  * another app (camera, video call, navigation) has no fragment worth keeping as a base. The baseline's
@@ -99,7 +98,7 @@ const INTEGRATION_HARD_ABOVE: number = 0.9
  * call is exactly what those requests need.
  */
 const SOFT_MIN_ABOVE: number = 0.7
-const SOFT_FLOORED: string[] = ['needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters']
+const SOFT_FLOORED: string[] = ['needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_multiple_series']
 
 const GLOBAL_THEME_VALUES: string[] = ['clean', 'soft', 'expressive', 'editorial', 'technical', 'playful']
 
@@ -121,13 +120,6 @@ function globalHeaderStyleCriteria(): Map<string, string> {
   return m
 }
 
-function globalBannerCriteria(): Map<string, string> {
-  let m: Map<string, string> = new Map<string, string>()
-  m.set('true', 'yes, show one')
-  m.set('false', 'no')
-  return m
-}
-
 /** One section slot's outcome: a chosen kind (with its slot values, tokens still containing "IDX") or 'none'. */
 export class SectionPick {
   kind: string
@@ -139,7 +131,7 @@ export class SectionPick {
   }
 }
 
-/** Every outcome of selectSections, mirroring VeraTemplateSelect.ets's PickOutcome. */
+/** Every outcome of selectSections. */
 export class SectionPickOutcome {
   /** null when every slot is 'none', vetoed, or any doubt makes the whole composition unsafe to attempt. */
   sections: SectionPick[] | null
@@ -196,8 +188,8 @@ function slotKey(token: string): string {
 
 /**
  * One batched request: a `choice` for every section slot (which fragment kind, or none), every
- * kind's own cosmetic slots for every slot (asked regardless of outcome, same "ask everything"
- * pattern VeraTemplateSelect.ets's buildSelectRequest already uses), the three global cosmetic
+ * kind's own cosmetic slots for every slot (asked regardless of outcome, the "ask everything"
+ * pattern), the three global cosmetic
  * choices, and the veto questions. A second call per slot would spend the latency this approach
  * exists to save.
  */
@@ -277,12 +269,6 @@ export function buildSectionRequest(prompt: string): string {
   headerQuestion['instructions'] = 'Should the title block be left-aligned (default) or centered?'
   headerQuestion['criteria'] = criteriaRecord(globalHeaderStyleCriteria())
   questions['__HEADER_STYLE__'] = headerQuestion
-
-  let bannerQuestion: Record<string, Object> = {}
-  bannerQuestion['type'] = 'noul'
-  bannerQuestion['instructions'] = 'Does this app need a standing info note visible at all times?'
-  bannerQuestion['criteria'] = criteriaRecord(globalBannerCriteria())
-  questions['__BANNER_SECTION__'] = bannerQuestion
 
   for (let veto of vetoes()) {
     let question: Record<string, Object> = {}
@@ -384,7 +370,7 @@ function hasPartner(specs: FragmentSpec[], placed: SectionPick[], at: number): b
   return false
 }
 
-/** Missing/unreadable is treated as triggered (1), not 0 -- same rule as VeraTemplateSelect.ets's readVetoProbability. */
+/** Missing/unreadable is treated as triggered (1), not 0. */
 function readVetoProbability(answers: Record<string, Object>, veto: VetoSpec): number {
   let raw = answers['veto.' + veto.key]
   if (raw === null || raw === undefined) { return 1 }
@@ -396,8 +382,7 @@ function readVetoProbability(answers: Record<string, Object>, veto: VetoSpec): n
 
 /**
  * Interprets Jev's answer. Any doubt (unreadable JSON, a tripped veto) returns a null `sections`
- * list so the caller falls through to normal generation -- same contract as
- * VeraTemplateSelect.ets's readPick. A single slot landing on 'none' or low confidence is not
+ * list so the caller falls through to normal generation. A single slot landing on 'none' or low confidence is not
  * doubt about the *whole* request; it just leaves that slot empty, same as a single bad cosmetic
  * slot answer falling back to its default.
  */
@@ -617,7 +602,8 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
   let globals: Map<string, string> = new Map<string, string>()
   globals.set('__THEME__', readChoiceValue(answers, '__THEME__', GLOBAL_THEME_VALUES, SLOT_PICK_ABOVE, 'clean'))
   globals.set('__HEADER_STYLE__', readChoiceValue(answers, '__HEADER_STYLE__', ['default', 'center'], SLOT_PICK_ABOVE, 'default'))
-  globals.set('__BANNER_SECTION__', readNoulValue(answers, '__BANNER_SECTION__', SLOT_PICK_ABOVE) ? 'show' : 'hide')
+  // The banner's text is a canned placeholder ("Demo banner"), so a composed screen never shows it.
+  globals.set('__BANNER_SECTION__', 'hide')
 
   let note = notes.join(' ') + layoutNote
   if (needsRealData) { note = note + ' needs_real_data=' + realDataProbability.toFixed(2) }
@@ -638,8 +624,7 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
  * builds `instanceValues` the same way SectionPickOutcome.sections and
  * VeraTemplateContent.ets's SectionContentFillResult.instanceValues already are: one entry per
  * slot, including empty entries for 'none' slots, never compacted. Content tokens come from
- * VeraTemplateContent.ets's content-fill the same way they do for a flat TemplateSpec, just keyed
- * per slot instance.
+ * VeraTemplateContent.ets's content-fill, keyed per slot instance.
  */
 /**
  * Resolves "IDX" to a slot's instance number, then applies every one of that slot's own
@@ -975,27 +960,46 @@ function rawAnswers(body: string): string {
 
 /**
  * Live call. Never throws and never rejects -- a selector that cannot answer must not stop
- * generation, same rule VeraTemplateSelect.ets's selectTemplate and JevSelector.ets follow.
+ * generation, the rule JevSelector.ets follows too.
  */
+/**
+ * After a failed call, Jev is not asked again for a minute. A phone on a network the service refuses (HTTP 451 "not available in
+ * your region", seen as a 15 s read timeout for this 72 KB request) otherwise waited out the timeout on every generation, twice
+ * with the request rewrite; now the first generation pays it and the following ones go straight on to the model.
+ */
+const RETRY_AFTER_FAILURE_MS: number = 60000
+let failedAt: number = 0
+
 export async function selectSections(prompt: string, apiKey: string): Promise<SectionPickOutcome> {
   let emptyGlobals: Map<string, string> = new Map<string, string>()
   if (apiKey.length === 0 || prompt.trim().length === 0) { return new SectionPickOutcome(null, emptyGlobals, 'none (no key or prompt)') }
+  if (failedAt > 0 && Date.now() - failedAt < RETRY_AFTER_FAILURE_MS) {
+    return new SectionPickOutcome(null, emptyGlobals, 'none (selector unreachable, not asked again for a minute)')
+  }
   let client = http.createHttp()
+  let failStart = Date.now()
   try {
     let headers: Record<string, string> = {}
     headers['Content-Type'] = 'application/json'
     headers['Authorization'] = 'Bearer ' + apiKey
     let started = Date.now()
+    let body = buildSectionRequest(prompt)
+    // When the answer does not come: how long until the headers, and how long in all (VERA-SECTIONS-NET lines).
+    let headersAt = 0
+    client.on('headersReceive', (): void => { headersAt = Date.now() - started })
     let response = await client.request(ENDPOINT, {
       method: http.RequestMethod.POST,
       header: headers,
-      extraData: buildSectionRequest(prompt),
+      extraData: body,
       connectTimeout: 5000,
-      readTimeout: 15000
+      readTimeout: 10000
     })
+    hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS-NET bodyChars=' + body.length.toString() + ' headersMs=' + headersAt.toString() +
+      ' totalMs=' + (Date.now() - started).toString() + ' http=' + (response.responseCode as number).toString())
     let code = response.responseCode as number
     if (code !== 200) {
       hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS http ' + code.toString())
+      failedAt = Date.now()
       return new SectionPickOutcome(null, emptyGlobals, 'none (selector answered ' + code.toString() + ')')
     }
     let outcome = readSectionPick(response.result as string)
@@ -1004,7 +1008,9 @@ export async function selectSections(prompt: string, apiKey: string): Promise<Se
     hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS raw ' + rawAnswers(response.result as string))
     return outcome
   } catch (e) {
-    hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS failed: ' + (e as Error).message)
+    let err = e as BusinessError
+    hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS failed: ' + err.message + ' code=' + String(err.code) + ' after=' + (Date.now() - failStart).toString() + 'ms')
+    failedAt = Date.now()
     return new SectionPickOutcome(null, emptyGlobals, 'none (selector unreachable)')
   } finally {
     client.destroy()

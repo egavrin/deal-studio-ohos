@@ -2,8 +2,8 @@
 
 A new screen (the Generate screen, or a widget in the chat) is built by the **route**
 (`agent/VeraBuildRoute.ets`): the **agent** first, the **blocks** after it, then the **whole screen as one hole**.
-What none of them builds is reported as *not built*, with the reason; there is no generation from scratch after
-the route. A change to an existing program still goes to the model (refine), as before.
+What none of them builds is handed to the model to write from scratch on the Generate screen (the chat reports it as
+*not built*, with the reason). A change to an existing program goes to the model (refine), as before.
 
 The idea: planning and building each have a fast path, where Jev picks something ready, and a slow path, where the
 model writes it. A simple request is built from Jev's picks alone; the more a request asks that nothing ready does,
@@ -25,8 +25,8 @@ the more of it the model writes, down to the whole screen.
 ## The algorithm
 
 1. **Plan.** DeepSeek writes the sketch. One that is missing or does not parse is asked for again with what was wrong,
-   then once with thinking on. Jev's section pick for the blocks starts at the same moment, so it is ready if the
-   blocks are needed.
+   then once with thinking on. (The blocks' own Jev pick is made only if the blocks are reached: it used to start beside
+   the plan on every request and was thrown away whenever the agent served.)
 2. **Questions.** Jev keeps only the sketch's questions a default cannot stand in for; the person answers on a card,
    and an answer other than the default has the plan drawn again.
 3. **Choices.** One Jev call (asked twice if it does not answer) decides how each item is built. What the plan leaves
@@ -36,8 +36,19 @@ the more of it the model writes, down to the whole screen.
    - an event no effect does as asked, the person's own records, a figure nothing works out, an item of "other",
      a ready need with no section: a slot for the written section;
    - an input nothing uses is left out, with a note.
+3a. **Align** (`--ps veraAlign 1`, off by default; `AgentAlign.ets`). What the choices leave for the model to write -- a ready
+   need no section was chosen for, an event no effect does, an item of "other" -- is offered to the catalogue once more:
+   one Jev question per such need, whose answers are a ready-made section (the plan's ready kinds, `reminders`,
+   `calendar_event`) or none. A section at 0.5 or more is added once, whatever number of needs it does, and takes those
+   needs out of what is written; what Jev finds none for is still written. The person's own records and the figures
+   worked out by a written formula are never offered, and a section the screen already has does not stand in for a need.
+   When nothing is left to write, the inputs the composer kept only for the written section are dropped. Measured so far:
+   8 prompts live, one changed (`set an alarm for my medication every day` is a `reminders` section instead of a notice)
+   and none given a section wrongly; not yet run on the 121 prompts or on a phone.
 4. **Fill.** The catalogue sections' content is written (from a web search when it must be real) and their holes
-   filled.
+   filled, by the one fill both the agent and the blocks use (`SectionFill.ets`): a trend chart or a live-facts block is
+   always grounded in a search whatever the plan said (the chart with the longer results), a live-facts block shows only
+   the figures and the source that search contains, and with no search the sections are refused.
 5. **Section hole.** One section is written for the open slots (`writeHole`, `writeSection`):
    - for each phone slot the app's own lookups run first (`find_intent_function`, keyword and embedding rankings
      together; `find_sdk_function`), and the section may call only targets they returned -- every `sdk.call` target is
@@ -47,8 +58,15 @@ the more of it the model writes, down to the whole screen.
    - after the quick tries, one more with thinking on;
    - still failing: the best try that works and does part of it is served with a notice for what it misses; none, a
      notice in its place; `<cannot>` (nothing on this phone does it) is reported as the writer says and not retried.
-6. **Check.** The assembled program is compiled and run; one that fails is repaired with SEARCH/REPLACE edits, at
-   most twice.
+6. **Check.** The assembled program is compiled, started, drawn and run with every handler tapped (`VeraSmoke.ets`); one
+   that fails, or draws an empty screen, is repaired with SEARCH/REPLACE edits, at most twice (`settleProgram`). Every
+   program served goes through it, whoever assembled it: the agent, the blocks, a written section or the whole screen.
+   **Record.** A served screen that rebuilds exactly from its plan gets a record (`VeraComposition.ets`, `AgentResult.record`):
+   the plan's components in order, the catalogue's blocks with their values and hole bodies, everything else (the composer's
+   parts, a written section, a notice) as it is. A request to add a section, take one away, swap or move one is then
+   answered without the model (`tryStructuralEdit`); it may point at the catalogue's blocks and the written section or
+   notice, never at a part (the parts hold each other's state). No record when the repair edited the program, and none is
+   kept that does not rebuild the served one. A chat widget is not edited this way.
 7. **Blocks**, when the agent did not build it: a plain template is served; when the sections are right but the
    request needs more (a soft veto, an intent panel with no rows, buttons only), or the agent's plan names a phone
    action they do not do, the layout stays and a section hole is written into it.
@@ -82,12 +100,12 @@ the melody.
 ## Switches and tools
 
 - `--ps veraOrder blocks-first` puts the blocks before the agent; `--ps veraCustom 0` turns written sections off;
-  `--ps veraWhole 0` the whole-screen hole.
+  `--ps veraWhole 0` the whole-screen hole; `--ps veraAlign 1` offers what would be written to the catalogue first.
 - `tools/vera-harness/agent-run.js [-r] [-w]` runs the agent (or the whole route) live on the host: DeepSeek
   (`$ARKESTR_API_KEY`), Jev (`$TYPESAFE_API_KEY`), Exa (`$EXA_API_KEY`, optional).
 - Every written hole is recorded: a `hole` event in the app's trace, `holes.jsonl` beside each host run.
   `tools/vera-harness/hole-report.py` groups the needs that recur -- the blocks the catalogue lacks.
-- Host checks: `tools/vera-harness/{agent,plan,parts,compose,route,pipeline}-check.js`; fixtures in
+- Host checks: `tools/vera-harness/{agent,plan,parts,compose,route,pipeline,section-fill,align,align-agent}-check.js`; fixtures in
   `tools/vera-harness/compose/`.
 
 ## Known limits

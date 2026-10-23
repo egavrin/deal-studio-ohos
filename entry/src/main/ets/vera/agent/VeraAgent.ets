@@ -9,14 +9,18 @@
  * so those can change behind it. Never throws.
  */
 
-import { AgentHost, BlockRequest, BlockFill } from './AgentHost'
+import { AgentHost } from './AgentHost'
+import { BlockRequest, BlockFill } from '../SectionFill'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
 import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
 import { ScreenPlan, assemblePlan } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
-import { Repaired, checkProgram, repairProgram } from './AgentRepair'
+import { Repaired, settleProgram } from './AgentRepair'
+import { AlignResult, alignIsEnabled, alignLeftovers } from './AgentAlign'
+import { Composition as ScreenRecord, compositionFromPlan, rebuilds } from '../VeraComposition'
+import { holeBodiesBySlot } from '../VeraHoles'
 
 export class AgentRequest {
   /** What to build, in the person's words (or the chat's request for them). */
@@ -41,6 +45,8 @@ export class AgentResult {
   blocks: string[] = []
   /** What filling them did, when there were any. */
   blockFill: BlockFill | null = null
+  /** What was left for the model to write that sections of the catalogue were then found for (AgentAlign.ets); null when not asked. */
+  align: AlignResult | null = null
   /** What writing the custom section did, when the composition needed one. */
   custom: CustomResult | null = null
   /** What repairing the assembled program by edits did, when it did not compile or run; null otherwise. */
@@ -51,10 +57,34 @@ export class AgentResult {
   asked: Asked[] = []
   /** The screen's plan (ScreenPlan.ets) as far as it got: every slot and what fills it; null when Jev chose nothing. */
   screen: ScreenPlan | null = null
+  /** The record of the served screen (VeraComposition.ets), for edits that change its structure; null when there is none that rebuilds this very program. */
+  record: ScreenRecord | null = null
   firstPreviewMs: number = 0
   previews: number = 0
   checkMs: number = 0
   ms: number = 0
+}
+
+/**
+ * The record of the screen the agent served: its plan's components in order, the catalogue's blocks with the values and hole
+ * bodies they were filled with. Null unless it rebuilds exactly the served program, so a screen no edit can be made to
+ * through the record is never claimed to have one.
+ */
+function recordOf(result: AgentResult, comp: Composition, prompt: string): ScreenRecord | null {
+  if (result.screen === null) { return null }
+  let base: Map<string, string>[] = []
+  let holes: Map<string, string>[] = []
+  let fill = result.blockFill
+  if (fill !== null && comp.blocks.length > 0) {
+    let kinds: string[] = []
+    let offset = partCount(comp)
+    for (let i = 0; i < offset; i++) { kinds.push('none') }
+    kinds = kinds.concat(comp.blocks)
+    base = fill.baseValues
+    holes = holeBodiesBySlot(kinds, fill.holeBodies).slice(offset)
+  }
+  let record = compositionFromPlan(result.screen!, prompt, base, holes)
+  return rebuilds(record, result.source) ? record : null
 }
 
 export async function runAgent(request: AgentRequest, host: AgentHost): Promise<AgentResult> {
@@ -84,6 +114,15 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   result.composed = composed
   result.note = composed.note
   result.plan = composed.parsed !== null && composePlanEnabled() ? sketchPlan(composed.parsed!) : ''
+  // What the composition leaves to be written is first offered to the catalogue: a section may do exactly that.
+  if (composed.composition !== null && alignIsEnabled() && !host.cancelled()) {
+    host.status('Looking for ready-made parts...')
+    let aligned = await alignLeftovers(composed.composition!, request.prompt, host.askJev)
+    if (aligned.asked.length > 0 || aligned.note.length > 0) {
+      result.align = aligned
+      result.note += aligned.note
+    }
+  }
   // Sections of the catalogue: their content written for the request (from a search when it needs real data), and
   // their holes, before the program is assembled.
   if (composed.composition !== null && !host.cancelled()) {
@@ -97,7 +136,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       blocks.prompt = request.prompt
       blocks.realData = comp.realData
       blocks.offset = partCount(comp)
-      blocks.compose = (filled: Map<string, string>[]): string => assembleProgram(comp, filled)
+      blocks.compose = (filled: Map<string, string>[], _globals: Map<string, string>): string => assembleProgram(comp, filled)
       let fill = await host.fillBlocks(blocks)
       result.blocks = comp.blocks
       result.blockFill = fill
@@ -121,27 +160,19 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     if (ready) { composed.source = assemblePlan(plan) }
   }
   if (composed.source.length > 0) {
-    let checkStart = Date.now()
-    result.errors = checkProgram(composed.source)
-    result.checkMs = Date.now() - checkStart
-    // What the assembly got wrong is repaired by edits to it, not by building it again.
-    if (result.errors.length > 0 && host.askCode !== null && host.language.length > 0 && !host.cancelled()) {
-      host.status('Repairing the program...')
-      let repaired = await repairProgram(composed.source, result.errors, request.prompt, host.language, host.askCode!)
-      result.repair = repaired
-      if (repaired.source.length > 0) {
-        composed.source = repaired.source
-        result.errors = ''
-        result.note += '; repaired by edits in ' + repaired.rounds.toString() + ' round(s)'
-      } else {
-        result.note += '; repair: ' + repaired.failed
-      }
-    }
-    if (result.errors.length === 0) {
-      result.source = composed.source
-      result.vbc2 = compileVeraSource(composed.source).vbc2
+    let settled = await settleProgram(composed.source, request.prompt, host)
+    result.checkMs = settled.checkMs
+    result.repair = settled.repair
+    result.errors = settled.errors
+    result.note += settled.note
+    composed.source = settled.source
+    if (settled.errors.length === 0) {
+      result.source = settled.source
+      result.vbc2 = settled.vbc2
+      // A program the repair edited is no longer the plan's: there is no record of it.
+      if (settled.repair === null && composed.composition !== null) { result.record = recordOf(result, composed.composition!, request.prompt) }
     } else {
-      result.note += '; ' + result.errors
+      result.note += '; ' + settled.errors
     }
   }
   result.ms = Date.now() - started

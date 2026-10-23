@@ -3,7 +3,7 @@
  *
  * Jev picks the screen's sections (VeraSectionCompose.ets), a narrow model call fills their text
  * and lists (VeraTemplateContent.ets), the fragments are composed and compiled, the result is run
- * once (VeraSmokeRun.ets).
+ * with every handler tapped (VeraSmoke.ets).
  * The caller gets one of three answers and acts on it:
  *
  *   template   the composed program is the result; show it as it is.
@@ -21,14 +21,15 @@ import { settings } from './SettingsStore'
 import { selectSections, readSectionPick, composeProgram, specsOf, SectionPickOutcome, SectionPick } from './VeraSectionCompose'
 import { ScreenPlan, planFromBlocks, assemblePlan } from './ScreenPlan'
 import { verifyWeakPick, VERIFY_WEAK_PICKS, VerifyAnswer } from './VeraPickVerify'
-import { RouteInfo, jevStateOf, logicOf, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, ROUTE_SCRATCH, JEV_UNSURE, CHECK_NONE, CHECK_OFF, CHECK_YESNO,
+import { expandRequest, ExpandResult, expandRequestsEnabled } from './VeraRequestExpand'
+import { RouteInfo, jevStateOf, logicOf, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, ROUTE_SCRATCH, JEV_UNSURE, JEV_UNAVAILABLE, CHECK_NONE, CHECK_OFF, CHECK_YESNO,
   CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED } from './VeraRoute'
-import { fillSectionsContent } from './VeraTemplateContent'
-import { compileVeraSource } from './VeraCompiler'
-import { smokeRun, SmokeResult } from './VeraSmokeRun'
-import { webSearch } from './VeraWebSearch'
-import { deepseek, discoveryToolResult } from './DeepSeekEngine'
-import { holesOf, holeValues, holeBodiesBySlot, fillHoles, HoleFill, HoleInstance } from './VeraHoles'
+import { compileVeraSource, CompileResult } from './VeraCompiler'
+import { smokeRun } from './VeraSmoke'
+import { deepseek } from './DeepSeekEngine'
+import { holeValues, holeBodiesBySlot } from './VeraHoles'
+import { BlockRequest, BlockFill, fillSections, needsGrounding, mergedValues } from './SectionFill'
+import { appBlockCalls } from './SectionFillApp'
 import { Composition, Block, compositionToJson } from './VeraComposition'
 import { fillIntentRows, IntentRowsFill } from './VeraIntentPanel'
 
@@ -52,6 +53,8 @@ export class TemplateBuild {
   verifyMs: number = 0
   /** -1 when no search was made. */
   searchMs: number = -1
+  /** The search results the text was filled from ('' when no search was made or it found nothing), so a completion does not search again. */
+  searchText: string = ''
   contentMs: number = 0
   /** The composition record (VeraComposition.ets) as JSON, for template and complete; the program above is rebuilt from it. */
   composition: string = ''
@@ -63,18 +66,6 @@ export class TemplateBuild {
   plan: ScreenPlan | null = null
   /** Which way this request went and why, for the Generate screen and the Metrics tab (VeraRoute.ets). */
   route: RouteInfo = new RouteInfo()
-}
-
-/** Per-slot copies of `values` with `extra` added; the caller's maps are not changed. */
-function mergeHoleValues(values: Map<string, string>[], extra: Map<string, string>[]): Map<string, string>[] {
-  let out: Map<string, string>[] = []
-  for (let i = 0; i < values.length; i++) {
-    let merged: Map<string, string> = new Map<string, string>()
-    values[i].forEach((v: string, k: string) => { merged.set(k, v) })
-    if (i < extra.length) { extra[i].forEach((v: string, k: string) => { merged.set(k, v) }) }
-    out.push(merged)
-  }
-  return out
 }
 
 /**
@@ -89,6 +80,35 @@ const SOFT_NEEDS: Map<string, string> = new Map<string, string>([
   ['needs_live_ticking', 'shows what the request asks to tick, count or change by itself in real time'],
   ['needs_integration', 'has the phone or another app do what the request asks']
 ])
+
+/** Blocks that show what they were filled with and do nothing else. */
+const DISPLAY_ONLY_KINDS: string[] = ['key_facts', 'spotlight', 'metrics', 'trend_chart', 'bar_chart', 'data_table', 'timeline']
+
+/**
+ * Whether the soft vetoes that asked for a completion are all "needs_integration" and every block only displays: the
+ * request wanted real-world numbers and the blocks were filled with them. Any other veto (a calculation, a form, a second
+ * counter) or any block with taps and inputs still needs the model.
+ */
+export function groundedDisplayOnly(kinds: string[], logicTags: string[]): boolean {
+  if (logicTags.length === 0) { return false }
+  for (let tag of logicTags) { if (tag !== 'needs_integration') { return false } }
+  let shown = kinds.filter((k: string): boolean => k !== 'none')
+  if (shown.length === 0) { return false }
+  for (let kind of shown) { if (DISPLAY_ONLY_KINDS.indexOf(kind) < 0) { return false } }
+  return true
+}
+
+/**
+ * The composed program is the right base but not enough for the request: the caller completes it (the model writes what the
+ * plan has open). `modelRoute` is whether the route log says the model is part of it.
+ */
+export function markComplete(build: TemplateBuild, note: string, status: string, modelRoute: boolean = true): TemplateBuild {
+  build.action = BUILD_COMPLETE
+  if (modelRoute) { build.route.route = ROUTE_BLOCKS_MODEL }
+  build.note = note
+  build.status = status
+  return build
+}
 
 function scratch(note: string, status: string, build: TemplateBuild, failure: string = ''): TemplateBuild {
   build.action = BUILD_SCRATCH
@@ -106,15 +126,44 @@ function scratch(note: string, status: string, build: TemplateBuild, failure: st
  * real data goes to scratch there.
  */
 export async function buildFromTemplates(prompt: string, mode: string, onStatus: (status: string) => void,
-    isCancelled: () => boolean, picked: Promise<SectionPickOutcome> | null = null): Promise<TemplateBuild> {
+    isCancelled: () => boolean): Promise<TemplateBuild> {
   let build = new TemplateBuild()
   try {
     onStatus('Checking for a canned template...')
+    // A rewrite of the request starts with Jev's first answer and is read only if Jev picks nothing; otherwise it is dropped.
+    let expanding: Promise<ExpandResult> | null = expandRequestsEnabled() && mode === 'deepseek' && settings.hasApiKey() ? expandRequest(prompt) : null
     let jevStart = Date.now()
-    // Jev's pick, unless the caller started it already (the route asks for it while the agent plans).
-    let outcome: SectionPickOutcome = picked !== null ? await picked! : await selectSections(prompt, settings.getSelectorKey())
+    let outcome: SectionPickOutcome = await selectSections(prompt, settings.getSelectorKey())
     build.jevMs = Date.now() - jevStart
     if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+    // What the model is shown as the request: the rewrite when it rescued the pick, else what the person typed.
+    // The web search, the phone-function lookup and the record keep the original wording.
+    let work = prompt
+    // Not when Jev did not answer at all (no key, timeout, an error): a second call to the same service would only wait out
+    // another timeout, 15 s on the phone.
+    if (outcome.sections === null && expanding !== null && jevStateOf(outcome) !== JEV_UNAVAILABLE) {
+      onStatus('Rewriting the request...')
+      let rewrite: ExpandResult = await expanding
+      if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+      build.route.expandMs = rewrite.ms
+      if (rewrite.text.length > 0) {
+        let retryStart = Date.now()
+        let second: SectionPickOutcome = await selectSections(rewrite.text, settings.getSelectorKey())
+        build.jevMs = build.jevMs + (Date.now() - retryStart)
+        if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+        // Only a pick counts: a veto or another nothing keeps the first answer, so a correct veto is never lost. A pick Jev
+        // only "wanted" (no section chose it, the best guess above the floor) does not count either: a rewrite made "animated
+        // dice" an intent panel at 0.62, where the first answer, nothing, was right and led to a program written from scratch.
+        let picked = second.sections !== null && second.wanted.length === 0 &&
+          second.sections.some((p: SectionPick): boolean => p.kind !== 'none')
+        console.info('VERA-EXPAND used=' + picked.toString() + ' first=' + outcome.note + ' second=' + second.note)
+        if (picked) {
+          outcome = second
+          work = rewrite.text
+          build.route.expanded = rewrite.text
+        }
+      }
+    }
     build.route.jev = jevStateOf(outcome)
     build.route.note = outcome.note
     build.route.weak = outcome.weakKinds
@@ -154,23 +203,13 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     }
 
     // needs_real_data alone does not null outcome.sections -- it means this composition has to be
-    // grounded in one real search before it is trusted. A trend_chart needs grounding whatever Jev
-    // said: its gate is one probability on the whole request and can miss on an identical prompt
-    // from one run to the next, and a chart of invented round numbers is never what a chart request
-    // wants.
-    let needsGrounding = outcome.needsRealData || build.kinds.indexOf('trend_chart') >= 0
-    let canGround = needsGrounding && mode !== 'server' && settings.hasExaKey()
-    if (needsGrounding && !canGround) {
+    // grounded in one real search before it is trusted. A trend_chart or a live_facts needs grounding whatever Jev
+    // said (SectionFill.ets's needsGrounding): its gate is one probability on the whole request and can miss on an
+    // identical prompt from one run to the next.
+    let canSearch = mode !== 'server' && settings.hasExaKey()
+    if (needsGrounding(build.kinds, outcome.needsRealData) && !canSearch) {
       return scratch(outcome.note + ' (needs real data, no search available; generating normally)', '', build,
         'Jev chose ' + build.kinds.join(' + ') + ', but the request needs real data and no search is available, so the model writes it from scratch.')
-    }
-    let searchText = ''
-    if (needsGrounding) {
-      onStatus('Looking up real data...')
-      let searchStart = Date.now()
-      searchText = await webSearch(prompt)
-      build.searchMs = Date.now() - searchStart
-      if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
     }
 
     // The intent panel's rows are a call of their own, made while the content is filled: it needs only the request.
@@ -180,61 +219,37 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
       rowsFill = fillIntentRows(prompt, rowsKinds,
         (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 600))
     }
-    let contentStart = Date.now()
-    let content = await fillSectionsContent(build.kinds, prompt, mode, searchText)
-    build.contentMs = Date.now() - contentStart
-    if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
 
-    let globalValues: Map<string, string> = new Map<string, string>()
-    outcome.globalValues.forEach((v: string, k: string) => { globalValues.set(k, v) })
-    content.globalValues.forEach((v: string, k: string) => { globalValues.set(k, v) })
-    let instanceValues: Map<string, string>[] = []
-    for (let i = 0; i < sections.length; i++) {
-      let merged: Map<string, string> = new Map<string, string>()
-      sections[i].slotValues.forEach((v: string, k: string) => { merged.set(k, v) })
-      let contentForSlot = content.instanceValues[i]
-      if (contentForSlot !== undefined) { contentForSlot.forEach((v: string, k: string) => { merged.set(k, v) }) }
-      instanceValues.push(merged)
-    }
+    // The search, the content, the live-source checks and the holes: the fill both builders share (SectionFill.ets).
+    let kinds = build.kinds
+    let request = new BlockRequest()
+    request.kinds = kinds
+    request.prompt = prompt
+    request.work = work
+    request.mode = mode
+    request.realData = outcome.needsRealData
+    for (let section of sections) { request.slotValues.push(section.slotValues) }
+    request.globals = outcome.globalValues
+    request.compose = (filled: Map<string, string>[], globals: Map<string, string>): string => composeProgram(kinds, globals, filled)
+    let fill: BlockFill = await fillSections(request, appBlockCalls(canSearch, onStatus, isCancelled))
+    if (fill.cancelled || isCancelled()) { build.action = BUILD_CANCELLED; return build }
+    build.searchMs = fill.searchMs
+    build.contentMs = fill.contentMs
+    build.route.holes = fill.holeBodies.size > 0
+
+    let globalValues: Map<string, string> = fill.globals
+    let baseValues = fill.baseValues
+    let instanceValues = fill.values
+    let holeBodies: Map<string, string> = fill.holeBodies
     let searchTag = ''
-    if (needsGrounding) {
-      let searchOk = searchText.length > 0 && !searchText.startsWith('Search failed:') && searchText !== 'No results.'
-      searchTag = ' search=' + (searchOk ? 'ok' : 'empty')
-      build.route.searched = searchOk
+    if (fill.grounded) {
+      searchTag = ' search=' + (fill.searched ? 'ok' : 'empty')
+      build.route.searched = fill.searched
+      if (fill.searched) { build.searchText = fill.searchText }
     }
-    let note = outcome.note + searchTag + (content.note.length > 0 ? ' ' + content.note : '')
+    let note = outcome.note + searchTag + (fill.contentNote.length > 0 ? ' ' + fill.contentNote : '') +
+      (fill.liveNotes.length > 0 ? ' ' + fill.liveNotes.join(' ') : '') + (fill.holesNote.length > 0 ? ' ' + fill.holesNote : '')
     let shown = build.kinds.filter((k: string): boolean => k !== 'none').join('+')
-
-    // Holes: function bodies the model writes for the chosen blocks (the filter's match rule), settled
-    // against the compiler. Defaults apply when the model cannot or the mode has no model to ask.
-    let baseValues = instanceValues
-    let holeBodies: Map<string, string> = new Map<string, string>()
-    if (holesOf(build.kinds, instanceValues).some((h: HoleInstance): boolean => h.spec.byModel)) {
-      if (mode === 'deepseek') {
-        onStatus('Writing the details...')
-        let kinds = build.kinds
-        // A hole that may call the phone is shown the SDK functions found for the request, the same lookup the model's own
-        // find_sdk_function tool makes, so it copies a real target instead of guessing one.
-        let sdkContext = ''
-        for (let hole of holesOf(kinds, instanceValues)) {
-          if (hole.spec.usesSdk) {
-            sdkContext = (await discoveryToolResult('find_sdk_function', prompt.substring(0, 300), 0)).substring(0, 2500)
-            break
-          }
-        }
-        let fill: HoleFill = await fillHoles(prompt, kinds,
-          (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 500, 'Function bodies for the blocks'),
-          (bodies: Map<string, string>): string => composeProgram(kinds, globalValues, mergeHoleValues(instanceValues, holeValues(kinds, bodies))),
-          instanceValues, sdkContext)
-        if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
-        holeBodies = fill.bodies
-        build.route.holes = fill.bodies.size > 0
-        instanceValues = mergeHoleValues(instanceValues, holeValues(kinds, fill.bodies))
-        if (fill.note.length > 0) { note = note + ' ' + fill.note }
-      } else {
-        note = note + ' holes=default(' + mode + ')'
-      }
-    }
     let panelRows = -1
     if (build.kinds.indexOf('intent_panel') >= 0) {
       panelRows = 0
@@ -242,7 +257,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
         let rows: IntentRowsFill = await rowsFill
         if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
         rows.bodies.forEach((v: string, k: string) => { holeBodies.set(k, v) })
-        instanceValues = mergeHoleValues(instanceValues, holeValues(build.kinds, rows.bodies))
+        instanceValues = mergedValues(instanceValues, holeValues(build.kinds, rows.bodies))
         panelRows = rows.rows
         note = note + ' ' + rows.note
       } else {
@@ -252,22 +267,23 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     let plan = planFromBlocks(prompt, build.layout, specsOf(build.kinds), globalValues, instanceValues)
     build.plan = plan
     let source = assemblePlan(plan)
-    let vbc2 = ''
+    let compiled: CompileResult
     try {
-      vbc2 = compileVeraSource(source).vbc2
+      compiled = compileVeraSource(source)
     } catch (_e) {
       return scratch('composed ' + shown + ' but it failed to compile; generated normally',
         'Template pick failed to compile, generating normally...', build,
         'Jev chose ' + shown + ', but the composed program did not compile, so the model writes it from scratch.')
     }
-    let smoke: SmokeResult = smokeRun(vbc2)
-    if (!smoke.ok) {
-      return scratch('composed ' + shown + ' but it did not run (' + smoke.error + '); generated normally',
+    // Started, drawn, and every handler tapped: the check every served program passes (VeraSmoke.ets).
+    let problem = smokeRun(compiled)
+    if (problem.length > 0) {
+      return scratch('composed ' + shown + ' but it did not run (' + problem + '); generated normally',
         'Template pick did not run, generating normally...', build,
-        'Jev chose ' + shown + ', but the composed program did not run (' + smoke.error + '), so the model writes it from scratch.')
+        'Jev chose ' + shown + ', but the composed program did not run (' + problem + '), so the model writes it from scratch.')
     }
     build.source = source
-    build.vbc2 = vbc2
+    build.vbc2 = compiled.vbc2
     let record = new Composition()
     record.layout = build.layout
     record.prompt = prompt
@@ -276,32 +292,26 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     for (let i = 0; i < build.kinds.length; i++) { record.blocks.push(new Block(build.kinds[i], baseValues[i], bodiesBySlot[i])) }
     build.composition = compositionToJson(record)
 
-    if (outcome.needsLogic) {
+    // A block that only shows facts, filled from a search that found them, is finished: the one soft veto left is "needs
+    // the real world" (needs_integration, below the hard bar), and the search has just been to the real world. Without this
+    // the model searched again and rewrote the whole screen (the weather screen: 27 s, 18 s of it the rewrite).
+    let filledFromSearch = outcome.needsLogic && build.route.searched && groundedDisplayOnly(build.kinds, outcome.softVetoes)
+    if (filledFromSearch) { note = note + ' (data filled from search, no completion)' }
+    if (outcome.needsLogic && !filledFromSearch) {
       for (let key of outcome.softVetoes) { plan.addToWrite('missing.' + key, SOFT_NEEDS.get(key) ?? key, key === 'needs_integration') }
-      build.action = BUILD_COMPLETE
-      build.route.route = ROUTE_BLOCKS_MODEL
       build.route.logic = logicOf(outcome.note)
-      build.note = note
-      build.status = 'Composed ' + shown + ', adding the logic the request needs...'
-      return build
+      return markComplete(build, note, 'Composed ' + shown + ', adding the logic the request needs...')
     }
     // An intent panel without rows shows only "No actions": the model writes the calls instead.
     if (panelRows === 0) {
       plan.addToWrite('missing.needs_integration', SOFT_NEEDS.get('needs_integration')!, true)
-      build.action = BUILD_COMPLETE
-      build.route.route = ROUTE_BLOCKS_MODEL
-      build.note = note
-      build.status = 'Composed ' + shown + ', finding the phone actions the request needs...'
-      return build
+      return markComplete(build, note, 'Composed ' + shown + ', finding the phone actions the request needs...')
     }
     // The actions block's buttons only note which one was tapped. A screen of nothing else looks finished and does
     // nothing: phone-action requests ("a button for the torch") landed here without tripping needs_integration.
     if (sections.every((p: SectionPick): boolean => p.kind === 'actions')) {
       plan.addToWrite('missing.buttons', 'makes each button do what the request asks, rather than only noting that it was tapped', true)
-      build.action = BUILD_COMPLETE
-      build.note = note + ' (placeholder buttons only)'
-      build.status = 'Composed ' + shown + ', making its buttons do what the request asks...'
-      return build
+      return markComplete(build, note + ' (placeholder buttons only)', 'Composed ' + shown + ', making its buttons do what the request asks...', false)
     }
     build.action = BUILD_TEMPLATE
     build.route.route = ROUTE_BLOCKS
