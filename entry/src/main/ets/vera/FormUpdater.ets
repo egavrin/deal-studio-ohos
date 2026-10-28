@@ -1,6 +1,8 @@
 import formBindingData from '@ohos.app.form.formBindingData'
 import formProvider from '@ohos.app.form.formProvider'
 import { store } from './ProjectStore'
+import { formBindings } from './FormBindings'
+import { liveBinding } from './LiveFormService'
 
 export function buildFormBinding(): formBindingData.FormBindingData {
   let projects = store.listProjects()
@@ -19,14 +21,27 @@ export function buildFormBinding(): formBindingData.FormBindingData {
   return formBindingData.createFormBindingData(obj)
 }
 
-export async function refreshForms(): Promise<void> {
+export async function refreshForms(excludeFormId: string = ''): Promise<void> {
   try {
     let infos = await formProvider.getPublishedRunningFormInfos()
     let data = buildFormBinding()
     for (let info of infos) {
+      if (info.formId === excludeFormId) { continue }
       try {
-        await formProvider.updateForm(info.formId, data)
-      } catch (_e) {}
+        if (info.formName !== 'widget' && info.formName !== 'live') { continue }
+        await formProvider.updateForm(info.formId, info.formName === 'live' ?
+          liveBinding(formBindings.projectFor(info.formId), info.formId) : data)
+      } catch (e) { console.warn('VERA-FORM refresh: ' + (e as Error).message) }
     }
-  } catch (_e) {}
+  } catch (e) { console.warn('VERA-FORM list: ' + (e as Error).message) }
+}
+
+let refreshTimer: number = -1
+/** Coalesce frequent app state writes; never lose the final refresh. */
+export function scheduleFormRefresh(): void {
+  if (refreshTimer >= 0) { return }
+  refreshTimer = setTimeout(() => {
+    refreshTimer = -1
+    refreshForms()
+  }, 1000)
 }

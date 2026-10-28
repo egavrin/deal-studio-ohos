@@ -4,6 +4,9 @@ import { SymbolGlyphModifier } from '@kit.ArkUI'
 import { projectIconResource } from '../vera/ProjectIcons'
 import { app, DangerButton } from '../components/AppStyle'
 import { ProjectNavParams, ProjectRow, RowSource, loadProjectRows, confirmDeleteProject, tileTint } from '../components/ProjectRows'
+import { refreshForms } from '../vera/FormUpdater'
+import { compileVeraSource } from '../vera/VeraCompiler'
+import { loadRawfileText } from '../vera/LlamaEngine'
 
 /** Every app made so far, one row each. Swipe or long press to delete. */
 @Entry
@@ -51,6 +54,27 @@ struct AppsPage {
     .title('My apps (' + this.projects.length.toString() + ')')
     .titleMode(NavigationTitleMode.Mini)
     .backgroundColor(app.background)
+    .menus([{
+      value: 'Widget example',
+      action: () => { this.createWidgetExample() }
+    }])
+  }
+
+  /** An explicit, separate fixture: never rewrites an existing generated program. */
+  private async createWidgetExample(): Promise<void> {
+    try {
+      let context = this.getUIContext().getHostContext()
+      if (context === undefined) { return }
+      let source = await loadRawfileText(context.resourceManager, 'widget-counter.vera')
+      let compiled = compileVeraSource(source)
+      let project = store.createProject('Widget counter', '🔢')
+      store.createVersion(project.id, source, compiled.vbc2, 'Live widget counter example')
+      this.reload()
+      refreshForms()
+      let nav = new ProjectNavParams()
+      nav.projectId = project.id
+      await this.getUIContext().getRouter().pushUrl({ url: 'pages/ProjectPage', params: nav })
+    } catch (e) { console.error('Widget example failed: ' + (e as Error).message) }
   }
 
   /** One project: its icon, what it is (the request it began as), how much work is in it, and when it was last worked on. */

@@ -7,6 +7,7 @@ import routerApi from '@ohos.router'
 import hilog from '@ohos.hilog'
 import { refreshForms } from '../vera/FormUpdater'
 import { store } from '../vera/ProjectStore'
+import { formBindings } from '../vera/FormBindings'
 import { settings } from '../vera/SettingsStore'
 import { resetLogprobsProbe } from '../vera/JevProxy'
 import { requestCalendarPermissions, requestMicrophonePermission } from '../vera/VeraPermissions'
@@ -38,6 +39,10 @@ class RunProjectNavParams {
   vbc2: string = ''
   shortcutMode: string = ''
   launchError: string = ''
+}
+
+class FormNavParams {
+  formId: string = ''
 }
 
 class LaunchRoute {
@@ -76,6 +81,7 @@ export default class EntryAbility extends UIAbility {
     // Widget launches can reach ProjectPage and refreshForms (onForeground) before Index
     // initialises storage. Both must read the real project directory.
     store.init(this.context.filesDir)
+    formBindings.init(this.context.filesDir)
     // Before anything can be generated or compiled: the vocabulary a program is
     // allowed to use must not change underneath a program that is being written.
     loadCatalogFile(this.context.filesDir)
@@ -501,6 +507,12 @@ export default class EntryAbility extends UIAbility {
   private extractProjectId(want: Want): void {
     if (want.parameters !== null && want.parameters !== undefined) {
       let params = want.parameters as Record<string, Object>
+      let formId = params['veraFormId']
+      if (typeof formId === 'string' && formId.length > 0) {
+        // An unbound live widget's tap: choose the project it shows.
+        this.queueRoute('form', formId)
+        return
+      }
       let id = params['projectId']
       if (typeof id === 'string' && id.trim().length > 0) {
         // A home-screen shortcut runs the project on its own; a widget row (veraRun=1) opens the project and runs its latest
@@ -628,13 +640,17 @@ export default class EntryAbility extends UIAbility {
         let router = ui.getRouter()
         let options: routerApi.RouterOptions = { url: 'pages/Index' }
         let isolated = request.kind === 'shortcut'
-        let replaceRoot = (request.kind !== 'project' && request.kind !== 'run' && request.kind !== 'proof') ||
-          this.isolatedRoot || this.rootNeedsReset
+        let replaceRoot = (request.kind !== 'project' && request.kind !== 'run' && request.kind !== 'proof' &&
+          request.kind !== 'form') || this.isolatedRoot || this.rootNeedsReset
         let missingProject = false
         if (request.kind === 'proof') {
           let p = new RunProjectNavParams()
           p.vbc2 = request.vbc2
           options = { url: 'pages/RunnerPage', params: p }
+        } else if (request.kind === 'form') {
+          let p = new FormNavParams()
+          p.formId = request.projectId
+          options = { url: 'pages/WidgetBindPage', params: p }
         } else if (request.kind !== 'home') {
           store.init(this.context.filesDir)
           let project = store.getProject(request.projectId)
@@ -727,10 +743,13 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onForeground')
+    AppStorage.setOrCreate('veraForeground', true)
+    AppStorage.setOrCreate('veraResume', Date.now())
     refreshForms()
   }
 
   onBackground(): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onBackground')
+    AppStorage.setOrCreate('veraForeground', false)
   }
 }

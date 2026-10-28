@@ -8,6 +8,7 @@ import { requestHeadline, changeNote, versionCountText } from '../vera/ProjectTe
 import { projectOperations, ProjectOperationStatus, ProjectShortcutState } from '../vera/ProjectOperations'
 import { common } from '@kit.AbilityKit'
 import { app, PrimaryButton, TonalButton, QuietButton, DangerButton } from '../components/AppStyle'
+import { publishLiveWidget } from '../vera/LiveWidgetPublish'
 
 class RunVersionParams {
   projectId: string = ''
@@ -18,6 +19,7 @@ class RunVersionParams {
 class GenerateNavParams {
   projectId: string = ''
   baseVersionId: string = ''
+  makeWidget: string = ''
 }
 
 @Entry
@@ -36,6 +38,8 @@ struct ProjectPage {
   @State viewedVersionNumber: number = 0
   @State viewedMetricsVersion: Version | null = null
   @State viewedMetricsNumber: number = 0
+  @State pinStatus: string = ''
+  @State pinBusy: boolean = false
   // Shown beside the source: the request a version came from is the thing you
   // actually need when deciding whether to refine it or start again.
   @State viewedPrompt: string = ''
@@ -156,6 +160,9 @@ struct ProjectPage {
               .bindMenu([
                 { value: this.shortcutButtonLabel(), action: () => { this.onShortcutMenu() },
                   enabled: this.shortcutMenuEnabled() },
+                { value: 'Add widget', action: () => { this.addWidget() }, enabled: !this.pinBusy },
+                { value: 'Make widget', action: () => { this.openGenerate(this.versions[0].id, true) },
+                  enabled: this.versions.length > 0 && this.versions[0].vbc2.length > 0 },
                 { value: 'Delete project', action: () => { this.askDeleteProject() } }
               ])
           }
@@ -168,6 +175,10 @@ struct ProjectPage {
               .fontColor(app.warningInk)
               .width('100%')
               .padding({ left: 16, right: 16, bottom: 12 })
+          }
+
+          if (this.pinStatus.length > 0) {
+            Text(this.pinStatus).fontSize(13).fontColor(app.inkMuted).padding({ left: 16, right: 16, bottom: 12 }).width('100%')
           }
 
           List({ space: 12 }) {
@@ -369,10 +380,11 @@ struct ProjectPage {
       .catch((e: Error): void => { console.error('Navigate to runner failed: ' + e.message) })
   }
 
-  private openGenerate(baseVersionId: string): void {
+  private openGenerate(baseVersionId: string, makeWidget: boolean = false): void {
     let p = new GenerateNavParams()
     p.projectId = this.projectId
     p.baseVersionId = baseVersionId
+    p.makeWidget = makeWidget ? '1' : ''
     this.getUIContext().getRouter().pushUrl({ url: 'pages/GeneratePage', params: p })
       .catch((e: Error): void => { console.error('Navigate to generation failed: ' + e.message) })
   }
@@ -585,6 +597,14 @@ struct ProjectPage {
     } catch (e) {
       console.error('Show project message failed: ' + (e as Error).message)
     }
+  }
+
+  private async addWidget(): Promise<void> {
+    if (this.pinBusy) { return }
+    this.pinBusy = true
+    try { this.pinStatus = await publishLiveWidget(this.projectId) }
+    catch (e) { this.pinStatus = 'Could not add widget: ' + (e as Error).message }
+    finally { this.pinBusy = false }
   }
 
   @Builder

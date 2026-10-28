@@ -1508,6 +1508,16 @@ class Analyzer {
       if (decl instanceof ClassDeclaration) this.checkClass(decl)
     }
     this.checkJsonableCycles()
+    let widget = this.model.functions.get('widget')
+    if (widget !== undefined) {
+      let init = this.model.functions.get('init')
+      let view = this.model.functions.get('view')
+      let ui = this.stdModules.get('std/ui')!
+      if (init === undefined || view === undefined || widget.isAsync || widget.parameters.length !== 1 ||
+          !identical(widget.parameters[0], init.result) || !identical(widget.result, ui.classes[0].type)) {
+        this.addError('E2112', 'widget must be synchronous: function widget(state: init return type): ui.View', this.model.application.span)
+      }
+    }
     for (let decl of this.model.application.declarations) {
       if (decl instanceof FunctionDeclaration) this.checkFunction(decl)
     }
@@ -2889,6 +2899,36 @@ function handlersOf(model: SemanticModel): Map<string, string> {
     else if (value instanceof VeraClassType && (value as VeraClassType).identity === 'std/gfx:Pointer') { handlers.set(name, 'pointer') }
   })
   return handlers
+}
+
+/** Additive widget refinement: token comparison ignores formatting/comments, not program semantics. */
+export function widgetRefinementError(base: string, candidate: string): string {
+  let before = new Parser(base, '<base>').parse()
+  let after = new Parser(candidate, '<widget>').parse()
+  let fingerprint = (source: string, node: Node): string => JSON.stringify(
+    new Lexer(source.substring(node.span.start.offset, node.span.end.offset), '<declaration>').scan()
+      .map((token: Token): string => token.kind + ':' + token.text))
+  for (let declaration of before.declarations) {
+    if (!(declaration instanceof FunctionDeclaration) && !(declaration instanceof ClassDeclaration)) { continue }
+    if (declaration instanceof FunctionDeclaration && declaration.name === 'widget') { continue }
+    let name = declaration.name
+    let found = after.declarations.find((entry: Declaration): boolean =>
+      ((entry instanceof FunctionDeclaration && declaration instanceof FunctionDeclaration) ||
+       (entry instanceof ClassDeclaration && declaration instanceof ClassDeclaration)) &&
+      (entry as FunctionDeclaration).name === name)
+    if (found === undefined || fingerprint(base, declaration) !== fingerprint(candidate, found)) {
+      return 'Make widget must preserve existing declaration ' + name + ' unchanged; add widget and new helpers only.'
+    }
+  }
+  for (let entry of before.imports) {
+    if (!after.imports.some((other: ImportDeclaration): boolean => entry.name === other.name && entry.specifier === other.specifier)) {
+      return 'Make widget must preserve existing imports.'
+    }
+  }
+  if (!after.declarations.some((entry: Declaration): boolean => entry instanceof FunctionDeclaration && entry.name === 'widget')) {
+    return 'Make widget must add function widget(state): ui.View.'
+  }
+  return ''
 }
 
 export class CompileOptions {

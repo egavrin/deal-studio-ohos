@@ -13,6 +13,8 @@
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraNumberValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock, unitAfter, keepUnits } from '../vera/VeraUi'
+import { veraStateStamp } from '../vera/VeraStateStamp'
+import { scheduleFormRefresh } from '../vera/FormUpdater'
 import { runRawIntent } from '../vera/VeraIntents'
 import { runSdkAdapter } from '../vera/VeraSdkBackend'
 import { LengthMetrics } from '@ohos.arkui.node'
@@ -173,6 +175,20 @@ export struct VeraPreview {
    * is carried into the new program's fresh state (carryState), so a refine does not wipe what the person typed.
    */
   @Prop seedState: string = ''
+  @StorageProp('veraResume') @Watch('onResume') resumeSignal: number = 0
+  @StorageProp('veraForeground') @Watch('onForegroundChanged') appForeground: boolean = true
+
+  onForegroundChanged(): void {
+    if (!this.appForeground) { this.stopAllTimers() }
+    // Foreground restore/render is driven by veraResume after this flag is set.
+  }
+
+  onResume(): void {
+    if (this.previewOnly || this.vm === null) { return }
+    let restored = this.restoreState()
+    if (restored !== null) { this.currentState = restored }
+    this.renderView()
+  }
   /** Read-only snapshot for a hosting chat. It does not migrate state between programs. */
   onStateSnapshot: (encoded: string) => void = (_encoded: string): void => {}
   /**
@@ -465,7 +481,7 @@ export struct VeraPreview {
   private reconcileTimers(root: VeraUiNode | null): void {
     let wanted = new Map<string, number>()
     let actions = new Map<string, string>()
-    if (root !== null) { this.collectTickers(root!, wanted, actions) }
+    if (this.appForeground && root !== null) { this.collectTickers(root!, wanted, actions) }
 
     let live = Array.from(this.timers.keys())
     for (let id of live) {
@@ -741,7 +757,7 @@ export struct VeraPreview {
     let handle = setInterval(() => {
       // A tick that arrives while the previous one is still running would
       // re-enter the VM with a half-applied state.
-      if (this.ticking) { return }
+      if (this.ticking || !this.appForeground) { return }
       let last = this.timerLastFire.get(id)
       let now = Date.now()
       let elapsed = last !== undefined ? now - (last as number) : safe
@@ -807,7 +823,7 @@ export struct VeraPreview {
 
   /** The bytecode itself is the stamp: a refined program gets a different one. */
   private stamp(): string {
-    return this.vbc2.length.toString() + ':' + this.vbc2.substring(0, 64)
+    return veraStateStamp(this.vbc2)
   }
 
   /** `fresh` with what seedState held carried into it, or `fresh` itself when there is none or the program cannot draw it. */
@@ -854,6 +870,7 @@ export struct VeraPreview {
     try {
       store.saveState(keys[0], keys[1], this.stamp(),
         JSON.stringify(encodeRuntimeValue(this.currentState!)))
+      scheduleFormRefresh()
     } catch (e) {
       // A program holding something unsaveable should still run; it just will
       // not remember. Saying so beats a silent half-working save.
