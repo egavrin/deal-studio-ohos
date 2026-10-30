@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs'), path = require('node:path')
 const {loadVera} = require('./source-loader')
-const {compileVeraSource, widgetRefinementError} = loadVera('VeraCompiler')
+const {compileVeraSource, widgetRefinementError, spliceWidget} = loadVera('VeraCompiler')
 const {smokeRun} = loadVera('VeraSmoke')
-const {widgetRefinementPrompt, validateWidgetRefinement} = loadVera('VeraWidgetRefine')
+const {widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote} = loadVera('VeraWidgetRefine')
 const {WidgetSession} = loadVera('VeraLiveWidget')
 const source = fs.readFileSync(path.join(__dirname,'../../entry/src/main/resources/rawfile/widget-counter.vera'),'utf8')
 // Standalone fullscreen base, not a view delegating to widget.
@@ -35,4 +35,29 @@ for (const component of CATALOG) {
 }
 assert.match(prompt,/100000 VM steps/)
 assert.match(prompt,/8000 UTF-16/)
-console.log('PASS widget refinement: additive preservation, signature, catalogue prompt, smoke/repair diagnostics, saved-state validation')
+// What a widget is: the same state, what the person asked for, only the few things that matter.
+assert.match(prompt,/draws the very state view\(state\) draws/)
+assert.match(prompt,/request says what it should show/)
+assert.match(prompt,/one to three figures/)
+assert.match(prompt,/at most two buttons/)
+// The reply's rewrite of an existing declaration is not taken; its widget, new helpers and new imports are.
+const rewritten = 'import * as math from "std/math"\n' + base.replace('state.count + value', 'state.count + value * 2') +
+  '\nfunction twice(n: number): number { return n * 2; }' + addition
+const spliced = spliceWidget(base, rewritten)
+assert.equal(widgetRefinementError(base, spliced), '')
+assert.match(spliced, /state\.count \+ value \}/)
+assert.doesNotMatch(spliced, /value \* 2/)
+assert.match(spliced, /function twice/)
+assert.match(spliced, /^import \* as math from "std\/math"/)
+assert.equal(validateWidgetRefinement(base, spliced, compileVeraSource(spliced).vbc2), '')
+// A widget already there is replaced; a reply that does not parse is left for the compiler.
+assert.equal((spliceWidget(candidate, base + '\nfunction widget(state: AppState): ui.View { return ui.Text("body", "new"); }').match(/function widget/g) || []).length, 1)
+assert.equal(spliceWidget(base, 'not a program {'), 'not a program {')
+// A missing field is explained: the app's state is kept as it is.
+assert.match(widgetRepairNote('3:5 E2031 class AppState has no field doneToday'), /cannot add fields to the state/)
+assert.equal(widgetRepairNote('3:5 E2036 expected 5 arguments, found 4'), '3:5 E2036 expected 5 arguments, found 4')
+// A widget is a glance: a button per item is refused with the reason, for the next attempt.
+const crowded = base + '\nfunction widget(state: AppState): ui.View { return ui.Column("default", [ui.Button("default", "+1", "change", 1, true), ' +
+  'ui.Button("default", "+2", "change", 2, true), ui.Button("default", "+3", "change", 3, true)]); }'
+assert.match(validateWidgetRefinement(base, crowded, compileVeraSource(crowded).vbc2), /3 buttons; a widget has at most 2/)
+console.log('PASS widget refinement: additive preservation, signature, catalogue prompt, smoke/repair diagnostics, saved-state validation, glance limits, splice')

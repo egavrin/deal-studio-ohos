@@ -7,10 +7,11 @@ import request from '@ohos.request'
 import window from '@ohos.window'
 import { Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
-import { widgetRefinementPrompt, validateWidgetRefinement } from '../vera/VeraWidgetRefine'
+import { widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote } from '../vera/VeraWidgetRefine'
 import { veraStateStamp } from '../vera/VeraStateStamp'
+import { WidgetPreview } from '../components/WidgetPreview'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
-import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
+import { compileVeraSource, CompileError, spliceWidget } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
 import { smokeRun } from '../vera/VeraSmoke'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
@@ -79,6 +80,8 @@ const FOLD_SIZE: number = 44
 const FOLD_ROOM: number = 76
 const TAB_CODE: string = 'code'
 const TAB_METRICS: string = 'metrics'
+/** The program's home-screen widget, drawn as the card draws it (WidgetPreview). */
+const TAB_WIDGET: string = 'widget'
 
 class ServerDecodedResponse {
   source: string = ''
@@ -370,6 +373,10 @@ struct GeneratePage {
   private previousSource: string = ''
   private makeWidget: boolean = false
   private widgetBase: string = ''
+  /** The app preview's state when the Widget tab was opened: what the widget preview draws. */
+  @State widgetSeed: string = ''
+  /** The card's title strip: the project's name. */
+  private widgetTitle: string = 'App'
   /** The next repair asks for SEARCH/REPLACE edits (VeraRepair); false after edits failed to apply. */
   private repairByEdit: boolean = true
   /** The section kinds of the last composed screen, kept with a saved version as its origin; empty after a scratch run. */
@@ -619,8 +626,12 @@ struct GeneratePage {
         }
         if (this.makeWidget) {
           this.widgetBase = v.source
-          // Waits in the box, a change to the saved program, for the person to send.
-          this.draft = 'Make a compact home-screen widget for this app, preserving its fullscreen behavior and saved data.'
+          // The person says what the widget shows; the app and the widget start from the data the app has saved.
+          let project = store.getProject(this.projectId)
+          if (project !== null) { this.widgetTitle = project.name }
+          this.carriedState = store.loadState(this.projectId, v.id, veraStateStamp(v.vbc2))
+          this.widgetSeed = this.carriedState
+          this.tab = TAB_WIDGET
         }
       } else {
         this.baseError = 'The selected version is unavailable or has no source. Return to the version list.'
@@ -1176,6 +1187,7 @@ struct GeneratePage {
           this.totalMs = Date.now() - this.genStartTime
           return
         }
+        if (this.makeWidget) { decoded.source = spliceWidget(this.widgetBase, decoded.source) }
         this.generatedSource = decoded.source
         // Never trust a server success to bypass on-device widget/preservation checks.
         let local = compileVeraSource(decoded.source)
@@ -1191,7 +1203,7 @@ struct GeneratePage {
         this.modelWrote = true
         this.acceptRequest()
         animateTo({ duration: 250, curve: Curve.EaseInOut }, () => { this.composerOpen = false })
-        this.tab = TAB_PREVIEW
+        this.tab = this.makeWidget ? TAB_WIDGET : TAB_PREVIEW
         this.compiled = true
         this.compileErrors = ''
         metrics.success = true
@@ -1372,6 +1384,9 @@ struct GeneratePage {
       return
     }
 
+    // A widget is added to the saved program as it is: only the widget and what it adds are taken from the reply.
+    if (this.makeWidget) { this.generatedSource = spliceWidget(this.widgetBase, this.generatedSource) }
+
     this.status = 'Compiling (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
     let vbc2 = ''
     let errors = ''
@@ -1394,6 +1409,7 @@ struct GeneratePage {
         errors = (e as Error).message
       }
     }
+    if (errors.length > 0 && this.makeWidget) { errors = widgetRepairNote(errors) }
     metrics.compileMs = Date.now() - compileStart
     logStep('compile', compileStart, 'src=generate attempt=' + this.attempt.toString() + ' ok=' + (errors.length === 0).toString())
     traceCompile('generate', this.attempt, this.generatedSource.trim(), errors)
@@ -1732,6 +1748,8 @@ struct GeneratePage {
   private doRefine(): void {
     let ask = this.refinePrompt.trim()
     if (ask.length === 0 || this.compiledSource.length === 0 || this.generating || this.baseError.length > 0) { return }
+    // What the person typed is what the widget shows; the instructions for a widget are the system prompt's (widgetRefinementPrompt).
+    if (this.makeWidget) { ask = 'The home-screen widget should show: ' + ask }
     // What the person typed into the preview is kept through the refine.
     this.carriedState = this.liveState
     // A change that only adds, removes, replaces or moves a block of a composed screen is made on its
@@ -2630,7 +2648,8 @@ struct GeneratePage {
       if (this.fullscreen && this.hasResult()) {
         this.foldButton(true)
       }
-      TextInput({ placeholder: this.hasResult() || this.baseVersionId.length > 0 ? 'What to change?' : 'Describe the app you want...',
+      TextInput({ placeholder: this.makeWidget ? 'What should the widget show?' :
+        (this.hasResult() || this.baseVersionId.length > 0 ? 'What to change?' : 'Describe the app you want...'),
         text: this.draft })
         .onChange((value: string) => { this.draft = value })
         .onSubmit(() => { this.send() })
@@ -2854,6 +2873,9 @@ struct GeneratePage {
         this.tabButton('Preview', TAB_PREVIEW)
         this.tabButton('Code', TAB_CODE)
         this.tabButton('Metrics', TAB_METRICS)
+        if (this.showsWidgetTab()) {
+          this.tabButton('Widget', TAB_WIDGET)
+        }
       }
       .width('100%')
 
@@ -2864,7 +2886,11 @@ struct GeneratePage {
           .width('100%')
           .height('100%')
           .visibility(this.tab === TAB_PREVIEW ? Visibility.Visible : Visibility.Hidden)
-        if (this.tab !== TAB_PREVIEW) {
+        if (this.tab === TAB_WIDGET) {
+          WidgetPreview({ vbc2: this.compiledVbc2, seedState: this.widgetSeed, title: this.widgetTitle })
+            .width('100%')
+            .height('100%')
+        } else if (this.tab !== TAB_PREVIEW) {
           Scroll() {
             this.detailsPanel()
           }
@@ -2894,7 +2920,16 @@ struct GeneratePage {
       .type(ButtonType.Capsule).fontSize(12).height(30).layoutWeight(1)
       .fontWeight(this.tab === name ? FontWeight.Medium : FontWeight.Normal)
       .backgroundColor(this.tabTint(name)).fontColor(this.tabInk(name))
-      .onClick(() => { this.tab = name })
+      .onClick(() => {
+        // The widget is drawn over what the app preview holds now.
+        if (name === TAB_WIDGET) { this.widgetSeed = this.liveState.length > 0 ? this.liveState : this.carriedState }
+        this.tab = name
+      })
+  }
+
+  /** Make widget, or a program that already has one. */
+  private showsWidgetTab(): boolean {
+    return this.makeWidget || /\bfunction\s+widget\s*\(/.test(this.compiledSource)
   }
 
   /** The source or the figures of the run, under the tab that was chosen. */
@@ -3091,6 +3126,9 @@ struct GeneratePage {
   private startFresh(): void {
     // "New" means a new app: it is no longer a version of the project this page was opened from.
     this.projectId = ''
+    // Nor a widget for it.
+    this.makeWidget = false
+    this.widgetBase = ''
     this.startNew()
     this.runs = []
     this.program = new RunTotals()

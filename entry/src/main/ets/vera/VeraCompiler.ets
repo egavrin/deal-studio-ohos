@@ -2931,6 +2931,44 @@ export function widgetRefinementError(base: string, candidate: string): string {
   return ''
 }
 
+/**
+ * Make widget: the base program exactly as it is, with the candidate's widget and the functions, classes and imports the
+ * candidate adds. A declaration the base already has is the base's: the model's rewrite of it, asked for or not, is not
+ * taken, so a widget cannot change the app (widgetRefinementError holds by construction). The base's own widget, if any,
+ * is replaced. A candidate that does not parse or has no widget is returned as it is, for the compiler and the checks to say why.
+ */
+export function spliceWidget(base: string, candidate: string): string {
+  let before: Application
+  let after: Application
+  try {
+    before = new Parser(base, '<base>').parse()
+    after = new Parser(candidate, '<widget>').parse()
+  } catch (_e) {
+    return candidate
+  }
+  let named = (entry: Declaration): string => entry instanceof FunctionDeclaration ? 'function ' + entry.name :
+    (entry instanceof ClassDeclaration ? 'class ' + entry.name : '')
+  let isWidget = (entry: Declaration): boolean => entry instanceof FunctionDeclaration && entry.name === 'widget'
+  if (!after.declarations.some(isWidget)) { return candidate }
+  let text = (source: string, node: Node): string => source.substring(node.span.start.offset, node.span.end.offset)
+  let kept = base
+  let old = before.declarations.find(isWidget)
+  if (old !== undefined) { kept = base.substring(0, old.span.start.offset) + base.substring(old.span.end.offset) }
+  let known = before.declarations.filter((entry: Declaration): boolean => !isWidget(entry)).map(named)
+  let added: string[] = []
+  for (let entry of after.declarations) {
+    let name = named(entry)
+    if (name.length > 0 && known.indexOf(name) < 0) { added.push(text(candidate, entry)) }
+  }
+  let imports: string[] = []
+  for (let entry of after.imports) {
+    if (!before.imports.some((other: ImportDeclaration): boolean => entry.name === other.name && entry.specifier === other.specifier)) {
+      imports.push(text(candidate, entry))
+    }
+  }
+  return (imports.length > 0 ? imports.join('\n') + '\n' : '') + kept.trimEnd() + '\n\n' + added.join('\n\n') + '\n'
+}
+
 export class CompileOptions {
   /**
    * Accept an action that names a handler not declared anywhere. Only for a

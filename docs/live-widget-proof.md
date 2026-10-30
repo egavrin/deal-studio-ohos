@@ -4,8 +4,8 @@ This is the first slice of `ISSUE-home-screen-widgets.md`, Part 2, **not the com
 
 ## Try it
 
-1. In VERA's project library, use the first top-right menu item, **Widget example**. It creates a separate `Widget counter` project; it never replaces an existing program.
-2. On its project page, tap **Widget**.
+1. In **My apps**, use the title-bar menu item **Widget example**. It creates a separate `Widget counter` project; it never replaces an existing program.
+2. On its project page, open the "..." menu and tap **Add widget**.
 3. On this phone `isRequestPublishFormSupported()` returns false. The fallback opens the system widget manager. Add **VERA live app**.
 4. Tap the unbound widget's title, then choose a project in **Choose widget app**.
 5. On the counter card, +/− run the VERA handler in the form extension. The title/arrow opens the full program.
@@ -34,7 +34,7 @@ The root ForEach key includes the frame token. Without this, nested card builder
 ## Verification on this machine
 
 ```sh
-export VERA_TYPESCRIPT_PATH=/home/mbolshov/agentsdk/command_line_tools/hvigor/hvigor/node_modules/typescript/lib/typescript.js
+export VERA_TYPESCRIPT_PATH=/home/mbolshov/agentsdk/panda_sdk/package/driver/build_system/node_modules/typescript
 node tools/vera-harness/live-widget-check.js
 node tools/vera-harness/live-form-check.js
 node tools/vera-harness/widget-launch-check.js
@@ -57,33 +57,55 @@ Device evidence in `/tmp/vera-live-proof/`:
 
 Screenshots and accessibility dumps were captured, but full visual QA is **not signed off**. The configured external image analyzer rejected requests (413 on full PNG, 400 on cropped JPEG). No independent QC/subagent tool was available in this session. This proof must not be represented as full Part 2 acceptance.
 
-## Make widget follow-up (implemented on host; NOT installed/accepted)
+## Make widget: a widget the person describes
 
-ProjectPage now offers **Make widget** for the latest runnable version. It opens the existing Generate/refine screen with an English request; the person still chooses Generate, reviews the fullscreen preview and saves explicitly. The action does not automatically publish a card.
+The project page's "..." menu offers **Make widget** for the latest runnable version. It opens Generate on that version with
+the box empty -- "What should the widget show?" -- and the **Widget** tab open. What the person types is the request
+("The home-screen widget should show: ..."); the instructions for what a widget is go in the system prompt
+(`widgetRefinementPrompt`). Generate, refine and Save work as for any change; the action does not publish a card.
 
-- `VeraWidgetRefine.ets` derives card-safe constructor signatures from `ComponentSpec.card` and budgets from the runtime constants. These instructions apply only to this refinement, not new-screen generation.
-- The compiler checks an optional synchronous `widget(init-result): ui.View` signature (`E2112`). `smokeRun` validates widget trees and actual enabled buttons, twice when still present, without executing phone effects. Failures enter the existing local/DeepSeek repair loop. Server results also receive local validation (server errors remain manual retries).
-- Additive preservation checks compare declaration tokens, ignoring comments/formatting: existing classes, init, view, handlers and imports cannot change; widget and new helpers may be added. This deliberately prioritizes safe state carry-over over wider model edits.
-- Save rechecks preservation and widget execution against the base version's **latest saved state**, refuses a changed latest-version ID, and stages that state with the new bytecode stamp before publishing the new version. Existing version/state files remain untouched. There is still no cross-process transaction/locking: state remains last-writer-wins.
-- Foreground restoration now redraws the same runner instance. Background signals stop program timers; timer reconciliation is disabled while backgrounded.
+- **What a widget is, to the model:** a second view of the same state -- `widget(state)` draws the very state `view(state)`
+  draws -- read at a glance: one to three figures or short lines with labels of a word or two, at most two buttons for the
+  actions worth doing without opening the app, nothing else (no lists, history, settings, inputs, explanations, no heading
+  repeating the app's name). When the request asks for more, keep what matters most. No button that opens the app.
+- **Held to it:** Make widget's validation refuses more than 2 buttons or 8 texts (`WIDGET_MAX_BUTTONS`,
+  `WIDGET_MAX_TEXTS`), with a reason the repair loop passes to the next attempt. The card's own budgets are unchanged.
+- **The app cannot change:** `spliceWidget` (VeraCompiler) builds the program from the saved one as it is plus the reply's
+  `widget`, new helpers and new imports; the reply's rewrite of an existing declaration is not taken. A widget that needs
+  state the app does not keep fails to compile, and `widgetRepairNote` tells the next attempt that the state cannot grow.
+- **Widget tab:** `WidgetPreview` draws the widget with the card's own session (`WidgetSession`) and layout, 2x2, over the
+  state the app preview holds -- Make widget starts both from the project's saved data. Taps there run the handlers but are
+  not saved.
+- The compiler checks an optional synchronous `widget(init-result): ui.View` signature (`E2112`). `smokeRun` validates widget
+  trees and enabled buttons without executing phone effects.
+- Save rechecks preservation and the widget against the base version's **latest saved state**, refuses a changed
+  latest-version ID, and stages that state with the new bytecode stamp before publishing the new version. A refused Save
+  stays on the page. There is no cross-process lock: state remains last-writer-wins.
+- Foreground restoration redraws the same runner instance. Background signals stop program timers.
+
+Host replay (`deepseek-flash`, thinking off, the refine request DeepSeekEngine sends, up to three attempts with the error fed
+back): six requests on four apps (a generated water tracker and packing list, the expense and habit examples), including two
+that ask for everything ("every drink logged today ... and buttons for 100, 250, 330 and 500 ml", "the whole list with a
+checkbox for each item"), three runs each: 18/18 valid. Before the splice and the repair note, 6/18 passed in one attempt;
+most failures were the model also rewriting an existing declaration. Not yet run on the phone.
 
 Host evidence for this follow-up:
 
-- `widget-refine-check.js`: preservation, optional signature, catalogue-derived instructions, smoke diagnostics and saved-state validation pass.
+- `widget-refine-check.js`: preservation, optional signature, catalogue-derived instructions, smoke diagnostics, saved-state validation, glance limits, the splice and the repair note pass.
 - `live-widget-check.js`: repeated rows with distinct item IDs, middle-row removal, shifted rows and stale/removed-item taps pass using Column/Row (no ListGroup/ListItem required).
 - `live-form-check.js`: two widgets sharing state, stale tokens across widgets, binding removal/rebind, missing-project fallback and preserved state in a new version pass.
 - `capability-check.js`: **10/10 pass**, including executing extracted renderer lifecycle methods with the real VM, restoring the same runner instance and stopping timers on background. Report `/tmp/vera-widget-capability.json`.
 - Widget launch, smoke and visual-tree checks pass (**97/97** visual-tree checks; not screenshot QA).
 - Chat regression: **39 pass / 18 fail**. An archived clean HEAD has the exact same failing check names and counts; these are baseline failures, not a clean suite. Reports `/tmp/vera-widget-chat{,-baseline}.json`. The earlier summary's chat-success statement should not be used as evidence for this follow-up.
 
-Native update attempt: `./update-phone.sh` stopped **before installation** with Hvigor `ENOENT .../compiler.cache/modules`. Log `/tmp/vera-widget-refine-update.log` and `.hvigor/outputs/build-logs/build.log` (23:51:32 entry). The current native source changes have **not** passed an ArkTS build and are **not** on the phone. Build-generated lockfile noise was restored. No uninstall, data clearing or build-cache deletion was performed.
+Native build: `./build-hap.sh --unsigned` passes with zero diagnostics on main 6b2f59b plus this branch. The Make widget flow above has not been installed or run on the phone.
 
 Independent QC and device/visual verification remain blocked: tool discovery exposes no independent task/subagent review tool. No merge-ready or full Part 2 claim is made.
 
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.
-- Successful native build and end-to-end model/device test of Make widget, including saved-state carry-over.
+- End-to-end device test of Make widget, including the Widget tab and saved-state carry-over.
 - Actual platform payload maximum, large form sizes, dark mode and full visual/accessibility QA.
 - Removal/rebind lifecycle device coverage and foreground resume to an existing runner without a new router push.
 - Last-writer-wins state is intentional; binding-map updates currently use read/modify/replace, so truly concurrent bind/remove operations can overwrite each other.
