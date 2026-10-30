@@ -72,7 +72,8 @@ align.setAlignEnabled(false)
     const {fragments} = loadVera('VeraTemplates')
     const itinerary = fragments().find(f => f.kind === 'itinerary')
     const reads = itinerary.ports.filter(p => p.dir === 'reads')
-    assert.deepEqual(reads.map(p => [p.name, p.optional]), [['deadline', true]])
+    // Both optional: the time the stops must be over by, and the start the screen's own form sets (VeraCompose.ets's dayStart).
+    assert.deepEqual(reads.map(p => [p.name, p.optional]), [['deadline', true], ['start', true]])
     assert.ok(align.alignKinds().includes('itinerary'))
   }
 align.setAlignEnabled(true)

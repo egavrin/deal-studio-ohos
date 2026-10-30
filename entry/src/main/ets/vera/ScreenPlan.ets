@@ -144,9 +144,15 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
   if (!partial && plan.open().length > 0) { return '' }
   let specs: (FragmentSpec | null)[] = []
   let values: Map<string, string>[] = []
-  for (let c of plan.components) {
-    specs.push(c.spec)
-    values.push(c.values)
+  // A notice that part of the screen is missing goes first, under the title: at the bottom of a long screen the person never
+  // reaches it and takes what is there for everything asked (measured: Exam prep, a form and a list above it). Only the order
+  // of the program changes; the components' indices, which the slots point at, stay as they are.
+  for (let notices of [true, false]) {
+    for (let c of plan.components) {
+      if ((c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') !== notices) { continue }
+      specs.push(c.spec)
+      values.push(c.values)
+    }
   }
   return composeFragments(specs, plan.globals, values)
 }

@@ -24,7 +24,7 @@ import { SCENE_GUIDE, SCENE_TOKENS } from './AgentScene'
 export type CodeAsk = (system: string, user: string, budget: number, think: boolean) => Promise<string | null>
 
 /** Room for one section with its handlers and view. */
-export const SECTION_TOKENS: number = 3000
+export const SECTION_TOKENS: number = 6000
 /** Room for a whole screen written as one section. */
 export const SCREEN_TOKENS: number = 8000
 
@@ -48,7 +48,9 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
   '- If the program already has a clock (Start, Stop, Reset buttons, a time shown) or a list of entries with its own Add button, ' +
   'the section draws no clock, no Start/Stop/Reset buttons and no second list of the same entries: it works with that state and shows only what is new.\n' +
   '- A message about an empty or wrong field (such as "Enter a task name") is shown only after the person has tried to add it, never while the field is still untouched.\n' +
-  '- Show each piece of information once: no heading and caption that say the same thing, and no second view (a table, "splits") of entries the program already lists in rows.\n'
+  '- Show each piece of information once: no heading and caption that say the same thing, and no second view (a table, "splits") of entries the program already lists in rows.\n' +
+  '- Never write a phone number, address or other real-world contact the request did not give: a made-up number (such as +1 800 555 0100) looks real to the person. ' +
+  'Show a field for the person to fill in, or say to call their local emergency number.\n'
 
 /** What <cannot> holds: it is shown to the person on the screen, in place of what could not be built. */
 const CANNOT_FORM: string = 'one short sentence for the person using the app, in plain words about their phone and its apps: ' +
@@ -63,7 +65,8 @@ function phoneRule(phone: string): string {
   if (phone.length === 0) {
     return DECLINE_RULE + '- The section never calls sdk.call: what the phone does is not its job.\n' +
       '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
-      'the person\'s location or data the phone does not hold -- answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it with made-up data.\n'
+      'the person\'s location or data the phone does not hold -- decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
+      '</cannot> only when none of the needs can be done. Never fake it with made-up data.\n'
   }
   return DECLINE_RULE + '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
     '"Phone functions found" in the request, copied exactly, with the parameters they show, values from the screen\'s state. ' +
@@ -76,7 +79,8 @@ function phoneRule(phone: string): string {
     'if a function found does the nearest useful thing for the person -- shows or opens the same thing in the app made for it: ' +
     'write the section with that function, and say in a line on the screen what it does instead.\n' +
     '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
-    '(a camera, a live feed, the person\'s location), answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it, never pretend a call happened, ' +
+    '(a camera, a live feed, the person\'s location), decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
+    '</cannot> only when none of the needs can be done. Never fake it, never pretend a call happened, ' +
     'never call a target that is not listed.\n'
 }
 
@@ -273,7 +277,9 @@ export function parseSection(reply: string): FragmentSpec | null {
  */
 const FIXES: string[][] = [
   ['expected View, found View[]', 'a list of views is not one view: wrap it as ui.Column("default", theList)'],
-  ['expected View[], found View', 'one view is not a list: put it in brackets, [theView]']
+  ['expected View[], found View', 'one view is not a list: put it in brackets, [theView]'],
+  ['expected :, found of', 'a for-of loop names the element type: for (let q: C_Question of state.c_questions) { ... } -- there is no other loop over a list'],
+  ['expected :, found in', 'there is no for-in loop: for (let q: C_Question of state.c_questions) { ... } names the element type and loops over a list']
 ]
 
 function quoted(source: string, errors: string): string {
@@ -336,14 +342,24 @@ export async function writeSection(request: CustomRequest, language: string, ask
   // The best section that compiled and ran but that Jev reads as missing a need: kept, in case no try does them all.
   let best: FragmentSpec | null = null
   let bestMissed: string[] = []
+  // A reply that stops before its closing tag was cut off by the token limit: asking again at the same limit writes the
+  // same cut-off reply (measured: three in a row, then a thinking try, 70-80 s), so the next ask gets the whole-screen room.
+  let truncated = false
+  let previous = ''
+  let lastMissed = ''
+  let runnable: FragmentSpec | null = null
   // The first try and its repairs without thinking, then one more with it: slower, for what the quick tries got wrong.
   for (let attempt = 0; attempt <= REPAIRS + 1; attempt++) {
     let think = attempt > REPAIRS
     result.attempts = attempt + 1
     result.thought = think
-    let budget = request.whole ? SCREEN_TOKENS : (scene ? SCENE_TOKENS : SECTION_TOKENS)
-    let reply = await ask(system, user, think ? budget * THINKING_ROOM : budget, think)
+    let budget: number = (request.whole || truncated) ? SCREEN_TOKENS : (scene ? SCENE_TOKENS : SECTION_TOKENS)
+    let reply: string | null = await ask(system, user, think ? budget * THINKING_ROOM : budget, think)
     if (reply === null) { result.failed = 'no answer for the custom section'; break }
+    truncated = reply.indexOf('</view>') < 0 && reply.indexOf('<cannot') < 0
+    // The same reply twice is the same failure twice (temperature 0): the next try is the thinking one.
+    if (reply === previous && attempt <= REPAIRS) { attempt = REPAIRS }
+    previous = reply
     let cannot = between(reply, 'cannot')
     if (cannot !== null) { result.cannot = cannot; result.failed = 'custom section cannot: ' + cannot; break }
     let section = parseSection(reply)
@@ -376,16 +392,31 @@ export async function writeSection(request: CustomRequest, language: string, ask
         break
       }
       result.failed = 'custom section does not do: ' + missed.join('; ')
-      // One Jev reads as doing none of it is no part of the screen.
+      // One Jev reads as doing none of it is kept apart, as the last resort: a screen that runs, with a notice that it was not
+      // checked, is more use than a notice alone (measured: Exam prep, one need, a working form and practice thrown away). Not
+      // for the whole screen: the route then builds it another way.
       if (missed.length < request.needs.length && (best === null || missed.length < bestMissed.length)) {
         best = section
         bestMissed = missed
+      } else if (missed.length === request.needs.length && !request.whole) {
+        runnable = section
       }
-      problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written -- ' +
-        'or, if it cannot be done here, answer <cannot>.'
+      // The same need missed twice running: asking again repeats it (measured: three tries, then a thinking one, 85 s). The best
+      // section so far is served and says what it misses.
+      let missedNow = missed.join('\n')
+      if ((best !== null || runnable !== null) && missedNow === lastMissed) { break }
+      lastMissed = missedNow
+      // The way out offered is the need declined on its own, the rest kept: offered only the bare <cannot>, which throws the
+      // whole section away, the writer kept the section and explained on the screen that it could not (measured: Exam prep).
+      problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written. ' +
+        'If this phone cannot, keep the rest of the section and add, for each need it cannot do, <cannot need="the need, copied exactly">' +
+        CANNOT_FORM + '</cannot> beside it -- not an explanation inside the screen.'
     } else {
-      result.failed = 'custom section: ' + problem.split('\n')[0]
+      // The first two lines: the diagnostic and the line of the program it points at, so the trace says what was written.
+      result.failed = 'custom section: ' + (truncated ? 'cut off at the token limit; ' : '') + problem.split('\n').slice(0, 2).join(' | ')
     }
+    console.info('VERA-CUSTOM attempt=' + (attempt + 1).toString() + ' think=' + think.toString() + ' truncated=' + truncated.toString() +
+      ' failed=' + result.failed.substring(0, 600))
     user = asked + '\n\nYour section was:\n' + reply + '\n\nIt failed:\n' + problem + '\n\nWrite the whole section again, fixed, in the same form.'
   }
   // No try did everything, but one works and does part of it: that one is served, and what it misses is reported.
@@ -393,6 +424,10 @@ export async function writeSection(request: CustomRequest, language: string, ask
     result.section = best
     result.missed = bestMissed
     result.failed = 'custom section does not do: ' + bestMissed.join('; ')
+  } else if (result.section === null && result.cannot.length === 0 && runnable !== null) {
+    result.section = runnable
+    result.missed = request.needs.slice()
+    result.failed = 'custom section does not do: ' + request.needs.join('; ')
   }
   result.ms = Date.now() - started
   return result

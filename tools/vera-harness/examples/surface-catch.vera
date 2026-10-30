@@ -168,7 +168,7 @@ function draw(state: AppState): gfx.Shape[] {
     if (life < state.lives) {
       tone = "danger";
     }
-    shapes.push(gfx.circle(330 - life * 22, 34, 7, tone));
+    shapes.push(gfx.circle(27 + life * 22, 62, 7, tone));
     life = life + 1;
   }
 

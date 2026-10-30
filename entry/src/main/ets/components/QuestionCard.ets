@@ -42,14 +42,17 @@ export struct QuestionCard {
           .height(40)
           .layoutWeight(1)
           .backgroundColor(app.surface)
-        Button('Answer')
-          .type(ButtonType.Capsule)
-          .backgroundColor(app.primary)
-          .fontColor(app.onPrimary)
-          .fontSize(14)
-          .height(40)
-          .enabled(this.typed.trim().length > 0)
-          .onClick(() => { this.onTyped(this.typed.trim()) })
+        // Only once there is something typed: a grey Answer beside the empty field read as the card's own button, dead
+        // while the answer the plan was drawn for sat filled above it, and it cut the field's hint short.
+        if (this.typed.trim().length > 0) {
+          Button('Answer')
+            .type(ButtonType.Capsule)
+            .backgroundColor(app.primary)
+            .fontColor(app.onPrimary)
+            .fontSize(14)
+            .height(40)
+            .onClick(() => { this.onTyped(this.typed.trim()) })
+        }
       }
       .width('100%')
     }

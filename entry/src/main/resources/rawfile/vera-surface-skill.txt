@@ -38,6 +38,9 @@ Controls -- choose what fits the game and say it on the "ready" screen in a few 
   store the finger's id and where it went down; on "move", the offset from that point (capped at 50) is the direction
   and speed; on "up", stop. A "down" on the right half fires. Draw the stick as a ring with a knob where the finger is.
 - Keep every control reachable with a thumb, and draw it, so the person can see what to touch.
+- With a stick or on-screen buttons, the play area is the top of the surface and ends at y = 500; the stick and the
+  buttons sit in the strip under it (y 500 to 640) on a background of their own. Nothing of the game -- the player, a
+  base, a wall, an enemy -- is placed or moves into that strip: a thumb on the stick would hide it.
 
 Movement and collisions:
 - Bounce off a wall: reverse that velocity component and put the object back inside, so it cannot stick.
@@ -56,6 +59,15 @@ Movement and collisions:
 Drawing:
 - gfx.group(x, y, rotation, scale, alpha, shapes) draws shapes made around 0, 0 at x, y: write a ship, a tank or a brick
   once, around its own centre, and place it with a group. A tank is a body group with a turret group inside it.
+- Everything that moves must read at a glance at its real size: a silhouette of 3 to 6 shapes, not a square in a square,
+  with the part that shows which way it faces plainly visible -- a tank's barrel is a rect at least half the body long
+  sticking out of the front, its tracks two darker strips along the sides, and the whole group is turned to the heading.
+  The player and the enemies differ in colour and in shape.
+- A level is laid out as several separate walls or obstacles with lanes and gaps between them, never one solid block,
+  with an open way from where enemies appear to the player. Walls that can be shot away are built of small tiles (a brick
+  about 12 units) in a grid, knocked out one at a time.
+- "Pixel", "retro" or "8-bit": draw sprites and walls from squares on a grid (a pixel of 3 or 4 units), a palette of a few
+  flat colours, a dark plain background; no rounded rects, no glow, no gradients.
 - Shapes computed at run time: a star, a gear or an asteroid is a polygon whose points come from a loop with
   math.cos and math.sin.
 - Glow, for "neon" or "glowing": draw the same shape a little larger in the same colour with a low alpha first
@@ -63,7 +75,8 @@ Drawing:
   "#ff2bd6", "#39ff14", "#ffe600", "#ff6b00"), thin bright lines, and glowing text.
 - Particles for a hit or an explosion: a few short-lived records with a velocity and an age, drawn as circles or arcs
   that fade with group alpha 1 - age / lifetime.
-- The HUD: gfx.text(20, 34, 22, "left", ...) for the score, lives as small shapes in the corner, the level on the right.
+- The HUD: gfx.text(20, 34, 22, "left", ...) for the score, lives as small shapes under it, the level after the score on
+  the same line. Keep the top right corner (x over 260, y under 70) empty: the phone draws its own buttons there.
   Use ui.numberToString for numbers in text.
 - A "ready" or "over" overlay is a translucent rect over the whole surface ("#000000aa") with centred text on it.
 
@@ -234,7 +247,7 @@ function draw(state: AppState): gfx.Shape[] {
     if (life < state.lives) {
       tone = "danger";
     }
-    shapes.push(gfx.circle(330 - life * 22, 34, 7, tone));
+    shapes.push(gfx.circle(27 + life * 22, 62, 7, tone));
     life = life + 1;
   }
 

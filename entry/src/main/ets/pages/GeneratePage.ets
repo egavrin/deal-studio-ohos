@@ -56,6 +56,8 @@ import { compositionFromJson, compositionToJson, editComposition, selectEdit, Co
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
 const UI_SELECT_MODE: string = UI_SELECT_PROMPT
 const MAX_RETRIES: number = 3
+/** How long a new app opened full screen keeps the run's line over it. */
+const READY_NOTE_MS: number = 4000
 
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
@@ -317,6 +319,8 @@ struct GeneratePage {
   private liveState: string = ''
   /** What the next compiled program starts from (VeraPreview.seedState): the state at the moment a refine was asked for. */
   @State carriedState: string = ''
+  /** The run's own line ("Ready in 8.3 s") over a new app just opened full screen, for a few seconds. */
+  @State readyNote: boolean = false
   /**
    * A picture of the screen drawn from the composer's sketch while the real program is still on its way:
    * it builds up as the sketch streams in, and stays up through a fallback generation. Taps are off;
@@ -1098,6 +1102,7 @@ struct GeneratePage {
   }
 
   private showAgent(result: AgentResult): void {
+    let hadProgram = this.compiledVbc2.length > 0
     let composed: ComposeResult = result.composed
     this.generatedSource = result.source
     this.compiledSource = result.source
@@ -1118,15 +1123,17 @@ struct GeneratePage {
     // Where the time went (the plan, the choosing, the sketch) is on the Metrics tab, not in this line.
     this.status = 'Ready in ' + ((this.totalMs - waited) / 1000).toFixed(1) + ' s' +
       (waited > 0 ? ' (and ' + (waited / 1000).toFixed(1) + ' s waiting for your answer)' : '') +
-      (composed.dropped.length > 0 ? '. Left out: ' + composed.dropped.join('; ') : '')
+      (composed.dropped.length > 0 ? ' · ' + composed.dropped.length.toString() + (composed.dropped.length === 1 ? ' part' : ' parts') + ' not included' : '')
     let endFields: Record<string, Object> = {}
     endFields['ok'] = true
     endFields['attempt'] = 0
     endFields['totalMs'] = this.totalMs
     endFields['waitedMs'] = waited
     endFields['via'] = 'compose'
+    endFields['dropped'] = composed.dropped.join('; ')
     trace('gen-end', endFields)
     this.closeRun(true, 0)
+    if (!hadProgram) { this.openWhole() }
   }
 
   /**
@@ -1479,6 +1486,7 @@ struct GeneratePage {
       this.compositionJson = ''
       this.acceptRequest()
       this.status = 'Compiled successfully on attempt ' + this.attempt
+      if (!hadProgram) { this.openWhole() }
       logMark('gen-compiled', 'attempt=' + this.attempt.toString())
       let endFields: Record<string, Object> = {}
       endFields['ok'] = true
@@ -2798,6 +2806,18 @@ struct GeneratePage {
     return items
   }
 
+  /**
+   * A new app opens over the whole screen: in the pane under the request it had a third of the height and was read through
+   * a slot (the Try one of these demos). Only a new one: a change keeps whichever view the person was in. The run's line stays
+   * over it for a few seconds; the collapse button and Back return to the pane, where the line, Code and Metrics are.
+   */
+  private openWhole(): void {
+    if (this.fullscreen) { return }
+    this.setFullscreen(true)
+    this.readyNote = true
+    setTimeout(() => { this.readyNote = false }, READY_NOTE_MS)
+  }
+
   /** What was typed into the program goes with it to the other view, which draws a program of its own. */
   private setFullscreen(on: boolean): void {
     this.carriedState = this.liveState
@@ -2842,11 +2862,11 @@ struct GeneratePage {
           .onClick(() => { this.setFullscreen(false) })
         }
         .margin({ top: 8, right: 8 })
-        if (this.generating || !this.compiled) {
+        if (this.generating || !this.compiled || this.readyNote) {
           Row({ space: 8 }) {
             if (this.generating) { LoadingProgress().width(16).height(16) }
             Text(this.status.length > 0 ? this.status : 'Working...')
-              .fontSize(12).fontColor(this.generating ? app.inkSoft : app.warningInk).maxLines(3)
+              .fontSize(12).fontColor(this.generating ? app.inkSoft : (this.compiled ? app.successInk : app.warningInk)).maxLines(3)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })

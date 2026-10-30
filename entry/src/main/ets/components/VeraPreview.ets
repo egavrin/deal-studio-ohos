@@ -25,7 +25,7 @@ import { ResolvedTheme, resolveTheme, containerFill, toneFill, toneEdge, toneInk
   densityGap, spacerSize, readableInk } from '../vera/VeraTheme'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
-import { LiveNode, toLive, reconcile, armReveal } from './VeraLiveTree'
+import { LiveNode, toLive, reconcile, armReveal, markIconRoom } from './VeraLiveTree'
 import { carryState } from '../vera/VeraStateCarry'
 import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
@@ -894,6 +894,7 @@ export struct VeraPreview {
       } else {
         reconcile(this.liveRoot!, root!)
       }
+      if (this.liveRoot !== null) { markIconRoom(this.liveRoot!) }
       this.revision += 1
       this.reconcileTimers(this.previewOnly ? null : root)
       this.reconcileSpin(root)
@@ -921,6 +922,12 @@ export struct VeraPreview {
     for (let node of found) { if (node.action.length > 0) { animated = true } }
     if (animated && !this.previewOnly && !this.pageHidden && this.error.length === 0) { this.startSurfaceLoop() } else { this.stopSurfaceLoop() }
     if (paint) { this.paintSurfaces() }
+  }
+
+  /** Every text field from here down may show its check now; see LiveNode.touched. */
+  private touchFields(node: LiveNode): void {
+    if (node.kind === 'field') { node.touched = true }
+    for (let child of node.children) { this.touchFields(child) }
   }
 
   private collectSurfaces(node: LiveNode, found: LiveNode[]): void {
@@ -2682,21 +2689,24 @@ export struct VeraPreview {
               .fontColor(this.t().inkStrong)
               .width('100%')
           }
+          // Under the words, not beside them: beside, a button like "Open camera" took half the row and the message
+          // wrapped two words to a line (Exam prep).
+          if (node.value.length > 0) {
+            Button(node.value)
+              .height(this.t().chipHeight)
+              .fontSize(this.t().sizeBody)
+              .fontFamily(this.textFamily())
+              .type(ButtonType.Capsule)
+              .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
+              .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().primary)))
+              .margin({ top: this.t().gapTight })
+              .onClick(() => {
+                if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+              })
+          }
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-        if (node.value.length > 0) {
-          Button(node.value)
-            .height(this.t().chipHeight)
-            .fontSize(this.t().sizeBody)
-            .fontFamily(this.textFamily())
-            .type(ButtonType.Capsule)
-            .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
-            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().primary)))
-            .onClick(() => {
-              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
-            })
-        }
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -3429,6 +3439,8 @@ export struct VeraPreview {
         .fontColor(buttonInk(this.t(), node.style))
         .onClick(() => {
           if (node.action.length > 0 && node.enabled) {
+            // A button press is the attempt after which an empty required field is worth pointing out.
+            if (this.liveRoot !== null) { this.touchFields(this.liveRoot!) }
             this.handleAction(node.action, node.eventValue)
           }
         })
@@ -3487,10 +3499,16 @@ export struct VeraPreview {
           .type(this.textFieldKeyboard(node))
           .onSubmit((_key: EnterKeyType, _event: SubmitEvent) => {})
           .onChange((v: string) => {
+            // ArkUI also calls this when the program itself sets the text (a form cleared after Add): that echo is not typing.
+            if (v !== node.value) {
+              node.typed = v
+              node.touched = true
+            }
             if (node.action.length > 0) { this.handleStringAction(node.action, v) }
           })
-        if (this.textFieldIssue(node).length > 0) {
+        if (node.touched && this.textFieldIssue(node).length > 0) {
           Text(this.textFieldIssue(node)).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().dangerInk)
+            .width('100%')
         }
       }
       .width('100%')
@@ -3650,6 +3668,9 @@ export struct VeraPreview {
           this.iconChip(node.icon, this.t().controlHeight - 4,
             toneFill(this.t(), node.style, this.t().primaryFill),
             toneInk(this.t(), node.style, this.t().primaryInk))
+        } else if (node.iconRoom) {
+          // Not a Blank: in a Row that grows to take the free width.
+          Column().width(this.t().controlHeight - 4).height(this.t().controlHeight - 4)
         }
         Column({ space: 2 }) {
           Text(node.text).fontSize(this.t().sizeBody + 1).fontFamily(this.textFamily()).width('100%')

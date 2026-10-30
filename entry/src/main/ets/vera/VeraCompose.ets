@@ -1462,6 +1462,26 @@ export function listNeeds(sketch: Sketch): string {
  * sections' content has to come from a search. Nothing when the plan has none. (The needs plan asks them first, NeedsChoose.ets.)
  */
 /**
+ * Whether an item of the plan's "other" is something an itinerary already does, asked of each when the plan has content for a
+ * section: whether one is chosen is decided in the same call, so the question that names the chosen section's own (within.other)
+ * cannot say what an itinerary holds. Read only when the itinerary is chosen; without it the West Lake plan's "when to head back"
+ * and "walking time between stops" were written again beside the itinerary, disagreeing with it ("Broken Bridge to Broken Bridge").
+ */
+export function askItinerary(sketch: Sketch, questions: Record<string, Object>): void {
+  if (sketch.ready.length === 0 || sketch.other.length === 0) { return }
+  let spec = fragments().find((f: FragmentSpec): boolean => f.kind === 'itinerary')
+  if (spec === undefined) { return }
+  let verdict: Map<string, string> = new Map<string, string>()
+  verdict.set('yes', 'yes: an itinerary like that already does it')
+  verdict.set('no', 'no: it is something more')
+  for (let i = 0; i < sketch.other.length; i++) {
+    if (isScene(sketch.other[i])) { continue }
+    questions['itinerary.other.' + i.toString()] = choice('If the places were shown as an itinerary that already has ' + spec!.owns +
+      ', would "' + sketch.other[i] + '" be part of that itinerary?', verdict)
+  }
+}
+
+/**
  * Whether a time-of-day figure ends the plan's list of places or steps -- a flight to catch, a closing time. Asked for each when the
  * plan has content for a section; a section that reads "deadline" shows only what fits before it.
  */
@@ -1639,6 +1659,7 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
   // Which ready-made section handles each need the plan gave one, by the catalogue's own words for each.
   askReady(sketch, questions)
   askDeadline(sketch, questions)
+  askItinerary(sketch, questions)
   if (sketch.ready.length > 0) {
     // A plan names a section's own buttons and lists again as events and items of other: what a section does is left
     // to it, by Jev's reading rather than the plan's.
@@ -2056,6 +2077,9 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   for (let i = 0; i < sketch.ready.length; i++) {
     let kind = answerOf(answers, 'ready.' + i.toString(), READY_KINDS, comp.answers, READY_ABOVE)
     let own = answerOf(answers, 'whose.' + i.toString(), ['own'], comp.answers, OWN_RECORDS_ABOVE) === 'own'
+    // Which section a ready need went to, and how sure Jev was of each: the pick is otherwise visible only as its result.
+    console.info('VERA-COMPOSE ready.' + i.toString() + ' "' + sketch.ready[i] + '" -> ' + (kind.length > 0 ? kind : 'none') + ' ' +
+      JSON.stringify(answers['ready.' + i.toString()] ?? null).substring(0, 400))
     comp.readyKinds.push(own ? '' : kind)
     if (own && customEnabled) {
       // Their own records are theirs to enter: a section that keeps what they add, starting empty, and makes up none.
@@ -2247,6 +2271,11 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     }
     let within = answerOf(answers, 'within.other.' + i.toString(), served, comp.answers, COVERED_ABOVE)
     if (within.length > 0) { comp.claimed.push(sketch.other[i]); continue }
+    if (comp.blocks.indexOf('itinerary') >= 0 &&
+        answerOf(answers, 'itinerary.other.' + i.toString(), ['yes'], comp.answers, COVERED_ABOVE) === 'yes') {
+      comp.claimed.push(sketch.other[i])
+      continue
+    }
     let covered = answerOf(answers, 'covers.' + i.toString(), partIds, comp.answers)
     let a = answers['covers.' + i.toString()] as Record<string, Object>
     let confidence = a !== null && a !== undefined && typeof a['confidence'] === 'number' ? a['confidence'] as number : 0
@@ -2290,8 +2319,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   dropValues(comp, answers, failed, served, shownBySection)
   // An input nothing reads does nothing. A number the request did not ask for is the sketch's extra and is
   // left out, and the note says so; one it asked for, a switch or words mean the request wants something
-  // the parts do not do with it.
-  let read: string[] = [comp.countdownFrom]
+  // the parts do not do with it. The day's start time is read by the itinerary (dayStart).
+  let read: string[] = [comp.countdownFrom, dayStart(comp)]
   comp.bindings.forEach((b: Binding) => {
     read.push(b.a)
     read.push(b.b)
@@ -2351,17 +2380,21 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     if (from !== undefined) { failed.set(v.id, 'reads "' + labelOf(sketch, from) + '", which nothing works out') }
   }
   let leaving: string[] = []
-  // A value a section of the catalogue shows is that section's, and leaves as one not asked for does.
+  // A value a section of the catalogue shows is that section's, and leaves as one not asked for does. The itinerary's own times
+  // leave whether or not a formula was found for them: one that was not would be written beside the itinerary instead.
   let sections: string[] = []
   let written: string[] = []
+  let itinerary = itineraryShows(comp, answers)
   failed.forEach((_why: string, id: string) => {
     if (answerOf(answers, 'asked.value.' + id, ['added'], comp.answers, ADDED_ABOVE) === 'added') { leaving.push(id) }
-    else if (answerOf(answers, 'within.value.' + id, served, comp.answers, COVERED_ABOVE).length > 0) { leaving.push(id); sections.push(id) }
+    else if (answerOf(answers, 'within.value.' + id, served, comp.answers, COVERED_ABOVE).length > 0 || itinerary.indexOf(id) >= 0) {
+      leaving.push(id); sections.push(id)
+    }
   })
   // One a section shows that could be worked out leaves too, unless a figure that stays reads it (the loop below
   // brings it back, still bound).
-  for (let id of shownBySection) {
-    if (!failed.has(id)) { leaving.push(id); sections.push(id) }
+  for (let id of shownBySection.concat(itinerary)) {
+    if (!failed.has(id) && leaving.indexOf(id) < 0) { leaving.push(id); sections.push(id) }
   }
   let covering: string[] = []
   for (let i = 0; i < sketch.other.length; i++) {
@@ -2422,7 +2455,7 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     }
     else { comp.dropped.push('value "' + label + '": not asked for, and ' + why) }
   })
-  for (let id of shownBySection) {
+  for (let id of unique(shownBySection.concat(itinerary))) {
     if (failed.has(id) || leaving.indexOf(id) < 0) { continue }
     let label = labelOf(sketch, id)
     comp.dropped.push('value "' + label + '": a section shows it')
@@ -3294,8 +3327,33 @@ function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
     let widget = comp.widgets.get(input.id) ?? ''
     if (input.kind === 'choice' || widget === 'typed_number') { continue }
     spec.ports.push(new PortSpec('writes', input.id, inputType(input), input.id))
+    if (input.id === dayStart(comp)) { spec.ports.push(new PortSpec('writes', 'start', 'number', input.id)) }
   }
   return spec
+}
+
+/**
+ * The figures an itinerary on the screen already shows: on a day of stops, a time of day or a length of time is the itinerary's --
+ * it shows each stop's window, when the day ends and how long it takes, worked out from the stops. The plan's own figure for the
+ * same thing was worked out another way and disagreed with it (West Lake: "Back by 11:30" under a last stop ending at 17:15, "Day
+ * length 150 min" for eight hours of stops). Not the time the stops must be over by (a flight to catch): the itinerary reads that
+ * one. They leave as a figure a section shows does, unless a figure that stays reads them (dropValues).
+ */
+function itineraryShows(comp: Composition, answers: Record<string, Object>): string[] {
+  if (comp.blocks.indexOf('itinerary') < 0) { return [] }
+  return comp.sketch.values.filter((v: SketchValue): boolean => (v.format === 'clock' || v.format === 'minutes') &&
+    answerOf(answers, 'deadline.' + v.id, ['yes'], [], DEADLINE_ABOVE) !== 'yes').map((v: SketchValue): string => v.id)
+}
+
+/**
+ * The input that sets when the itinerary's day starts: the one time of day the person sets on a screen with an itinerary. With it
+ * the itinerary draws no start field of its own, which beside the form's was a second start time only one of which did anything
+ * (West Lake: "Start time 09:00" and "Day starts 09:00"). '' when there is none, or more than one and so no telling which.
+ */
+function dayStart(comp: Composition): string {
+  if (comp.blocks.indexOf('itinerary') < 0) { return '' }
+  let times = comp.sketch.inputs.filter((i: SketchInput): boolean => i.kind === 'time')
+  return times.length === 1 ? times[0].id : ''
 }
 
 /** A screen's figures under its controls: the table, then the metric group. A widget shows them in its first section. */

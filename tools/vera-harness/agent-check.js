@@ -182,7 +182,8 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       assert.ok(partial.section !== null)
       assert.deepEqual(partial.missed, ['a photo'])
       assert.match(partial.failed, /does not do: a photo/)
-      assert.equal(partial.attempts, 4)
+      // The same need missed twice running stops the tries: a third ask would write the same section again.
+      assert.equal(partial.attempts, 2)
       assert.match(users[1], /it does not do: a photo/)
       assert.match(body.state, /saved and restored by the phone between visits/)
       let reads = [said(0.9, 0.2), said(0.9, 0.8)]
@@ -190,6 +191,21 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       const second = await writeSection(request, 'L', async () => good)
       assert.ok(second.section !== null)
       assert.equal(second.attempts, 2)
+    }
+    // One need, which Jev never reads the section as doing: the section runs, so it is served as the last resort, reported as
+    // missing that need, once the same miss comes back -- not thrown away for a notice alone.
+    {
+      const {CustomRequest: Req} = loadVera('agent/AgentCustom')
+      const request = Object.assign(new Req(), {needs: ['a photo'], prompt: 'p', compose: s => c.assembleProgram(comp, [], s)})
+      request.verify = async () => JSON.stringify({answers: {'does.0': {probabilities: {yes: 0.1, no: 0.9}}}})
+      const only = await writeSection(request, 'L', async () => good)
+      assert.ok(only.section !== null)
+      assert.deepEqual(only.missed, ['a photo'])
+      assert.equal(only.attempts, 2)
+      // The whole screen as one section is not served so: the route builds it another way.
+      request.whole = true
+      const whole = await writeSection(request, 'L', async () => good)
+      assert.equal(whole.section, null)
     }
     // A need declined on its own is reported as the writer said and not asked for again; the section serves the others.
     {
@@ -206,13 +222,22 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match(r.failed, /cannot: it needs the camera/)
     assert.equal(asks.length, 1)
     // The quick tries and their repairs fail: one more, thinking, with a larger budget; then it is refused.
-    r = await run([broken, broken, broken, broken])
+    const differs = n => broken + '\n// ' + n
+    r = await run([differs(1), differs(2), differs(3), differs(4)])
     assert.equal(r.section, null)
     assert.equal(r.attempts, 4)
     assert.deepEqual(asks.map(a => a.think), [false, false, false, true])
     assert.ok(asks[3].budget > asks[0].budget)
-    r = await run([broken, broken, broken, good])
+    r = await run([differs(1), differs(2), differs(3), good])
     assert.ok(r.section !== null && r.thought)
+    // The same reply twice is the same failure twice: the next try is the thinking one, not a third quick one.
+    r = await run([broken, broken, good])
+    assert.deepEqual(asks.map(a => a.think), [false, false, true])
+    assert.ok(r.section !== null && r.thought)
+    // A reply cut off before </view> is asked for again with the whole-screen budget, not the same limit.
+    r = await run([good.split('<view>')[0] + '<view>\nsections.push(', good])
+    assert.ok(r.section !== null)
+    assert.ok(asks[1].budget > asks[0].budget)
   }
 
   // Questions: Jev keeps only those a default cannot stand in for; the person's answer, when it differs from the

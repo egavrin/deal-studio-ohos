@@ -114,4 +114,37 @@ assert.equal(e.rawTarget, 'com.huawei.hmos.calendar/phone/MainAbility'); assert.
   assert.match(text(both, b), /0 of 3/)
   assert.match(text(both, act(both, 'toggle1', b, num(0)).st), /1 of 3/)
 }
+// the day's end and length come from the stops: 09:00 start, 90 + 75 + 60 minutes and two 15-minute gaps end at 13:15
+{
+  const day = build(['itinerary'], ON)
+  const shown = text(day, day.vm.execute('init'))
+  assert.match(shown, /13:15\|Day ends\|after the last stop/)
+  assert.match(shown, /4 h 15 min\|Day length\|3 stops/)
+  assert.match(shown, /Day starts/)
+}
+// a start time the screen's own form sets (port "start"): the stops follow it, and the block draws no start field of its own
+{
+  const {FragmentSpec, StateFieldSpec, PortSpec} = loadVera('VeraTemplates')
+  const {composeFragments} = loadVera('VeraSectionCompose')
+  const form = new FragmentSpec('form', '', '', [new StateFieldSpec('dayAt', 'number')], '', 'dayAt: 600', '',
+    '{ sections.push(ui.Section("content", "", "", [ui.TimeField("default", "Start time", state.dayAt, "setDay")])); }', [], [])
+  form.functions = 'function setDay(state: AppState, v: number): AppState {\n  return {dayAt: v__PASSTHROUGH__};\n}'
+  form.indexed = false
+  form.ports = [new PortSpec('writes', 'start', 'number', 'dayAt')]
+  const itinerary = fragments().find(f => f.kind === 'itinerary')
+  const src = composeFragments([form, itinerary], globals, [new Map(), values('itinerary', ON)])
+  const r = compileVeraSource(src)
+  const h = {env: new UiHostEnvironment()}
+  h.vm = new VirtualMachine(deserializeVbc2(r.vbc2 !== undefined ? r.vbc2 : r), h.env)
+  let st = h.vm.execute('init')
+  let shown = text(h, st)
+  assert.match(shown, /10:00 - 11:30/)
+  assert.match(shown, /14:15\|Day ends/)
+  assert.doesNotMatch(shown, /Day starts/)
+  st = h.vm.execute('setDay', [st, num(480)])
+  assert.match(text(h, st), /08:00 - 09:30/)
+  // the calendar event of the first stop starts at the form's time too
+  const ev = act(h, 'addEvent2', st, num(0)).effects[0]
+  assert.ok([...ev.values.values()].some(v => String(v) === '8'), 'the event starts at 8 o\'clock')
+}
 console.log('itinerary-check ok')

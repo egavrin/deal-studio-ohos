@@ -362,7 +362,8 @@ function checklistFragment(): FragmentSpec {
   listStyle.set('comfortable', 'looser spacing')
   return new FragmentSpec(
     'checklist',
-    'A browsable list of items the person can check off or mark one at a time; it is not a deck of cards to flip, a quiz or a game',
+    'A browsable list of items the person can check off or mark one at a time, with no time of day for each; it is not a deck of ' +
+    'cards to flip, a quiz or a game, and places to visit on a day out or a trip are an itinerary, not this',
     `@jsonable
 class Item {
   label: string;
@@ -1914,6 +1915,11 @@ class Stop {
  * anyway, so every leg after the first is right as soon as the person stands where it starts.
  * Calendar events are today, in the phone's own time zone (hour and minute, no epoch): CalendarKit's flat fields.
  * Publishes done and total, the names checklist publishes, so list_summary and progress_line read either.
+ *
+ * When the day ends and how long it takes are shown under the stops, worked out from the stops themselves: a figure of the plan's
+ * own beside the list worked the same out another way and said 11:30 under a last stop that ends at 17:15 (West Lake). The start
+ * comes from the screen's own form when it sets one (port "start", VeraCompose.ets's dayStart), and then the block draws no start
+ * field of its own: beside the form's it was a second start time, only one of which did anything.
  */
 function itineraryFragment(): FragmentSpec {
   let navigate: Map<string, string> = new Map<string, string>()
@@ -1925,7 +1931,8 @@ function itineraryFragment(): FragmentSpec {
   let spec = new FragmentSpec(
     'itinerary',
     'An ordered list of places or steps with a time window and duration each, which the person marks as reached one by one; ' +
-    'it can also open a stop in the maps app and add stops to the phone calendar. A day plan, a tour, a route of stops',
+    'it can also open a stop in the maps app and add stops to the phone calendar. A day plan, a day out, a trip itinerary, a tour, ' +
+    'a route of stops: the sights to visit, each at its time',
     STOP_CLASS,
     [new StateFieldSpec('stopsIDX', 'Stop[]'), new StateFieldSpec('startMinIDX', 'number'), new StateFieldSpec('gapIDX', 'number'),
      new StateFieldSpec('startPlaceIDX', 'string'), new StateFieldSpec('startLatIDX', 'string'), new StateFieldSpec('startLonIDX', 'string'),
@@ -1958,10 +1965,16 @@ function reachedCountIDX(state: AppState): number {
   return n;
 }
 
+function firstIDX(state: AppState): number {
+  let given: number = __PORT_start__;
+  if (given >= 0 && given <= 1439) { return given; }
+  return state.startMinIDX;
+}
+
 function visibleStopsIDX(state: AppState): number {
   let limit: number = __PORT_deadline__;
   if (limit < 0) { return state.stopsIDX.length(); }
-  let at: number = state.startMinIDX;
+  let at: number = firstIDX(state);
   let n: number = 0;
   let i: number = 0;
   while (i < state.stopsIDX.length()) {
@@ -2036,7 +2049,7 @@ function onNavigatedIDX(state: AppState, value: string): AppState {
 function addEventIDX(state: AppState, index: number): AppState {
   if (index < 0 || index >= state.stopsIDX.length()) { return state; }
   let s: Stop = state.stopsIDX[index];
-  let start: number = state.startMinIDX;
+  let start: number = firstIDX(state);
   let i: number = 0;
   while (i < index) {
     start = start + state.stopsIDX[i].minutes + state.gapIDX;
@@ -2111,12 +2124,14 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     let showCal: boolean = __CALENDAR_IDX__;
     let limit: number = __PORT_deadline__;
     let rows: ui.View[] = [];
-    let at: number = state.startMinIDX;
+    let at: number = firstIDX(state);
     let shown: number = 0;
+    let endsAt: number = at;
     let j: number = 0;
     while (j < count) {
       let s: Stop = state.stopsIDX[j];
       if (limit < 0 || at + s.minutes <= limit) {
+        endsAt = at + s.minutes;
         let icon: string = "pin";
         if (s.done) { icon = "check"; }
         let subtitle: string = ui.clockToString(at) + " - " + ui.clockToString(at + s.minutes) + " | " + ui.numberToString(s.minutes) + " min";
@@ -2134,8 +2149,9 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       at = at + s.minutes + state.gapIDX;
       j = j + 1;
     }
+    let ownStartIDX: boolean = __PORT_start__ < 0;
     sections.push(ui.Section("content", "", "", [
-      ui.TimeField("default", "Day starts", state.startMinIDX, "setStartIDX"),
+      ui.When(ownStartIDX, ui.TimeField("default", "Day starts", state.startMinIDX, "setStartIDX")),
       ui.NumberField("default", "Minutes between stops", state.gapIDX, 0, 180, "setGapIDX")
     ]));
     let emptyText: string = "Nothing is planned yet.";
@@ -2144,6 +2160,18 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       ui.When(shown === 0, ui.EmptyState("default", "No stops", emptyText, "", "", "pin")),
       ui.When(shown > 0, ui.ListGroup("default", "", rows))
     ]));
+    if (shown > 0) {
+      let hoursIDX: number = 0;
+      let restIDX: number = endsAt - firstIDX(state);
+      while (restIDX >= 60) { hoursIDX = hoursIDX + 1; restIDX = restIDX - 60; }
+      let lengthIDX: string = ui.numberToString(restIDX) + " min";
+      if (hoursIDX > 0) { lengthIDX = ui.numberToString(hoursIDX) + " h " + lengthIDX; }
+      if (hoursIDX > 0 && restIDX === 0) { lengthIDX = ui.numberToString(hoursIDX) + " h"; }
+      sections.push(ui.Section("content", "", "", [ui.MetricGroup("default", 2, [
+        ui.Stat("default", "Day ends", ui.clockToString(endsAt), "after the last stop", "clock"),
+        ui.Stat("default", "Day length", lengthIDX, ui.numberToString(shown) + " stops", "clock")
+      ])]));
+    }
     let notes: ui.View[] = [];
     if (limit >= 0 && shown < count) {
       notes.push(ui.InsetBanner("default", "Left out", ui.numberToString(count - shown) + " more would run past " + ui.clockToString(limit), "", "", "info"));
@@ -2183,12 +2211,15 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     [new PortSpec('writes', 'done', 'number', 'reachedCountIDX(state)', '', true),
      new PortSpec('writes', 'total', 'number', 'visibleStopsIDX(state)', '', true),
      // The time of day by which the stops must be over (a flight to catch); -1: no such time, every stop is shown.
-     new PortSpec('reads', 'deadline', 'number', '__PORT_deadline__', '-1', false, true)],
+     new PortSpec('reads', 'deadline', 'number', '__PORT_deadline__', '-1', false, true),
+     // The time of day the first stop starts, when the screen's form sets it (VeraCompose.ets's inputsPart); -1: the day's own.
+     new PortSpec('reads', 'start', 'number', '__PORT_start__', '-1', false, true)],
     [],
     ['needs_logic', 'needs_search_or_form'],
     ['needs_integration=__NAVIGATE_IDX__|__CALENDAR_IDX__']
   )
-  spec.owns = 'the start time of the day (the person sets it), the minutes between stops (the person sets them), the time each stop starts and ends, and how long each stop takes'
+  spec.owns = 'the start time of the day (the person sets it), the minutes between stops (the person sets them), the time each stop starts and ends, ' +
+    'how long each stop takes, the time the day ends after the last stop (when they are back) and how long the whole day takes'
   spec.tab = 'Itinerary'
   return spec
 }
@@ -2360,7 +2391,8 @@ function timelineFragment(): FragmentSpec {
   timelineStyle.set('comfortable', 'looser spacing')
   return new FragmentSpec(
     'timeline',
-    'Steps or events in time order, such as an itinerary, a daily schedule or a history, each with a time',
+    'Steps or events in time order, each with a time, only to read: a daily schedule or a history. Places to visit on a day out ' +
+    'or a trip, which the person goes to one after another, are an itinerary, not this',
     '',
     [],
     '',
