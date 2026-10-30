@@ -41,8 +41,8 @@ async function check(name, kind, project, version, expected) {
   const ui = { getRouter: () => router, getPromptAction: () => ({ showToast() { calls.push('toast'); } }) };
   const windowStage = { getMainWindowSync: () => ({ getUIContext: () => ui }) };
   const hilog = { error(...args) { throw Error('logged an error: ' + args.join(' ')); } };
-  const Controller = new Function('store', 'hilog', 'DOMAIN', 'routerApi', 'LaunchRoute', 'ProjectNavParams', 'RunProjectNavParams',
-    'return class Controller { ' + methods + ' }')(store, hilog, 0, {RouterMode: {Standard: 0}}, LaunchRoute, ParamsClass, ParamsClass);
+  const Controller = new Function('store', 'hilog', 'DOMAIN', 'routerApi', 'LaunchRoute', 'ProjectNavParams', 'RunProjectNavParams', 'FormNavParams',
+    'return class Controller { ' + methods + ' }')(store, hilog, 0, {RouterMode: {Standard: 0}}, LaunchRoute, ParamsClass, ParamsClass, ParamsClass);
   const c = new Controller();
   Object.assign(c, { contentReady: true, windowStageGeneration: 1, launchRevision: 0, pendingRoute: null, lastDestination: null,
     isolatedRoot: false, rootNeedsReset: false, context: { filesDir: '/files' },
@@ -53,6 +53,7 @@ async function check(name, kind, project, version, expected) {
   if (expected.includes('push pages/RunnerPage') && kind === 'run') {
     assert.deepEqual({ ...calls.params[calls.params.length - 1] }, { projectId: 'project-1', versionId: version.id, vbc2: version.vbc2 }, name);
   }
+  if (kind === 'form') { assert.deepEqual({ ...calls.params[0] }, { formId: 'project-1' }, name); }
   assert.equal(c.pendingRoute, null, name + ': the route is done');
   console.log('PASS ' + name);
 }
@@ -65,5 +66,7 @@ async function check(name, kind, project, version, expected) {
   await check('A widget row with no runnable version opens the project', 'run', project, null, ['push pages/ProjectPage']);
   await check('A widget row for a deleted project goes home and says so', 'run', null, null, ['replace pages/Index', 'clear', 'toast']);
   await check('An ordinary project launch does not run', 'project', project, runnable, ['push pages/ProjectPage']);
+  await check('An unbound live widget opens the page that binds it, over the current page', 'form', null, null,
+    ['push pages/WidgetBindPage']);
   await check('A home-screen shortcut runs on its own', 'shortcut', project, runnable, ['replace pages/RunnerPage', 'clear']);
 })().catch(error => { console.error(error); process.exitCode = 1; });
