@@ -375,7 +375,7 @@ struct GeneratePage {
   private widgetBase: string = ''
   /** The app preview's state when the Widget tab was opened: what the widget preview draws. */
   @State widgetSeed: string = ''
-  /** The card's title strip: the project's name. */
+  /** The project's name, for the card's frame (a live card does not show it). */
   private widgetTitle: string = 'App'
   /** The next repair asks for SEARCH/REPLACE edits (VeraRepair); false after edits failed to apply. */
   private repairByEdit: boolean = true

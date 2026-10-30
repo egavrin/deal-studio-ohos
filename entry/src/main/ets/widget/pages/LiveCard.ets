@@ -28,23 +28,25 @@ struct LiveCard {
   @LocalStorageProp('nodes') nodes: CardNode[] = []
 
   build() {
+    // A live widget has the whole card: no title strip with the app's name. A tap anywhere but on a button opens the app
+    // (an unbound card: the page that binds it); a button's own tap is the button's.
     Column({ space: 6 }) {
-      Row() {
-        Text(this.title).fontSize(13).fontWeight(FontWeight.Medium).fontColor('#475569')
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
-        Text('↗').fontSize(18).fontColor('#2563EB').padding(6)
-      }.width('100%').onClick(() => {
-        postCardAction(this, { action: 'router', abilityName: 'EntryAbility', params: { projectId: this.projectId, veraRun: '1', veraFormId: this.projectId.length === 0 ? this.formId : '' } })
-      })
       if (this.live) {
         ForEach(this.nodes, (node: CardNode) => { this.level1(node) }, (node: CardNode) => node.key + this.token)
       } else {
+        Text(this.title).fontSize(13).fontWeight(FontWeight.Medium).fontColor('#475569')
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.icon).fontSize(32)
       }
       if (this.status.length > 0) {
         Text(this.status).fontSize(11).fontColor('#64748B').maxLines(2)
       }
-    }.width('100%').height('100%').padding(12).backgroundColor(this.cardBackground)
+    }
+    .width('100%').height('100%').padding(12).backgroundColor(this.cardBackground)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      postCardAction(this, { action: 'router', abilityName: 'EntryAbility', params: { projectId: this.projectId, veraRun: '1', veraFormId: this.projectId.length === 0 ? this.formId : '' } })
+    })
   }
 
   @Builder

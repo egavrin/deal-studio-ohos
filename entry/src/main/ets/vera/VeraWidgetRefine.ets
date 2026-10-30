@@ -17,18 +17,18 @@ export function widgetRefinementPrompt(): string {
     'card on the phone\'s home screen. The person\'s request says what it should show; follow it. ' +
     'A widget is read at a glance, in a second: show only the few things that matter most -- one to three figures or short ' +
     'lines, each with a label of a word or two -- and at most two buttons, for the actions worth doing without opening the app. ' +
-    'Leave out everything else: lists and history, settings, inputs, explanations, and any heading that repeats the app\'s name ' +
-    '(the card already shows it in a title strip). When the request asks for more than fits, keep what matters most and drop ' +
+    'Leave out everything else: lists and history, settings, inputs, explanations, and the app\'s name or any title or ' +
+    'heading -- the space is too small for them. When the request asks for more than fits, keep what matters most and drop ' +
     'the rest. If the program already has a widget, replace it with the one asked for.\n' +
     'Preserve every existing class, init, view and handler unchanged, including their signatures and bodies. ' +
     'Add or replace only function widget(state: the init return type): ui.View and new uniquely named helpers/number handlers. ' +
     'Share the existing state; do not add fields or reset data. ' +
     'Keep the import lines exactly as they are. ' +
-    'If an action needs SDK/intent effects, omit it. Do not add a button that opens the app: tapping the card\'s title ' +
-    'strip already does. ' +
+    'If an action needs SDK/intent effects, omit it. Do not add a button that opens the app: a tap on the card outside a ' +
+    'button already does. ' +
     'widget must be synchronous and side-effect free, with no ticker, scrolling, inputs, images, or networking. ' +
     'Use ONLY the card-safe constructors below in widget and its helpers; the fullscreen view keeps its full catalogue. ' +
-    'AppTheme is optional and root-only; light theme only. Fit a 2x2 card with a title strip above your content. ' +
+    'AppTheme is optional and root-only; light theme only. The whole 2x2 card is the widget\'s; nothing is drawn above it. ' +
     'Prefer one Column with a summary and one Row of buttons; avoid long lists. ' +
     'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + LIVE_MAX_NODES.toString() +
     ' nodes, ' + LIVE_MAX_TEXT.toString() + ' UTF-16 characters/text, ' + LIVE_MAX_JSON.toString() +

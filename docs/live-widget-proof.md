@@ -7,8 +7,8 @@ This is the first slice of `ISSUE-home-screen-widgets.md`, Part 2, **not the com
 1. In **My apps**, use the title-bar menu item **Widget example**. It creates a separate `Widget counter` project; it never replaces an existing program.
 2. On its project page, open the "..." menu and tap **Add widget**.
 3. On this phone `isRequestPublishFormSupported()` returns false. The fallback opens the system widget manager. Add **VERA live app**.
-4. Tap the unbound widget's title, then choose a project in **Choose widget app**.
-5. On the counter card, +/− run the VERA handler in the form extension. The title/arrow opens the full program.
+4. Tap the unbound widget, then choose a project in **Choose widget app**.
+5. On the counter card, +/− run the VERA handler in the form extension. A tap anywhere else on the card opens the full program. A live card has no title strip: the widget has the whole card.
 
 The same Widget action is available for any project. A program without `widget(state)` displays a tile-like fallback and opens the app. An uncompiled project opens its project page.
 
@@ -67,7 +67,7 @@ the box empty -- "What should the widget show?" -- and the **Widget** tab open. 
 - **What a widget is, to the model:** a second view of the same state -- `widget(state)` draws the very state `view(state)`
   draws -- read at a glance: one to three figures or short lines with labels of a word or two, at most two buttons for the
   actions worth doing without opening the app, nothing else (no lists, history, settings, inputs, explanations, no heading
-  repeating the app's name). When the request asks for more, keep what matters most. No button that opens the app.
+  with the app's name: the card has no title strip). When the request asks for more, keep what matters most. No button that opens the app.
 - **Held to it:** Make widget's validation refuses more than 2 buttons or 8 texts (`WIDGET_MAX_BUTTONS`,
   `WIDGET_MAX_TEXTS`), with a reason the repair loop passes to the next attempt. The card's own budgets are unchanged.
 - **The app cannot change:** `spliceWidget` (VeraCompiler) builds the program from the saved one as it is plus the reply's

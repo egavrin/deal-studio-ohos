@@ -12,6 +12,7 @@ const CARD_SIDE: number = 172
 export struct WidgetPreview {
   @Prop @Watch('restart') vbc2: string = ''
   @Prop @Watch('restart') seedState: string = ''
+  /** Passed to the session, as the card's frame carries it; a live card does not show it. */
   @Prop title: string = 'App'
   @State frame: LiveFrame = new LiveFrame()
   @State error: string = ''
@@ -53,12 +54,8 @@ export struct WidgetPreview {
 
   build() {
     Column({ space: 12 }) {
+      // As LiveCard: the widget has the whole card, with no title strip.
       Column({ space: 6 }) {
-        Row() {
-          Text(this.title).fontSize(13).fontWeight(FontWeight.Medium).fontColor('#475569')
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
-          Text('↗').fontSize(18).fontColor('#2563EB').padding(6)
-        }.width('100%')
         if (this.frame.live) {
           ForEach(this.frame.nodes, (node: CardNode) => { this.level1(node) }, (node: CardNode) => node.key + this.frame.token)
         }
@@ -66,6 +63,7 @@ export struct WidgetPreview {
       .width(CARD_SIDE)
       .height(CARD_SIDE)
       .padding(12)
+      .justifyContent(FlexAlign.Center)
       .backgroundColor(this.frame.background)
       .borderRadius(20)
       .clip(true)
