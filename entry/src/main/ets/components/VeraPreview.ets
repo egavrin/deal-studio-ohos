@@ -15,8 +15,7 @@ import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraNumberValue, VeraStr
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock, unitAfter, keepUnits } from '../vera/VeraUi'
 import { runRawIntent } from '../vera/VeraIntents'
 import { runSdkAdapter } from '../vera/VeraSdkBackend'
-import { LengthMetrics } from '@ohos.arkui.node'
-import mediaquery from '@ohos.mediaquery'
+import { LengthMetrics, mediaquery, matrix4 } from '@kit.ArkUI'
 
 import { catalogKinds } from '../vera/VeraUiCatalog'
 import { iconPath, ICON_STROKE, ICON_VIEWPORT, ICON_ORIGIN } from '../vera/VeraIcons'
@@ -29,8 +28,7 @@ import { LiveNode, toLive, reconcile, armReveal } from './VeraLiveTree'
 import { carryState } from '../vera/VeraStateCarry'
 import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
-import matrix4 from '@ohos.matrix4'
-import displaySync from '@ohos.graphics.displaySync'
+import { displaySync } from '@kit.ArkGraphics2D'
 import { decodeGfx, paintGfx, pointerValue, gfxFit, gfxToSurface, gfxNaturalHeight } from '../vera/VeraGfx'
 
 /**
@@ -1308,7 +1306,7 @@ export struct VeraPreview {
     .alignContent(Alignment.Bottom)
   }
 
-  @Builder
+  @LocalBuilder
   consentSheet(effect: HostEffect) {
     Column() {
       Column() {
@@ -1363,7 +1361,7 @@ export struct VeraPreview {
     .width('100%')
   }
 
-  @Builder
+  @LocalBuilder
   programFrame() {
     Column() {
       if (this.error.length > 0) {
@@ -1455,7 +1453,7 @@ export struct VeraPreview {
     return false
   }
 
-  @Builder
+  @LocalBuilder
   renderChildren(node: LiveNode) {
     // Keyed by position and kind. Position, because reconcile keeps a node's
     // identity across frames, so a retained component is still reading a node
@@ -1535,7 +1533,7 @@ export struct VeraPreview {
   /** Vertical padding belongs to the fill, so an unfilled section has none. */
 
   /** A ui.Snackbar, drawn over the program at the bottom of its window (see programFrame). */
-  @Builder
+  @LocalBuilder
   snackbarBar(node: LiveNode) {
       Row({ space: this.t().gapBase }) {
         Text(node.text)
@@ -2100,7 +2098,7 @@ export struct VeraPreview {
   }
 
   /** An icon on a tinted disc: the anchor that lets the eye find a row or an empty screen. */
-  @Builder
+  @LocalBuilder
   iconChip(name: string, box: number, fill: string, colour: string) {
     Column() {
       this.drawIcon(name, Math.round(box * 0.5), colour)
@@ -2121,7 +2119,7 @@ export struct VeraPreview {
    * are stroked rather than filled -- see VeraIcons for why -- with round caps,
    * which is what keeps a two-segment tick from ending in two blunt chisels.
    */
-  @Builder
+  @LocalBuilder
   drawIcon(name: string, size: number, colour: string) {
     // The viewport is the whole trick, and its unit is half the trick.
     //
@@ -2158,7 +2156,7 @@ export struct VeraPreview {
   }
 
   /** One legend entry for a two-series ui.Sparkline: a tone-coloured dot and its name. */
-  @Builder
+  @LocalBuilder
   sparklineLegendEntry(text: string, colour: string) {
     Row({ space: this.t().gapTight }) {
       Column().width(8).height(8).borderRadius(4).backgroundColor(colour)
@@ -2166,7 +2164,7 @@ export struct VeraPreview {
     }
   }
 
-  @Builder
+  @LocalBuilder
   renderNode(node: LiveNode, parentKind: string) {
     if (node.kind === 'apptheme') {
       // The look itself is picked up in reconcileTheme, off the root of the
@@ -3646,7 +3644,7 @@ export struct VeraPreview {
           Row({ space: 6 }) {
             // barHeights is called once here, to build the array this
             // ForEach iterates -- not from inside its item builder. That
-            // distinction is the whole fix: renderNode is @Builder, and
+            // distinction is the whole fix: renderNode is @LocalBuilder, and
             // five shapes of this ForEach's item builder reading node.max-
             // imum itself -- a let before the loop, a @Component method
             // call, a bare function call, and two hand-written inline
