@@ -1,5 +1,68 @@
 # Changelog
 
+## TextField input buffering and commit lifecycle
+
+This change moves `ui.TextField` from per-keystroke VM execution to field-local buffering with deferred commits. Its purpose is to keep ordinary text editing responsive while avoiding repeated VM execution, state persistence, and view reconciliation for every character.
+
+### 1. Per-field input buffer
+
+- Each `ui.TextField` maintains its own pending edit state. Typing in one field does not reset or overwrite the debounce timer or buffered value of another field.
+- Every text change updates the local field buffer and restarts a **400 ms debounce timer**.
+- If no further input arrives for 400 ms, the latest buffered value is committed. Intermediate values from the same uninterrupted typing burst are not individually dispatched to the VM.
+- Submit and blur request an immediate commit rather than waiting for the debounce interval. Submit uses `SubmitEvent.text`; editing end reads the generation-bound `TextInputController`, so completion does not depend on a final `onChange`. A commit request without authoritative final text waits for active IME composition to finish, without an additional debounce delay or duplicate dispatch.
+- Validation reflects the buffered draft without executing the VM or rebinding native text on every keystroke; validation issues are suppressed during composition.
+
+### 2. Ordering with form actions
+
+- A field's own debounced/submit commit is intentionally independent: it commits only that field and does not flush a sibling's pending draft, so each field keeps its own debounce deadline. A field handler therefore observes other fields' last-committed values, not in-progress drafts; cross-field consistency is established when a control action, surface gesture, or slow ticker flushes all ready edits.
+- If a field is in IME composition, the action remains pending until composition finishes and the final text value can be committed. The action is then resumed in the established order.
+- Deferred control actions capture their source node, relevant control state, and form-field dependencies, and are revalidated after flushing. Cancelling a composing field discards dependent or unknown-scope actions while preserving known-independent actions. Form scope is a conservative ordering policy, not analysis of handler dependencies.
+- Picker and menu actions retain their opening-time identity. Adjacent queued slider moves coalesce with a following End while retaining its final persistence request. Deferred work resumes outside view reconciliation.
+- Surface Move flushes ready edits and revalidates the accepted gesture before executing. Up/Cancel use the deferred-action queue during composition and are delivered at most once after final text, subject to gesture, node, and program-generation checks. Moves during composition are skipped; rejected Downs never create partial gestures. Per-finger state preserves multitouch independence and prevents a reused touch ID from discarding a queued terminal event.
+- Tickers with intervals of **500 ms or longer** flush ready edits before dispatch. Faster tickers wait while drafts are pending; all tickers skip during composition and retain elapsed time for the next delivered tick. Effect success/error replies and consent refusals use the deferred-action path while retaining lifecycle guards.
+- Surface frames pause during composition but otherwise intentionally use committed VM state without forcing a text commit every frame. Their periodic saves and snapshots wait while drafts remain pending.
+- Preview disappearance flushes ready edits and detaches its controller. Generate refinement/fullscreen handoffs and Chat reference capture flush and snapshot before proceeding; active composition blocks those handoffs until completion and retry. Project rename and question inputs also use authoritative native completion and stale-callback guards.
+
+### 3. Stale edit and callback invalidation
+
+Pending timers, commit requests, and deferred actions are invalidated when their target is no longer valid. The invalidation cases include:
+
+- an external program update changes the field value;
+- the field is replaced or its relevant identity/configuration changes;
+- the preview program is loaded/replaced, or the component enters a lifecycle state in which pending work must no longer execute.
+
+Callbacks validate that they still refer to the current field/edit generation before committing. This prevents a delayed callback from an older edit or program instance from overwriting newer state. Reload cancels old edits rather than committing them into the replacement program.
+
+Renderer-only live-tree membership epochs replace repeated recursive membership queries with constant-time comparisons, with one linear stamping pass per render. The epoch advances before reconciliation and reachable nodes are stamped afterward, so removed nodes and partially reconciled trees cannot pass stale membership checks. Form-scope discovery, path lookup, and dependency collection still traverse the tree.
+
+### 4. Preserve input identity during accepted commits
+
+An accepted text commit that the handler stores unchanged retains the live input node and its field generation. This avoids unnecessary component replacement during ordinary typing and gives ArkUI the opportunity to preserve focus and cursor state.
+
+**Postponed limitation:** a handler that normalizes text, for example by trimming a trailing space, can still advance `fieldGeneration` and recreate the native `TextInput`, potentially losing focus, keyboard, or caret position. Programmatic value changes can do the same. Separating edit/callback invalidation from native input identity remains unfinished; this change does not claim to fix that behavior.
+
+A genuine field replacement or incompatible field change invalidates the previous edit generation. Presentation-only updates should not increment the generation unless the implementation explicitly treats them as a replacement; unnecessary generation changes can recreate the input and disturb focus or cursor position.
+
+### 5. Expected performance impact
+
+The principal expected gain is a reduction in the number of expensive downstream operations, not the elimination of per-keystroke UI events. Each keystroke still updates the local buffer and debounce timer, but a burst of typing is consolidated into one VM commit after the pause.
+
+For a continuous typing burst of **N** characters where every inter-character gap is shorter than 400 ms, the previous per-keystroke path could trigger N VM dispatches, N state saves, and N reconciliations. The debounced path triggers one of each after the final pause. The theoretical reduction in each of those operation counts is `(N - 1) / N`:
+
+| Characters in one burst (N) | Downstream commits before | Downstream commits after | Theoretical reduction |
+| ---: | ---: | ---: | ---: |
+| 5 | 5 | 1 | 80% |
+| 10 | 10 | 1 | 90% |
+| 20 | 20 | 1 | 95% |
+| 40 | 40 | 1 | 97.5% |
+
+These are operation-count estimates for an uninterrupted burst in a single field, not measured CPU, energy, latency, or frame-rate improvements. Pauses of 400 ms or longer can produce separate commits; separate fields maintain independent debounce windows; explicit form actions can force an earlier flush. Actual end-to-end gains depend on VM cost, persistence cost, reconciliation cost, and the user's typing pattern.
+
+### 6. Verification and remaining device checks
+
+- The latest visual regression run passed all **379 checks**, including updated existing fixtures for scoped actions, membership epochs, surface continuation/deferred terminals, and ticker/effect ordering. No new test cases were added for the latest gesture fixes.
+- Validation (**14 checks**), graphics, mixed surface/form state, date-field checks, JavaScript syntax checks, `git diff --check`, and the unsigned ArkTS build passed.
+
 ## Fix miscellaneous errors
 
 - Fixed warm launches from the widget, shortcuts and the launcher icon no longer navigating: `navigateToProject()` had been moved inside `extractDevParameters`, which returns early for app callers, so the route queued by `extractProjectId` in `onNewWant` was never drained. It is now called explicitly at the end of both `onCreate` and `onNewWant`, after both extracts, and `extractDevParameters` no longer touches navigation — which also stops `hdc shell aa start` launches from queueing their route twice.
