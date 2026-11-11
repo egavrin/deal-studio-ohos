@@ -32,6 +32,7 @@ import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { modelSupportNote } from '../vera/VeraEmbeddings'
 import { ensureSdkEmbeddings } from '../vera/VeraSdkEmbeddingCache'
 import { ensureIntentEmbeddings } from '../vera/VeraIntentEmbeddingCache'
+import { RunLogRecord, appendRunLog } from '../vera/VeraRunLog'
 import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchmark'
 import { sdkSearchRequested, runSdkSearchProbe } from '../vera/VeraSdkProbe'
 import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
@@ -619,7 +620,40 @@ export struct GeneratePage {
     if (this.metricRunId !== run) { return }
     this.collectMetricSideCalls(run)
     this.metricTotals.elapsedMs += Math.max(0, Date.now() - this.genStartTime)
+    this.writeRunLog()
     this.metricRunId = -1
+  }
+
+  /**
+   * Append one record to {filesDir}/vera/run-log.jsonl now that this run's
+   * metrics are final. Best-effort: a logging failure is swallowed so it can
+   * never break a generation. Called once per run from finishMetrics.
+   */
+  private writeRunLog(): void {
+    try {
+      let totals = this.metricTotals
+      let rec = new RunLogRecord()
+      rec.ts = Date.now()
+      rec.prompt = this.pendingRequest
+      rec.mode = this.metricMode
+      rec.provider = totals.provider
+      rec.model = totals.model
+      rec.path = !this.compiled ? 'not-built' :
+        (this.modelWrote ? 'generate' : (this.compositionJson.length > 0 ? 'compose' : 'generate'))
+      rec.compiled = this.compiled
+      rec.verdict = this.status
+      rec.elapsedMs = totals.elapsedMs
+      rec.attempts = totals.attempts
+      rec.modelCalls = totals.runs
+      rec.inputTokens = totals.inputTokens
+      rec.cacheHitTokens = totals.cacheHitTokens
+      rec.outputTokens = totals.outputTokens
+      rec.estimatedUsd = totals.estimatedUsd
+      rec.partial = totals.partial
+      appendRunLog(this.hostContext().filesDir, rec)
+    } catch (e) {
+      console.warn('VERA-RUNLOG write failed: ' + (e as Error).message)
+    }
   }
 
   private copyMetrics(metrics: VersionMetrics): VersionMetrics {
@@ -1232,7 +1266,6 @@ export struct GeneratePage {
     this.generatedSource = result.source
     this.compiledSource = result.source
     this.compiledVbc2 = result.vbc2
-    this.acceptRequest()
     // The record of the screen, when it rebuilds exactly this program: a request to add, remove or move a section is then
     // answered without the model (tryStructuralEdit); with none, such a request is refined by the model as before.
     this.compositionJson = result.record !== null ? compositionToJson(result.record!) : ''
@@ -1261,6 +1294,10 @@ export struct GeneratePage {
     endFields['via'] = 'compose'
     endFields['dropped'] = composed.dropped.join('; ')
     trace('gen-end', endFields)
+    // Accept now that compiled, status and compositionJson are final, so the
+    // finishMetrics call inside acceptRequest writes the run log with the run's
+    // true outcome instead of the mid-run 'Composing...' state.
+    this.acceptRequest()
     this.closeRun(true, 0)
     if (!hadProgram) { this.openWhole() }
   }
