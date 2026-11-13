@@ -36,6 +36,11 @@ no model support: embedding search for SDK functions and intents falls back to
 keywords, and the Generate and Chat screens say so in their status line. After
 fetching it, delete `entry/.cxx` once so CMake sees it.
 
+Physics is the same kind of thing: **Jolt** (v5.6.0) under `entry/src/main/cpp/JoltPhysics` (git-ignored),
+commands in the comment near the end of `entry/src/main/cpp/CMakeLists.txt`; without it `libphys.so` is a
+stub and `physInit()` returns 0. Host test, no phone: `cmake -S tools/phys-world-test -B /tmp/phys-world-test-build
+&& cmake --build /tmp/phys-world-test-build -j && /tmp/phys-world-test-build/phys_world_test`.
+
 **If any of them prints an ERROR line, stop and ask the person working with you
 — do not guess a path and do not install anything.** Ask exactly this:
 

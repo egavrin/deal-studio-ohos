@@ -11,7 +11,7 @@
  */
 
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraNumberValue, VeraStringValue,
-  VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
+  VeraBooleanValue, VeraObjectValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock, formatVeraDate, unitAfter, keepUnits } from '../vera/VeraUi'
 import { veraStateStamp } from '../vera/VeraStateStamp'
 import { scheduleCardRefresh } from '../vera/FormUpdater'
@@ -28,11 +28,14 @@ import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { LiveNode, toLive, reconcile, armReveal, markIconRoom } from './VeraLiveTree'
 import { carryState } from '../vera/VeraStateCarry'
-import { MotionPose, motionPose, motionDuration, pivotPercent, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
-  columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks, MOTION_BUDGET_MS } from '../vera/VeraMotion'
+import { MotionPose, motionPose, motionDuration, pivotPercent, poseMatrix, poseFromArray, multiplyMatrices, perspectiveMatrix,
+  columnMajor, poseToPixels, samePose, animatedPose, TRANSFORM_DISTANCE, MOTION_BUDGET_MS } from '../vera/VeraMotion'
 import { displaySync } from '@kit.ArkGraphics2D'
 import { decodeGfx, paintGfx, pointerValue, gfxFit, gfxToSurface, gfxNaturalHeight, GfxOp } from '../vera/VeraGfx'
 import { TimerFace, timerFace } from '../widget/CardModel'
+import { decodeScene, sceneEventValue } from '../vera/VeraScene'
+import { WorldBox, WorldPick, WorldGesture } from './VeraWorld3D'
+import { SimEvent } from '../vera/VeraPhysics'
 
 /**
  * The rotation of every spinning shape on screen.
@@ -65,26 +68,6 @@ class PoseAnim {
   constructor(from: number[], to: number[], start: number, duration: number) {
     this.from = from; this.to = to; this.start = start; this.duration = duration
   }
-}
-
-/** One drawn layer of a scene: the node whose children are its content, and what the pose made of it this frame. */
-class SceneLayer {
-  node: LiveNode
-  side: number = 0
-  shade: number = 1
-  depth: number = 0
-  rank: number = 0
-  matrix: number[]
-  opacity: number
-  visible: boolean
-  constructor(node: LiveNode, matrix: number[], opacity: number, visible: boolean) {
-    this.node = node; this.matrix = matrix; this.opacity = opacity; this.visible = visible
-  }
-}
-
-class SceneFrame {
-  at: number = -1
-  layers: SceneLayer[] = []
 }
 
 class FieldEdit {
@@ -167,6 +150,16 @@ const SURFACE_SAVE_MS: number = 5000
 const SLOW_TICK_MS: number = 500
 /** The longest a frame says has passed, in ms, so a pause -- the app in the background, a slow frame -- is not a leap. */
 const SURFACE_MAX_ELAPSED_MS: number = 100
+/**
+ * The most world events (hits, settling) that reach the program in one frame: each is a VM call and, when it changes the
+ * state, a build and a view refresh. Hits come at most four a second already (HIT_INTERVAL_S).
+ */
+const WORLD_EVENTS_PER_FRAME: number = 4
+
+/** Whether a handler gave back the state it was given: the same value, or one that encodes the same (a small state, cheap). */
+function sameState(a: RuntimeValue, b: RuntimeValue): boolean {
+  return a === b || JSON.stringify(encodeRuntimeValue(a)) === JSON.stringify(encodeRuntimeValue(b))
+}
 
 /** Whether a moving part's trigger is the one it last had: NaN (a trigger worked out as math.sqrt of a negative number) is the same as NaN, or it would restart every paint. */
 function sameTrigger(a: number, b: number): boolean {
@@ -521,7 +514,6 @@ export struct VeraPreview {
   /** The trigger each Motion had when last seen, by its place in the tree; a change starts its animation. */
   private motionTriggers: Map<string, number> = new Map<string, number>()
   private poseAnims: Map<LiveNode, PoseAnim> = new Map<LiveNode, PoseAnim>()
-  private sceneFrames: Map<LiveNode, SceneFrame> = new Map<LiveNode, SceneFrame>()
   private spinPeriod: number = 0
   /**
    * The program's ui.Surfaces: each one's canvas by its node (reconcile keeps a node while it stays a surface),
@@ -532,6 +524,17 @@ export struct VeraPreview {
    * brought up to date every SURFACE_VIEW_MS, which is plenty for a score and nothing like sixty times a second.
    */
   private surfaces: Map<LiveNode, SurfaceBox> = new Map<LiveNode, SurfaceBox>()
+  /**
+   * The program's ui.Worlds: each one's 3D scene by its node. A world's build function runs once per state, in
+   * renderView (reconcileWorlds), never per frame; what moves on its own -- orbits and spins -- is moved by the box on the
+   * surface frame loop, which runs while any world needs it. Frames and pose-writing ms since the last VERA-WORLD line.
+   */
+  private worlds: Map<LiveNode, WorldBox> = new Map<LiveNode, WorldBox>()
+  /** What the worlds told this frame and the node each came from, dispatched once the boxes have all stepped. */
+  private worldEvents: SimEvent[] = []
+  private worldEventNodes: LiveNode[] = []
+  private worldFrames: number = 0
+  private worldReportAt: number = 0
   /** Each ui.Timer's controller: the platform's TextTimer ticks by itself once started. */
   private textTimers: Map<LiveNode, TextTimerController> = new Map<LiveNode, TextTimerController>()
   private textTimerOf(node: LiveNode): TextTimerController {
@@ -575,7 +578,7 @@ export struct VeraPreview {
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'datefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
     'timeline', 'timelineitem', 'skeleton', 'timer', 'spinner', 'snackbar', 'sparkline', 'backhandler',
-    'table', 'tablerow', 'motion', 'layers', 'transform', 'stage', 'surface']
+    'table', 'tablerow', 'motion', 'layers', 'transform', 'surface', 'world']
 
   aboutToAppear(): void {
     this.disposed = false
@@ -742,7 +745,6 @@ export struct VeraPreview {
     let next: Map<LiveNode, PoseAnim> = new Map<LiveNode, PoseAnim>()
     let started = this.visitMotion(root!, '', now, next)
     this.poseAnims = next
-    this.sceneFrames.clear()
     if (started) { this.motionClock.now = now }
     if (this.motionTimer < 0 && this.motionRunning(root!, now)) {
       this.motionTimer = setInterval(() => {
@@ -814,100 +816,20 @@ export struct VeraPreview {
   }
 
   /**
-   * Every layer of a scene this frame, flat. A Transform's matrix is composed with its parents' here, in code, and each layer
-   * is then drawn as a sibling with its final matrix: ArkUI is asked for one transform per layer and never has to compose
-   * nested 3D ones. Cached by clock value, because every attribute of every layer asks for it.
+   * The matrix of a Transform this frame: the pose being shown (distances in px, as ArkUI's matrices want) turned about the
+   * node's centre, behind the viewer distance TRANSFORM_DISTANCE. Reads the motion clock, so the node redraws with the glide.
    */
-  private sceneFrame(root: LiveNode): SceneFrame {
+  private transformMatrix(node: LiveNode): Object {
     let now = this.motionClock.now
-    let cached = this.sceneFrames.get(root)
-    if (cached !== undefined && cached.at === now) { return cached }
-    let frame = new SceneFrame()
-    frame.at = now
     let density = this.getUIContext().vp2px(1)
-    let distance = stageDistance(root.kind === 'stage' ? root.numberValue : 0) * density
-    if (root.kind === 'stage') {
-      for (let child of root.children) {
-        if (child.kind === 'transform') { this.collectLayers(child, identityMatrix(), 1, distance, density, now, frame) }
-      }
-    } else {
-      this.collectLayers(root, identityMatrix(), 1, distance, density, now, frame)
-    }
-    let depths: number[] = []
-    for (let layer of frame.layers) { depths.push(layer.depth) }
-    let ranks = depthRanks(depths)
-    for (let i = 0; i < frame.layers.length; i++) { frame.layers[i].rank = ranks[i] }
-    this.sceneFrames.set(root, frame)
-    return frame
-  }
-
-  private collectLayers(node: LiveNode, parent: number[], opacity: number, distance: number, density: number, now: number,
-      frame: SceneFrame): void {
     let pose = poseToPixels(this.shownPose(node, now), density)
-    let composed = multiplyMatrices(parent, poseMatrix(pose))
-    let alpha = opacity * pose[7]
-    let hasContent = false
-    for (let child of node.children) { if (child.kind !== 'transform') { hasContent = true } }
-    if (hasContent) {
-      let visible = node.style !== 'solid' || facesViewer(composed, distance)
-      let layer = new SceneLayer(node, multiplyMatrices(perspectiveMatrix(distance), composed), alpha, visible)
-      layer.side = node.minimum
-      layer.depth = composed[11]
-      if (node.style === 'solid') { layer.shade = faceShade(composed) }
-      frame.layers.push(layer)
-    }
-    for (let child of node.children) {
-      if (child.kind === 'transform') { this.collectLayers(child, composed, alpha, distance, density, now, frame) }
-    }
-  }
-
-  private layerAt(root: LiveNode, index: number): SceneLayer | null {
-    let frame = this.sceneFrame(root)
-    return index < frame.layers.length ? frame.layers[index] : null
-  }
-
-  private layerOpacity(root: LiveNode, index: number): number {
-    let layer = this.layerAt(root, index)
-    return layer !== null ? layer!.opacity : 0
-  }
-
-  private layerRank(root: LiveNode, index: number): number {
-    let layer = this.layerAt(root, index)
-    return layer !== null ? layer!.rank : 0
-  }
-
-  private layerSide(root: LiveNode, index: number): number {
-    let layer = this.layerAt(root, index)
-    return layer !== null ? layer!.side : 0
-  }
-
-  private layerShade(root: LiveNode, index: number): number {
-    let layer = this.layerAt(root, index)
-    return layer !== null ? layer!.shade : 1
-  }
-
-  private layerVisible(root: LiveNode, index: number): boolean {
-    let layer = this.layerAt(root, index)
-    return layer !== null && layer!.visible
-  }
-
-  private layerTransform(root: LiveNode, index: number): Object {
-    let layer = this.layerAt(root, index)
-    let m = columnMajor(layer !== null ? layer!.matrix : identityMatrix())
+    let m = columnMajor(multiplyMatrices(perspectiveMatrix(TRANSFORM_DISTANCE * density), poseMatrix(pose)))
     return matrix4.init([m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]])
   }
 
-  /** The ids of a scene's layers, in order: when the set of layers changes the drawn layers are rebuilt. */
-  private layerKeys(root: LiveNode): string[] {
-    let keys: string[] = []
-    let frame = this.sceneFrame(root)
-    for (let i = 0; i < frame.layers.length; i++) { keys.push(i.toString() + ':' + frame.layers[i].node.children.length.toString()) }
-    return keys
-  }
-
-  private layerNode(root: LiveNode, index: number): LiveNode {
-    let layer = this.layerAt(root, index)
-    return layer !== null ? layer!.node : root
+  /** The opacity entry of the pose a Transform shows now. */
+  private transformOpacity(node: LiveNode): number {
+    return this.shownPose(node, this.motionClock.now)[7]
   }
 
   /** First spinning shape wins; one shared angle is enough. */
@@ -1036,7 +958,6 @@ export struct VeraPreview {
     this.stopPartsTimer()
     this.motionTriggers.clear()
     this.poseAnims.clear()
-    this.sceneFrames.clear()
   }
 
   aboutToDisappear(): void {
@@ -1046,6 +967,8 @@ export struct VeraPreview {
     this.disposed = true
     this.invalidateEffects()
     this.stopAllTimers()
+    // Each world's scene goes once its Component3D has (WorldBox.retire).
+    this.retireWorlds()
     // A running surface saves every few seconds; the frames since the last save would otherwise be lost.
     if (this.liveSurfaces.length > 0 && !this.previewOnly) { this.persistState() }
     // The same applies to the dark-mode listener: it holds this component, and
@@ -1058,6 +981,11 @@ export struct VeraPreview {
       }
       this.darkListener = null
     }
+  }
+
+  private retireWorlds(): void {
+    for (let box of this.worlds.values()) { box.retire() }
+    this.worlds.clear()
   }
 
   private stateKeys(): string[] {
@@ -1183,6 +1111,7 @@ export struct VeraPreview {
    * frame loop is the one asking (it paints straight after).
    */
   private reconcileSurfaces(paint: boolean): void {
+    this.reconcileWorlds()
     let found: LiveNode[] = []
     let timers: LiveNode[] = []
     if (this.liveRoot !== null) {
@@ -1199,8 +1128,136 @@ export struct VeraPreview {
     this.liveSurfaces = found
     let animated = false
     for (let node of found) { if (node.action.length > 0) { animated = true } }
+    if (this.worldsNeedFrames()) { animated = true }
     if (animated && !this.previewOnly && !this.pageHidden && this.error.length === 0) { this.startSurfaceLoop() } else { this.stopSurfaceLoop() }
     if (paint) { this.paintSurfaces() }
+  }
+
+  /**
+   * Bring the worlds in line with the frame just reconciled. Each world's build function runs on the current state and
+   * its scene is given the result when that differs from what it was last given (or the theme changed); a world whose
+   * node left the tree is retired, and its scene destroyed once its Component3D has gone. A build that traps, or returns
+   * a world that breaks the contract (two bodies with one id, too many bodies), stops the program as a draw error does.
+   */
+  private reconcileWorlds(): void {
+    let found: LiveNode[] = []
+    if (this.liveRoot !== null) { this.collectKind(this.liveRoot!, 'world', found) }
+    for (let node of Array.from(this.worlds.keys())) {
+      if (found.indexOf(node) < 0) {
+        (this.worlds.get(node) as WorldBox).retire()
+        this.worlds.delete(node)
+      }
+    }
+    if (found.length === 0 || this.vm === null || this.currentState === null || this.disposed) { return }
+    let theme = this.t()
+    for (let node of found) {
+      let box = this.worlds.get(node)
+      if (box === undefined) {
+        box = new WorldBox()
+        this.worlds.set(node, box)
+      }
+      if (node.label.length === 0 || this.error.length > 0) { continue }
+      try {
+        if (this.host !== null) { this.host!.effectsAllowed = false }
+        let spec = decodeScene(this.vm!.execute(node.label, [this.currentState!]))
+        let key = JSON.stringify(spec)
+        if (key !== box.key || theme !== box.theme) {
+          box.key = key
+          box.theme = theme
+          box.apply(spec, theme)
+        }
+      } catch (e) {
+        console.error('VERA-WORLD build TRAP fn=' + node.label + ' err=' + (e as Error).message)
+        this.error = 'World error in ' + node.label + ': ' + (e as Error).message
+        this.stopAllTimers()
+        return
+      }
+    }
+  }
+
+  private worldsNeedFrames(): boolean {
+    for (let box of this.worlds.values()) { if (box.needsFrames()) { return true } }
+    return false
+  }
+
+  /**
+   * One frame for every world, then what they told the program -- hits, settling -- at most WORLD_EVENTS_PER_FRAME of it
+   * (the rest waits in each box for the next frame), each through the field-action queue as a tap's is. Every two seconds
+   * a VERA-WORLD line: frames, bodies, loose bodies awake, the ms spent writing poses and stepping the physics.
+   */
+  private tickWorlds(now: number, elapsed: number): void {
+    if (this.worlds.size === 0) { return }
+    let bodies = 0
+    let awake = 0
+    this.worldEvents = []
+    this.worldEventNodes = []
+    for (let entry of Array.from(this.worlds.entries())) {
+      let node = entry[0]
+      let box = entry[1]
+      box.frame(elapsed)
+      bodies += box.bodyCount()
+      awake += box.awake
+      let room = WORLD_EVENTS_PER_FRAME - this.worldEvents.length
+      if (node.action.length === 0 || this.previewOnly) {
+        // No handler: nobody to tell.
+        box.takeEvents(1000)
+      } else if (room > 0) {
+        for (let e of box.takeEvents(room)) {
+          this.worldEvents.push(e)
+          this.worldEventNodes.push(node)
+        }
+      }
+    }
+    this.dispatchWorldEvents()
+    if (this.worldReportAt === 0) { this.worldReportAt = now }
+    this.worldFrames += 1
+    if (now - this.worldReportAt < 2000) { return }
+    let writeMs = 0
+    let stepMs = 0
+    let contacts = 0
+    for (let box of this.worlds.values()) {
+      writeMs += box.writeMs
+      stepMs += box.stepMs
+      contacts = Math.max(contacts, box.mostContacts)
+      box.writeMs = 0
+      box.stepMs = 0
+      box.mostContacts = 0
+      box.frames = 0
+    }
+    console.info('VERA-WORLD fps=' + (this.worldFrames * 1000 / (now - this.worldReportAt)).toFixed(1) +
+      ' bodies=' + bodies.toString() + ' awake=' + awake.toString() + ' writeMs=' + (writeMs / this.worldFrames).toFixed(2) +
+      ' stepMs=' + (stepMs / this.worldFrames).toFixed(2) + ' contacts=' + contacts.toString())
+    this.worldReportAt = now
+    this.worldFrames = 0
+  }
+
+  /** The events tickWorlds collected, each to its world's handler, unless that world has gone or the program stopped. */
+  private dispatchWorldEvents(): void {
+    let events = this.worldEvents
+    let nodes = this.worldEventNodes
+    this.worldEvents = []
+    this.worldEventNodes = []
+    for (let i = 0; i < events.length; i++) {
+      let node = nodes[i]
+      let e = events[i]
+      if (this.disposed || this.previewOnly || this.error.length > 0 || this.liveRoot === null) {
+        for (let k = i; k < events.length; k++) {
+          if (events[k].kind !== 'hit') {
+            console.info('VERA-WORLD event dropped kind=' + events[k].kind + ' reason=' + (this.error.length > 0 ? 'program-error' : 'program-stopped'))
+          }
+        }
+        return
+      }
+      if (!this.worlds.has(node) || !this.isLiveNode(node) || node.kind !== 'world' || node.action.length === 0) {
+        console.info('VERA-WORLD event dropped kind=' + e.kind + ' reason=world-gone')
+        continue
+      }
+      console.info('VERA-WORLD event ' + e.kind + ' body=' + e.body + ' other=' + e.other + ' speed=' + e.speed.toFixed(2) +
+        ' values=' + e.values.join(',') + (e.kind === 'settled' ? ' kick=' + e.kick.toString() : ''))
+      // A knock is frequent and changes little: it is saved with the next settle, tap or save, not on its own.
+      this.dispatchFieldAction(node.action, sceneEventValue(e.kind, e.body, e.other, e.x, e.y, e.z, e.speed, e.bodies, e.values),
+        e.kind !== 'hit', node)
+    }
   }
 
   /** Every text field from here down may show its check now; see LiveNode.touched. */
@@ -1274,6 +1331,8 @@ export struct VeraPreview {
     this.frameWork = 0
     this.frameWorst = 0
     this.frameSplit = [0, 0, 0, 0]
+    this.worldReportAt = 0
+    this.worldFrames = 0
     try {
       let sync = displaySync.create()
       let range: ExpectedFrameRateRange = { expected: 60, min: 30, max: 120 }
@@ -1315,6 +1374,13 @@ export struct VeraPreview {
     let now = Date.now()
     let elapsed = this.lastFrameAt > 0 ? Math.min(SURFACE_MAX_ELAPSED_MS, Math.max(0, now - this.lastFrameAt)) : 16
     this.lastFrameAt = now
+    // Only worlds move: they need no VM, no painting and no view refresh, just their orbits written.
+    if (!this.liveSurfaces.some((node: LiveNode): boolean => node.action.length > 0)) {
+      this.tickWorlds(now, elapsed)
+      // Nothing moves any more (the dice lie still, nothing orbits): the next state change starts the loop again.
+      if (!this.disposed && !this.worldsNeedFrames()) { this.stopSurfaceLoop() }
+      return
+    }
     this.framing = true
     try {
       // Frames run at display cadence and intentionally use the last committed VM state: flushing debounced text here
@@ -1330,6 +1396,7 @@ export struct VeraPreview {
       this.drainEffects()
       this.frameSplit[0] += Date.now() - now
       this.paintSurfaces()
+      this.tickWorlds(now, elapsed)
       if (now - this.lastViewAt >= SURFACE_VIEW_MS) {
         let viewAt = Date.now()
         this.renderView(false)
@@ -1573,6 +1640,83 @@ export struct VeraPreview {
     if (inputs.size === 0 && this.surfaceInputs.get(node) === inputs) { this.surfaceInputs.delete(node) }
   }
 
+  /** The scene of a world node, made the first time it is asked for (reconcileWorlds makes it before the tree is drawn). */
+  private worldBox(node: LiveNode): WorldBox {
+    let box = this.worlds.get(node)
+    if (box === undefined) {
+      box = new WorldBox()
+      this.worlds.set(node, box)
+    }
+    return box
+  }
+
+  private worldShown(box: WorldBox, shown: boolean): () => void {
+    return () => { if (shown) { box.appeared() } else { box.disappeared() } }
+  }
+
+  /** How tall a world is drawn, in vp: its height, or as tall as it is wide for 0; fill runs to the bottom of the window as a surface's does. */
+  private worldHeight(node: LiveNode): number {
+    let width = this.viewportWidth > 0 ? this.viewportWidth : 360
+    if (node.style === 'fill' && !this.embedded && node.layoutHeight > 0) { return node.layoutHeight }
+    return node.minimum > 0 ? node.minimum : width
+  }
+
+  private worldArea(node: LiveNode, now: Area): void {
+    this.worldBox(node).setSize(Number(now.width), Number(now.height), this.getUIContext().vp2px(1))
+    if (node.style === 'fill' && !this.embedded && this.rootHeight > 0) {
+      let want = Math.max(160, this.rootTop + this.rootHeight - this.snackSpace - Number(now.globalPosition.y))
+      if (Math.abs(want - node.layoutHeight) >= 1) { node.layoutHeight = want }
+    }
+  }
+
+  /**
+   * Fingers on a world. A drag on empty space turns the camera when the program's camera orbits (the box does that
+   * itself, nothing reaches the program); a drag that started on a body is a "swipe" when it lifts; a tap is a raycast,
+   * and what it hit goes to the event handler as a "tap". Both go the way every tap goes, through the field-action queue
+   * -- the tap unless the world, its handler or the program changed while the ray was cast.
+   */
+  private worldTouch(node: LiveNode, event: TouchEvent): void {
+    if (this.disposed || event.changedTouches.length === 0) { return }
+    let box = this.worlds.get(node)
+    if (box === undefined) { return }
+    let touch = event.changedTouches[0]
+    if (event.type === TouchType.Down) {
+      box.touchDown(touch.id, touch.x, touch.y, this.getUIContext().vp2px(1))
+      return
+    }
+    if (event.type === TouchType.Move) {
+      box.touchMove(touch.id, touch.x, touch.y)
+      return
+    }
+    if (event.type !== TouchType.Up) {
+      box.touchCancel()
+      return
+    }
+    let gesture: WorldGesture | null = box.touchUp(touch.id, touch.x, touch.y)
+    if (gesture === null || this.previewOnly || node.action.length === 0) { return }
+    console.info('VERA-WORLD event ' + gesture.kind + ' body=' + gesture.body + ' speed=' + gesture.speed.toFixed(2))
+    let action = node.action
+    if (gesture.kind === 'swipe') {
+      this.dispatchFieldAction(action, sceneEventValue('swipe', gesture.body, '', gesture.x, 0, gesture.z, gesture.speed, [], []),
+        true, node)
+      return
+    }
+    let generation = this.effectGeneration
+    let nodeGeneration = node.fieldGeneration
+    let tapped = box
+    tapped.pick(touch.x, touch.y).then((pick: WorldPick | null) => {
+      if (pick === null || this.disposed || this.previewOnly || generation !== this.effectGeneration ||
+          this.liveRoot === null || !this.isLiveNode(node) || node.kind !== 'world' || node.action !== action ||
+          node.fieldGeneration !== nodeGeneration || this.worlds.get(node) !== tapped) {
+        console.info('VERA-WORLD event dropped kind=tap reason=changed-during-pick')
+        return
+      }
+      this.dispatchFieldAction(action, sceneEventValue('tap', pick.body, '', pick.x, pick.y, pick.z, 0, [], []), true, node)
+    }).catch((e: Error) => {
+      console.warn('VERA-WORLD pick failed: ' + e.message)
+    })
+  }
+
   private surfaceMove(action: string, value: RuntimeValue): void {
     if (this.vm === null || this.currentState === null) { return }
     try {
@@ -1661,6 +1805,40 @@ export struct VeraPreview {
     return JSON.stringify([node.eventValue, node.text, node.label])
   }
 
+  /** A world's event (a settle, a hit, a tap) that fieldActionCurrent refused never reaches its handler: say why. */
+  private logWorldDrop(next: FieldAction): void {
+    if (next.nodeKind !== 'world') { return }
+    console.info('VERA-WORLD event dropped kind=' + this.worldEventKind(next.payload) + ' reason=' + this.fieldActionStaleReason(next))
+  }
+
+  /** Why fieldActionCurrent refuses an action, for the log: the first guard it fails. */
+  private fieldActionStaleReason(next: FieldAction): string {
+    if (next.generation !== this.effectGeneration) { return 'program-generation' }
+    if (this.disposed) { return 'disposed' }
+    if (this.previewOnly) { return 'preview' }
+    for (let i = 0; i < next.dependencies.length; i++) {
+      if (next.dependencies[i].fieldCancellation !== next.dependencyCancellations[i]) { return 'field-edited' }
+    }
+    if (next.node === null) { return 'none' }
+    let node = next.node!
+    if (this.liveRoot === null || !this.isLiveNode(node)) { return 'node-gone' }
+    if (node.kind !== next.nodeKind) { return 'node-kind' }
+    if (!node.enabled) { return 'node-disabled' }
+    if (node.action !== next.action) { return 'handler-changed' }
+    if (node.fieldGeneration !== next.nodeGeneration) { return 'node-generation' }
+    if (this.fieldActionState(node) !== next.nodeState) { return 'node-state' }
+    return 'none'
+  }
+
+  /** The kind of a scene.Event payload ('?' for any other value), for a log line. */
+  private worldEventKind(payload: RuntimeValue): string {
+    if (payload instanceof VeraObjectValue) {
+      let kind = (payload as VeraObjectValue).fields.get('kind')
+      if (kind instanceof VeraStringValue) { return (kind as VeraStringValue).value }
+    }
+    return '?'
+  }
+
   private fieldActionCurrent(next: FieldAction): boolean {
     if (next.generation !== this.effectGeneration || this.disposed || this.previewOnly) { return false }
     for (let i = 0; i < next.dependencies.length; i++) {
@@ -1728,7 +1906,11 @@ export struct VeraPreview {
   }
 
   private enqueueFieldAction(next: FieldAction): void {
-    if (!this.fieldActionCurrent(next)) { this.releaseSurfaceAction(next); return }
+    if (!this.fieldActionCurrent(next)) {
+      if (next.nodeKind === 'world') { this.logWorldDrop(next) }
+      this.releaseSurfaceAction(next)
+      return
+    }
     let node = next.node
     let action = next.action
     let last = this.fieldActions.length > 0
@@ -1762,8 +1944,11 @@ export struct VeraPreview {
         let next = this.fieldActions.shift() as FieldAction
         let current = this.fieldActionCurrent(next)
         this.releaseSurfaceAction(next)
-        if (!current) { continue }
-        this.dispatch(next.action, next.payload, next.persist)
+        if (!current) {
+          if (next.nodeKind === 'world') { this.logWorldDrop(next) }
+          continue
+        }
+        this.dispatch(next.action, next.payload, next.persist, next.nodeKind === 'world')
       }
     } finally {
       this.resumingFieldActions = false
@@ -1774,15 +1959,22 @@ export struct VeraPreview {
    * The single way a person's input reaches a program: the value is whatever
    * the component produces -- a number, a string or a boolean.
    */
-  private dispatch(action: string, payload: RuntimeValue, persist: boolean = true): void {
+  private dispatch(action: string, payload: RuntimeValue, persist: boolean = true, skipIfSame: boolean = false): void {
     if (this.disposed) { return }
-    console.info('VERA-CLICK action=' + action + ' rev=' + this.revision.toString())
+    if (!skipIfSame) { console.info('VERA-CLICK action=' + action + ' rev=' + this.revision.toString()) }
     if (this.vm === null || this.currentState === null || this.previewOnly) { return }
     let t0 = Date.now()
     try {
       if (this.host !== null) { this.host!.effectsAllowed = true }
-      this.currentState = this.vm!.execute(action, [this.currentState!, payload])
+      let before = this.currentState!
+      this.currentState = this.vm!.execute(action, [before, payload])
       if (this.host !== null) { this.host!.effectsAllowed = false }
+      // A world's event that left the state as it was (a hit the program does not count, a tap on nothing) changes
+      // nothing on the screen: no build, no render, no save -- only what it asked of the phone, if anything.
+      if (skipIfSame && sameState(before, this.currentState!)) {
+        this.drainEffects()
+        return
+      }
       this.notifyStateSnapshot()
       console.info('VERA-ACTION ' + action + ' steps=' + this.vm!.stepsExecuted().toString() +
         ' ms=' + (Date.now() - t0).toString())
@@ -3156,32 +3348,19 @@ export struct VeraPreview {
       .borderRadius(this.t().radiusCard)
       .shadow({ radius: this.t().shadowRadius, color: this.t().shadowColor, offsetY: this.t().shadowOffsetY })
       .onAreaChange((_old: Area, now: Area) => { this.revealIfAsked(node, now) })
-    } else if (node.kind === 'stage' || (node.kind === 'transform' && parentKind !== 'stage' && parentKind !== 'transform')) {
-      // A scene: every layer is a flat sibling in a centred stack with its own final matrix (see sceneFrame). A Transform
-      // outside a Stage is a scene of one layer, with the default viewer distance.
+    } else if (node.kind === 'transform') {
+      // One node turned, moved, scaled and faded by the pose being shown (see transformMatrix); its children are plain content.
       Stack() {
-        ForEach(this.layerKeys(node), (key: string, index: number) => {
-          Column() {
-            this.renderChildren(this.layerNode(node, index))
-          }
-          .alignItems(HorizontalAlign.Center)
-          .width(this.layerSide(node, index) > 0 ? this.layerSide(node, index) : undefined)
-          .height(this.layerSide(node, index) > 0 ? this.layerSide(node, index) : undefined)
-          .opacity(this.layerOpacity(node, index))
-          .brightness(this.layerShade(node, index))
-          .zIndex(this.layerRank(node, index))
-          .visibility(this.layerVisible(node, index) ? Visibility.Visible : Visibility.Hidden)
-          .transform(this.layerTransform(node, index))
-        }, (key: string) => key)
+        Column() {
+          this.renderChildren(node)
+        }
+        .alignItems(HorizontalAlign.Center)
+        .width(node.minimum > 0 ? node.minimum : undefined)
+        .height(node.minimum > 0 ? node.minimum : undefined)
+        .opacity(this.transformOpacity(node))
+        .transform(this.transformMatrix(node))
       }
       .width('100%')
-      .height(node.kind === 'stage' && node.minimum > 0 ? node.minimum : undefined)
-      .clip(node.kind === 'stage' && node.style === 'floor')
-      .backgroundColor(node.kind === 'stage' && node.style === 'floor' ? this.t().surface : Color.Transparent)
-      .border({ width: node.kind === 'stage' && node.style === 'floor' ? this.t().borderWidth : 0, color: this.t().line })
-      .borderRadius(node.kind === 'stage' && node.style === 'floor' ? this.t().radiusCard : 0)
-    } else if (node.kind === 'transform') {
-      // Inside a Stage or another Transform: drawn by the scene that owns it, not here.
     } else if (node.kind === 'layers') {
       // One over another, each in the middle; the box is the size the program gave.
       Stack({ alignContent: Alignment.Center }) {
@@ -4804,6 +4983,43 @@ export struct VeraPreview {
         .onGestureJudgeBegin((_info: GestureInfo, _event: BaseGestureEvent) => {
           return node.value.length > 0 ? GestureJudgeResult.CONTINUE : GestureJudgeResult.REJECT
         })
+    } else if (node.kind === 'world') {
+      // The program describes this world (reconcileWorlds) and its box moves it; the tree only gives it a place.
+      if (this.worldBox(node).options !== null) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          Component3D(this.worldBox(node).options as SceneOptions)
+            .width('100%')
+            .height('100%')
+            // The box drawn, not the node's box when the callback runs: a retired box has left the map by then.
+            .onAppear(this.worldShown(this.worldBox(node), true))
+            .onDisAppear(this.worldShown(this.worldBox(node), false))
+            .onAreaChange((_old: Area, now: Area) => { this.worldArea(node, now) })
+            .onTouch((event: TouchEvent) => { this.worldTouch(node, event) })
+            // A drag that turns the camera, or flicks a body, is the world's, not the page's; otherwise the page scrolls through it.
+            .gesture(PanGesture({ distance: 1 }))
+            .onGestureJudgeBegin((_info: GestureInfo, _event: BaseGestureEvent) => {
+              let box = this.worlds.get(node)
+              return box !== undefined && (box.orbits() || (node.action.length > 0 && box.holdsDrag()))
+                ? GestureJudgeResult.CONTINUE : GestureJudgeResult.REJECT
+            })
+          if (this.worldBox(node).note.length > 0) {
+            // Not an error: the world is shown, it just does not move (a build without physics).
+            Text(this.worldBox(node).note)
+              .fontSize(12)
+              .fontColor(this.t().inkSoft)
+              .padding(8)
+              .hitTestBehavior(HitTestMode.Transparent)
+          }
+        }
+        .width('100%')
+        .height(this.worldHeight(node))
+      } else {
+        Column()
+          .width('100%')
+          .height(this.worldHeight(node))
+          .backgroundColor(this.t().background)
+          .onAreaChange((_old: Area, now: Area) => { this.worldArea(node, now) })
+      }
     } else if (node.kind === 'canvas') {
       Column() {
         Row()

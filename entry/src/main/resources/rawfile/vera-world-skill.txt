@@ -1,0 +1,140 @@
+3D WORLD APPS
+This request is solid things in 3D: dice that are thrown, cubes or blocks that fall, stack and are knocked over, balls
+that roll and collide, planets on their orbits. Build it on one ui.World described with std/scene, not on a ui.Surface
+and not out of buttons and cards drawn to look 3D.
+
+Describe the world; never animate it:
+- build(state: AppState): scene.Thing[] returns the whole world -- the camera, the table or floor, every body -- and runs
+  only when the state changes, never per frame. There is no frame function. The host moves everything: physics moves
+  loose bodies, the host turns spins and carries orbits. The program never keeps a position, an angle or a velocity in
+  the state to move a body, and never uses a ui.Ticker to animate one.
+- Once a loose body exists its x, y, z are only where it started: returning it somewhere else does nothing. To throw it
+  again, change its kick trigger (a count in the state, state.throws + 1). To put it back where it started, give it a
+  new id: a round number in the id ("r" + ui.numberToString(state.round) + "-" + ...) makes build create it afresh.
+- Keep in the state only what the person did and what the world told: counts of throws, shots and rounds, the faces
+  last read, a score, the body last tapped. AppState holds no scene.Thing.
+- build is cheap: a few loops that push things, nothing computed per body beyond its place and colour. Make rows,
+  walls, stacks and rings with loops, never as long literal lists.
+
+The shape of the program:
+- view(state) returns ui.AppTheme(preset, "", [ui.Column("default", [ui.Header(...), ui.World("default", 0, "build",
+  "onWorld"), ui.Text(...) with the result, ui.Button(...) for what the person does])]). Use style "fill" for a world
+  that should take the whole screen below the header. The result -- the dice total, the planet tapped, the hits --
+  is a ui.Text under the world, not drawn in it.
+- onWorld(state: AppState, e: scene.Event): AppState hears the world: e.kind is "tap" (a finger on e.body, "" for empty
+  space), "swipe" (a flick of e.body; e.x, e.z its direction along the floor, e.speed how fast), "hit" (knocks, told at most
+  four times a second: e.bodies every body knocked since the last hit, e.values how hard each was knocked in m/s, e.body
+  knocked into e.other the hardest of them at e.speed; count e.bodies.length() or keep the hardest, nothing more) or
+  "settled" (every loose body at rest after a throw; e.bodies the ids, e.values the face each die shows, 0 for a body
+  that is not a die). Return the state unchanged for the kinds it does not use: then nothing is built or drawn again.
+- A Button does the main thing too (Throw, Shoot, Build again), so the app works without knowing where to tap.
+
+Scale, units and placement:
+- Units are metres and y is up; the floor or the table top is y = 0. A die is about 0.16, a toy block 0.1, a ball 0.1 to
+  0.2 across; a table for dice is about 1.2 by 0.9. Planets are not to scale: a sun of radius 0.6, planets 0.05 to 0.2,
+  orbits 1 to 4 apart, periods of a few seconds to a minute.
+- A body of height h stands on the ground at y = h / 2. Bodies never start inside one another or under y = 0: a row of
+  cubes of side s is s apart, a stack is s higher each level. Loose bodies start over the table or floor, near x = 0,
+  z = 0; with a table, inside its width and depth.
+- Every body has an id of its own (ids built with ui.numberToString in loops), at most 300 bodies; a wall or a pile
+  of about 100 loose bodies is plenty.
+- Colours: theme roles (accent, warning, danger, surface, ink ...) or "#rrggbb". Give dice white or one strong colour,
+  planets their own colours, a stack two alternating colours.
+
+The camera: scene.camera(x, y, z, lookX, lookY, lookZ, orbit) stands back from the bodies and above them, looking at
+their middle: for a scene about s metres across, about 2 s away and 1 to 1.5 s up. Dice on a 1.2 m table: (0, 1.25,
+0.85) looking at (0, 0, 0). A wall 1 m wide: (1.6, 1.0, 2.2) looking at (0, 0.4, 0). A solar system 8 m across: (0, 4.5, 8)
+looking at the sun. orbit true lets a drag on empty space turn the view, good for a model to look round; false for dice.
+Leave the camera out and the host frames everything.
+
+Kinds of 3D app:
+- Dice: a scene.table, each die scene.kick(scene.loose(scene.die(id, x, 0.3, z, 0.16, colour), 1), state.throws, vx, 2.2,
+  vz, 2) with velocities of 0.3 to 0.6 across and about 2.2 up; alternate the direction with each throw so the dice stay
+  on the table. A Button, a tap and a swipe add 1 to state.throws. On "settled", add up e.values into the state and show
+  the total and the faces; show "Rolling..." while state.throws is ahead of the throw last read.
+- Knocking things over: a scene.floor, a wall, a tower or dominoes of loose boxes standing on each other, and a ball
+  thrown at it by scene.kick from a Button (a new id per shot, so each shot is a fresh ball where it is written). "Build
+  again" adds 1 to state.round so every block comes back under new ids.
+- Falling and stacking: loose bodies made in the air over the floor fall when they are created; a Button adds one more
+  (a count in the state, its id carrying the count).
+- Orbits: no floor or table (the world floats in space), a scene.glow sun, each planet scene.spin(scene.orbit(sphere,
+  "sun", radius, periodS, phaseDeg), dayS), a moon orbiting its planet. A tap names the planet (e.body) in the state.
+- A single 3D object to look at or turn: a static box or sphere with scene.spin, an orbiting camera, and Buttons that
+  change its colour or size in the state.
+
+A complete example: two dice on a table. Write your own program for the request; take the structure from this, not
+the game.
+
+--- EXAMPLE ---
+// Two dice thrown on a table, as a ui.World: the physics throws them, the host reads the faces.
+//
+// Throw (the button, or a tap or a flick on the table) adds 1 to state.throws, the kick trigger of both dice, so the
+// host throws them again from where they lie. When both have come to rest the world sends "settled" with
+// the face each shows, and the program adds them up. It never moves a die itself.
+
+@jsonable
+class AppState {
+  throws: number;
+  read: number;
+  total: number;
+  faces: string;
+}
+
+function init(): AppState {
+  return {throws: 0, read: 0, total: 0, faces: ""};
+}
+
+function build(state: AppState): scene.Thing[] {
+  let things: scene.Thing[] = [];
+  things.push(scene.camera(0, 1.25, 0.85, 0, 0, 0, false));
+  things.push(scene.table(1.2, 0.9, "surface"));
+  // Each throw goes the other way across the table, so the dice stay on it however often they are thrown.
+  let way: number = 1;
+  if (state.throws % 2 === 1) {
+    way = -1;
+  }
+  things.push(scene.kick(scene.loose(scene.die("d1", -0.2, 0.3, 0.1, 0.16, "white"), 1), state.throws, 0.5 * way, 2.2, -0.4 * way, 2));
+  things.push(scene.kick(scene.loose(scene.die("d2", 0.2, 0.3, 0.1, 0.16, "#f43f5e"), 1), state.throws, 0.4 * way, 2.4, 0.3 * way, 2.5));
+  return things;
+}
+
+function onThrow(state: AppState, value: number): AppState {
+  return {throws: state.throws + 1, read: state.read, total: state.total, faces: state.faces};
+}
+
+function onWorld(state: AppState, e: scene.Event): AppState {
+  if (e.kind === "tap" || e.kind === "swipe") {
+    return onThrow(state, 0);
+  }
+  if (e.kind !== "settled") {
+    return state;
+  }
+  let total: number = 0;
+  let faces: string = "";
+  for (let v: number of e.values) {
+    total = total + v;
+    if (faces !== "") {
+      faces = faces + " + ";
+    }
+    faces = faces + ui.numberToString(v);
+  }
+  return {throws: state.throws, read: state.throws, total: total, faces: faces};
+}
+
+function view(state: AppState): ui.View {
+  let result: string = "Throw the dice";
+  if (state.throws > state.read) {
+    result = "Rolling...";
+  } else if (state.throws > 0) {
+    result = state.faces + " = " + ui.numberToString(state.total);
+  }
+  return ui.AppTheme("playful", "", [
+    ui.Column("default", [
+      ui.Header("default", "Dice", "", "", ""),
+      ui.World("default", 0, "build", "onWorld"),
+      ui.Text("metric", result),
+      ui.Button("primary", "Throw", "onThrow", 0, true)
+    ])
+  ]);
+}
+--- END EXAMPLE ---

@@ -15,6 +15,8 @@ const {playSurface} = loadVera('VeraSurfacePlay')
 
 const rawfile = name => fs.readFileSync(path.join(__dirname, '../../entry/src/main/resources/rawfile', name), 'utf8')
 const guide = rawfile('vera-surface-skill.txt')
+const worldGuide = rawfile('vera-world-skill.txt')
+const worldDice = fs.readFileSync(path.join(__dirname, 'examples/world-dice.vera'), 'utf8')
 const language = rawfile('vera-skill.txt')
 const example = guide.slice(guide.indexOf('--- EXAMPLE ---') + '--- EXAMPLE ---'.length, guide.indexOf('--- END EXAMPLE ---')).trim()
 
@@ -24,12 +26,26 @@ assert.equal(example.trim(), fs.readFileSync(path.join(__dirname, 'examples/surf
   .slice(fs.readFileSync(path.join(__dirname, 'examples/surface-catch.vera'), 'utf8').indexOf('@jsonable')).trim(),
 'the guide carries examples/surface-catch.vera as it is (regenerate the rawfile when the example changes)')
 
+// The world guide's example is examples/world-dice.vera byte for byte, and it compiles, runs once and its world plays.
+{
+  const open = '--- EXAMPLE ---\n', close = '--- END EXAMPLE ---'
+  const worldExample = worldGuide.slice(worldGuide.indexOf(open) + open.length, worldGuide.indexOf(close))
+  assert.equal(worldExample, worldDice, 'the world guide carries examples/world-dice.vera as it is (regenerate the rawfile when the example changes)')
+  assert.equal(S.checkWorldProgram(worldExample), '', 'the world guide\'s example compiles, runs once and plays')
+  assert.match(S.checkWorldProgram(example), /^1:1 P0008 .*shows no ui.World/, 'a flat game is not a 3D program')
+}
+
 // The gate: game words ask, everything else goes straight to the agent.
 for (const p of ['neon arkanoid', 'tank battle', 'a snake game', 'bouncing balls with gravity', 'a drawing pad for kids', 'fireworks animation'])
   assert.ok(S.looksLikeSurface(p), p + ' is asked about')
 for (const p of ['a to-do list', 'tic-tac-toe', 'water reminder every 2 hours', 'split the bill between friends', 'pomodoro timer'])
   assert.ok(!S.looksLikeSurface(p), p + ' is not asked about')
 for (const p of ['帮我做一个小时候红白机风格的坦克大战', '霓虹打砖块', '贪吃蛇小游戏', '儿童画板'])
+  assert.ok(S.looksLikeSurface(p), p + ' is asked about')
+for (const p of ['dice game', '3D solar system', 'cubes knocking over', 'a 3D cube', 'planets orbiting the sun', 'physics stack of blocks',
+  'dominoes toppling'])
+  assert.ok(S.looksLikeSurface(p), p + ' is asked about')
+for (const p of ['立方体', '太阳系模型', '掷骰子', '三维地球', '物理堆叠'])
   assert.ok(S.looksLikeSurface(p), p + ' is asked about')
 for (const p of ['帮我创建一张吃药卡，提醒我每天吃药', '西湖一日游', '成绩和绩点计算器'])
   assert.ok(!S.looksLikeSurface(p), p + ' is not asked about')
@@ -39,6 +55,16 @@ assert.equal(S.parseSurfaceBrief('{"surface": true, "title": "T", "design": "D"}
 assert.equal(S.parseSurfaceBrief('noise {"surface": false, "title": "", "design": ""} noise').kind, S.SURFACE_NONE)
 assert.equal(S.parseSurfaceBrief('{"surface": true, "title": "T", "design": ""}'), null, 'a game with no design is not an answer')
 assert.equal(S.parseSurfaceBrief('not json'), null)
+// The engine: world only for a whole app that says so, flat otherwise.
+assert.equal(S.parseSurfaceBrief('{"surface": "whole", "title": "T", "design": "D"}').engine, S.ENGINE_FLAT, 'no engine is flat')
+assert.equal(S.parseSurfaceBrief('{"surface": "whole", "engine": "world", "title": "Dice", "design": "Two dice."}').engine, S.ENGINE_WORLD)
+assert.equal(S.parseSurfaceBrief('{"surface": "whole", "engine": " World ", "title": "Dice", "design": "Two dice."}').engine, S.ENGINE_WORLD)
+assert.equal(S.parseSurfaceBrief('{"surface": "whole", "engine": "flat", "title": "T", "design": "D"}').engine, S.ENGINE_FLAT)
+assert.equal(S.parseSurfaceBrief('{"surface": "whole", "engine": "3d", "title": "T", "design": "D"}').engine, S.ENGINE_FLAT, 'an unknown engine is flat')
+assert.equal(S.parseSurfaceBrief('{"surface": "part", "engine": "world", "scene": "a wheel"}').engine, S.ENGINE_FLAT, 'a part is never a world')
+assert.equal(S.parseSurfaceBrief('{"surface": "none", "engine": "world"}').engine, S.ENGINE_FLAT)
+assert.ok(S.SURFACE_CLASSIFY_PROMPT.includes('"engine": "flat" | "world"'), 'the plan model is asked for the engine')
+assert.deepEqual(S.WORLD_COMPONENTS, ['AppTheme', 'World', 'Column', 'Row', 'Text', 'Header', 'Button', 'ActionBar'])
 
 // The language: the catalogue is the surface's few components and std/gfx, the guide replaces the screen-composition advice.
 const system = S.surfaceLanguage(language, guide)
@@ -48,6 +74,14 @@ assert.ok(!system.includes('ui.Hero(') && !system.includes('Use ui.Hero when'), 
 assert.ok(!system.includes('{{UI_CATALOG}}'))
 assert.equal(S.sourceIn('```vera\nabc\n```\ntrailing'), 'abc')
 assert.equal(S.sourceIn('abc'), 'abc')
+
+// The 3D language: the World's components and std/scene, with the world guide in place of the screen-composition advice.
+const worldSystem = S.worldLanguage(language, worldGuide)
+assert.ok(worldSystem.includes('ui.World(') && worldSystem.includes('scene.die(') && worldSystem.includes('scene.Event'))
+assert.ok(worldSystem.includes('3D WORLD APPS') && worldSystem.includes('Clock -- time.') && worldSystem.includes('Syntax rules:'))
+assert.ok(!worldSystem.includes('ui.Surface(style') && !worldSystem.includes('gfx.polygon(') && !worldSystem.includes('ui.Hero('),
+  'no surface, std/gfx or screens of sections in the 3D language')
+assert.ok(!worldSystem.includes('FULL-CANVAS APPS'))
 
 // The play check refuses a surface that never moves, one that traps mid-game, and a program with no surface.
 const still = example.replace('if (state.phase !== "playing") {\n    if (p.phase !== "down") {', 'if (true) {\n    if (true) {')
@@ -64,6 +98,7 @@ function mockHost(answers) {
   const h = new AgentHost()
   h.language = language
   h.surfaceGuide = guide
+  h.worldGuide = answers.worldGuide === undefined ? worldGuide : answers.worldGuide
   h.calls = {plan: [], code: []}
   h.askPlan = async (systemPrompt, user) => {
     h.calls.plan.push(systemPrompt === S.SURFACE_CLASSIFY_PROMPT ? 'surface' : 'needs')
@@ -140,6 +175,45 @@ const brief = JSON.stringify({surface: true, title: 'Star Catch', design: 'Catch
   host = mockHost({brief, code: []})
   await route.buildScreen(Object.assign(new route.RouteRequest(), {agent: Object.assign(new AgentRequest(), {prompt: 'tank battle', widget: true})}), host)
   assert.equal(host.calls.plan[0], 'needs')
+
+  // A 3D request: designed with engine world, written on a ui.World from the world guide, played on the host's physics, served.
+  const worldBrief = JSON.stringify({surface: 'whole', engine: 'world', title: 'Dice', design: 'Two dice thrown on a table; the total shows.'})
+  host = mockHost({brief: worldBrief, code: ['```vera\n' + worldDice + '\n```']})
+  outcome = await route.buildScreen(request('dice game'), host)
+  assert.equal(outcome.kind, route.OUTCOME_AGENT, 'the 3D app is served')
+  assert.equal(outcome.agent.source, worldDice.trim())
+  assert.ok(outcome.agent.vbc2.length > 0)
+  assert.deepEqual(host.calls.plan, ['surface'], 'the agent\'s plan is never drawn for a 3D app')
+  assert.equal(host.calls.code.length, 1)
+  assert.ok(host.calls.code[0].system.includes('3D WORLD APPS') && !host.calls.code[0].system.includes('FULL-CANVAS APPS'),
+    'the writer is shown the world guide, not the surface guide')
+  assert.match(outcome.agent.note, /^world "Dice": written in 1 attempt\(s\), 0 repair round\(s\)/)
+  assert.equal(JSON.parse(outcome.agent.composed.sketch).engine, 'world')
+
+  // A 3D program whose dice result is never read is refused by the world's play and repaired by edits against it.
+  const unread = worldDice.replace('return {throws: state.throws, read: state.throws, total: total, faces: faces};', 'return state;')
+  assert.notEqual(unread, worldDice)
+  assert.match(S.checkWorldProgram(unread), /^\d+:1 P0007 /)
+  const fix = '<<<<<<< SEARCH\n  return state;\n}\n\nfunction view\n=======\n  return {throws: state.throws, read: state.throws, total: total, faces: faces};\n}\n\nfunction view\n>>>>>>> REPLACE'
+  host = mockHost({brief: worldBrief, code: [unread, fix]})
+  outcome = await route.buildScreen(request('dice game'), host)
+  assert.equal(outcome.kind, route.OUTCOME_AGENT, 'the repaired 3D app is served')
+  assert.equal(outcome.agent.source, worldDice.trim())
+  assert.match(outcome.agent.note, /1 repair round/)
+  assert.ok(host.calls.code[1].repair, 'the second ask is a repair')
+
+  // A flat game written for a 3D brief does not pass: a 3D program must show a ui.World.
+  host = mockHost({brief: worldBrief, code: [example, 'no edits', 'no edits', example, 'no edits', 'no edits']})
+  outcome = await route.buildScreen(request('dice game'), host)
+  assert.equal(outcome.kind, route.OUTCOME_NOT_BUILT)
+  assert.match(outcome.reason, /^world "Dice": not built/)
+
+  // No world guide on the host: the 3D brief is written flat, from the surface guide.
+  host = mockHost({brief: worldBrief, code: ['```vera\n' + example + '\n```'], worldGuide: ''})
+  outcome = await route.buildScreen(request('dice game'), host)
+  assert.equal(outcome.kind, route.OUTCOME_AGENT)
+  assert.ok(host.calls.code[0].system.includes('FULL-CANVAS APPS'))
+  assert.match(outcome.agent.note, /^surface "Dice"/)
 
   console.log('surface-route-check ok')
 })().catch(e => { console.error(e); process.exit(1) })

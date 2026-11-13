@@ -1,0 +1,148 @@
+// The pre-serve plays and the phone's frame budget (vera/VeraWorldPlay.ets, vera/VeraBudget.ets, vera/VeraSurfacePlay.ets):
+// the three example worlds play and keep within budget; broken worlds are refused with the code the repair needs (two
+// bodies with one id, too many bodies, a camera looking away, bodies inside one another or under the floor or off the
+// table, a still world, dice never thrown, never settled, or settled and not read, a build too slow); the surface
+// examples keep within the frame budget, and a game doing 107 000 steps a frame -- the generated maze that ran at 23
+// frames a second -- is refused.
+'use strict'
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const {loadVera} = require('./source-loader')
+const {compileVeraSource} = loadVera('VeraCompiler')
+const {playWorld, WorldPlayReport, CODE_NOT_SEEN, CODE_OVERLAP, CODE_OUT_OF_WORLD, CODE_STILL, CODE_NO_SETTLE,
+  CODE_RESULT_UNREAD, CODE_NO_WORLD} = loadVera('VeraWorldPlay')
+const B = loadVera('VeraBudget')
+const {playSurface} = loadVera('VeraSurfacePlay')
+
+const example = name => fs.readFileSync(path.join(__dirname, 'examples', name + '.vera'), 'utf8')
+const swap = (src, from, to) => { assert.ok(src.includes(from), 'the example still has: ' + from); return src.replace(from, to) }
+const play = src => playWorld(compileVeraSource(src))
+const refused = (src, code, re, what) => {
+  const got = play(src)
+  assert.match(got, new RegExp('^\\d+:1 ' + code + ' '), what + ' is refused with ' + code + ': ' + got)
+  if (re) assert.match(got, re, what + ': ' + got)
+}
+
+// ---- the budget's arithmetic
+assert.equal(B.predictFrameMs(0, 0), B.FRAME_BASE_MS)
+assert.ok(Math.abs(B.predictFrameMs(107000, 0) - 36.77) < 0.01, 'the maze: about 37 ms a frame')
+assert.ok(Math.abs(B.predictFrameMs(1000, 100) - (3.6 + 0.31 + 0.4)) < 1e-9)
+assert.equal(B.median([5, 1, 3]), 3)
+assert.equal(B.median([4, 1, 3, 2]), 2.5)
+assert.equal(B.median([]), 0)
+
+// ---- the examples play, within budget
+const budgets = []
+for (const name of ['world-dice', 'world-cubes', 'world-solar']) {
+  const report = new WorldPlayReport()
+  assert.equal(playWorld(compileVeraSource(example(name)), true, report), '', name + ' plays')
+  assert.ok(report.slowestMs < B.WORLD_BUILD_BUDGET_MS, name + ' within budget')
+  budgets.push(name + ' ' + report.slowestMs.toFixed(2) + ' ms (' + report.slowestSteps + ' steps, ' + report.bodies + ' bodies)')
+  if (name === 'world-cubes') {
+    // Hits reach the handler at most 1 / HIT_INTERVAL_S times a second, each a VM call plus the build after it.
+    const P = loadVera('VeraPhysics')
+    const perSecond = 1 / P.HIT_INTERVAL_S
+    assert.ok(report.hitEvents > 0, 'the cubes hear hits')
+    const ms = B.predictWorkMs(report.hitStepsMax)
+    assert.ok(ms < B.WORLD_BUILD_BUDGET_MS, 'a hit delivery within budget')
+    budgets.push('world-cubes hits: ' + report.hitEvents + ' delivered, the costliest ' + report.hitStepsMax + ' steps = ' + ms.toFixed(2) +
+      ' ms; at ' + perSecond + ' a second at most ' + (ms * perSecond).toFixed(1) + ' ms of VM a second (was up to 4 a frame: ' +
+      (ms * 4 * 60).toFixed(0) + ' ms a second)')
+  }
+  if (name === 'world-dice') {
+    assert.ok(report.kicksWithDice > 0 && report.settledWithDice > 0 && report.settledRead > 0, 'the dice are thrown, settle and are read')
+  }
+}
+for (const name of ['surface-catch', 'surface-roulette']) {
+  const costs = new B.FrameCosts()
+  assert.equal(playSurface(compileVeraSource(example(name)), true, name === 'surface-roulette', costs), '', name + ' plays')
+  assert.ok(costs.medianMs() < B.SURFACE_FRAME_BUDGET_MS, name + ' within the frame budget: ' + costs.medianMs())
+  budgets.push(name + ' ' + costs.medianMs().toFixed(2) + ' ms a frame (' + costs.medianSteps() + ' steps, ' + costs.medianShapes() + ' shapes)')
+}
+
+// ---- a surface game doing the maze's work every frame is refused, pointing at its draw function
+const maze = `
+@jsonable class AppState { t: number; }
+function init(): AppState { return {t: 0}; }
+function onFrame(state: AppState, elapsedMs: number): AppState { return {t: state.t + elapsedMs}; }
+function draw(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.rect(0, 0, 360, 640, "background"));
+  let depth: number = 0;
+  let ray: number = 0;
+  while (ray < 5350) {
+    depth = depth + math.sin(ray + state.t) * 0.5;
+    ray = ray + 1;
+  }
+  shapes.push(gfx.text(180, 320, 20, "center", "ink", ui.numberToString(math.round(depth)), true));
+  return shapes;
+}
+function onPointer(state: AppState, p: gfx.Pointer): AppState { return state; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [ui.Surface("fill", 360, 640, "draw", "onFrame", "onPointer")]);
+}
+`
+{
+  const costs = new B.FrameCosts()
+  const got = playSurface(compileVeraSource(maze), true, false, costs)
+  assert.ok(costs.medianSteps() > 90000 && costs.medianSteps() < 130000, 'the synthetic maze does about 107k steps a frame: ' + costs.medianSteps())
+  assert.match(got, /^6:1 P0001 The program plays, but each frame takes about \d+ ms on the phone \(budget 12\)/, 'the maze is refused: ' + got)
+  assert.match(got, /draw fewer shapes or do less work per frame/i)
+  budgets.push('synthetic maze ' + costs.medianMs().toFixed(1) + ' ms a frame (' + costs.medianSteps() + ' steps): refused')
+}
+
+// ---- broken worlds
+const dice = example('world-dice')
+const cubes = example('world-cubes')
+// Two bodies with one id, and more than 300 bodies: decodeScene's traps, pointed at build.
+assert.match(play(swap(dice, 'scene.die("d2"', 'scene.die("d1"')), /^\d+:1 R0029 .*two bodies have the id "d1"/, 'a repeated id')
+assert.match(play(swap(cubes, 'while (row < 10) {', 'while (row < 31) {')), /^\d+:1 R0028 .*at most 300 bodies/, 'too many bodies')
+// The camera looks away from everything.
+refused(swap(dice, 'scene.camera(0, 1.25, 0.85, 0, 0, 0, false)', 'scene.camera(0, 1.25, 0.85, 0, 1.25, 9, false)'), CODE_NOT_SEEN,
+  /camera sees none of the 2 bodies/, 'a camera looking away')
+// A camera far too far away sees the dice as specks.
+refused(swap(dice, 'scene.camera(0, 1.25, 0.85, 0, 0, 0, false)', 'scene.camera(0, 900, 900, 0, 0, 0, false)'), CODE_NOT_SEEN, null, 'a camera miles away')
+// Bodies inside one another, under the floor, off the table.
+refused(swap(dice, 'scene.die("d2", 0.2, 0.3, 0.1', 'scene.die("d2", -0.18, 0.3, 0.1'), CODE_OVERLAP, /"d\d" and "d\d" start inside one another/, 'overlapping dice')
+refused(swap(cubes, 'side / 2 + row * side', 'side / 2 + row * side * 0.5'), CODE_OVERLAP, null, 'a wall of cubes in one another')
+refused(swap(dice, 'scene.die("d1", -0.2, 0.3, 0.1', 'scene.die("d1", -0.2, -0.3, 0.1'), CODE_OUT_OF_WORLD, /below the table top/, 'a die under the table')
+refused(swap(dice, 'scene.die("d1", -0.2, 0.3, 0.1', 'scene.die("d1", 2, 0.3, 0.1'), CODE_OUT_OF_WORLD, /outside the table/, 'a die off the table')
+// A still world: nothing moves and nothing changes the state.
+const still = `
+@jsonable class AppState { n: number; }
+function init(): AppState { return {n: 0}; }
+function build(state: AppState): scene.Thing[] {
+  let things: scene.Thing[] = [];
+  things.push(scene.floor("surface"));
+  things.push(scene.box("a", 0, 0.5, 0, 1, 1, 1, "accent"));
+  things.push(scene.sphere("b", 1.5, 0.5, 0, 0.5, "warning"));
+  return things;
+}
+function onWorld(state: AppState, e: scene.Event): AppState { return state; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [ui.Column("default", [ui.World("default", 0, "build", "onWorld"), ui.Text("body", "x")])]);
+}
+`
+refused(still, CODE_STILL, /nothing in the world moves/, 'a still world')
+assert.equal(play(swap(still, 'return state; }', 'return {n: state.n + 1}; }')), '', 'a static world whose taps change the state is not still')
+assert.equal(play(swap(still, 'scene.sphere("b", 1.5, 0.5, 0, 0.5, "warning")', 'scene.spin(scene.sphere("b", 1.5, 0.5, 0, 0.5, "warning"), 4)')), '',
+  'a spinning body is not still')
+// Dice: never thrown, thrown without a handler to hear them settle, settled and not read.
+refused(swap(swap(dice, 'state.throws, 0.5 * way', '0, 0.5 * way'), 'state.throws, 0.4 * way', '0, 0.4 * way'), CODE_NO_SETTLE,
+  /dice are never thrown/, 'dice that are never thrown')
+refused(swap(dice, 'ui.World("default", 0, "build", "onWorld")', 'ui.World("default", 0, "build", "")'), CODE_NO_SETTLE,
+  /"settled" never arrived: the World has no event handler/, 'dice no handler hears')
+refused(swap(dice, 'return {throws: state.throws, read: state.throws, total: total, faces: faces};', 'return state;'), CODE_RESULT_UNREAD,
+  /on e.kind === "settled", read the faces/, 'a settle not read')
+// A build too slow for the phone: 30 000 rounds of work per body list.
+refused(swap(dice, '  let way: number = 1;', '  let way: number = 1;\n  let busy: number = 0;\n  while (busy < 30000) {\n    busy = busy + 1;\n  }'),
+  B.CODE_TOO_SLOW, /a change of state takes about \d+ ms on the phone \(budget 8\)/, 'a slow build')
+// A handler that traps on a tap says where.
+assert.match(play(swap(dice, 'if (e.kind === "tap" || e.kind === "swipe") {', 'if (e.kind === "tap" || e.kind === "swipe") {\n    let none: number[] = [];\n    let x: number = none[3];')),
+  /^\d+:1 R\d+ The program compiled, but stopped in onWorld \(a tap on body "d1"/, 'a trapping tap')
+// No world at all.
+assert.match(play(swap(dice, 'ui.World("default", 0, "build", "onWorld"),', '')), new RegExp('^1:1 ' + CODE_NO_WORLD + ' '), 'no ui.World')
+assert.equal(playWorld(compileVeraSource(swap(dice, 'ui.World("default", 0, "build", "onWorld"),', '')), false), '', 'unless one is not required')
+
+console.log('world-play-check ok\n  ' + budgets.join('\n  '))
