@@ -1691,7 +1691,6 @@ export struct GeneratePage {
       if (this.makeWidget) { this.widgetFresh = false }
       this.modelWrote = true
       this.compositionJson = ''
-      this.acceptRequest()
       this.status = 'Compiled successfully on attempt ' + this.attempt
       if (!hadProgram) { this.openWhole() }
       logMark('gen-compiled', 'attempt=' + this.attempt.toString())
@@ -1700,6 +1699,10 @@ export struct GeneratePage {
       endFields['attempt'] = this.attempt
       endFields['totalMs'] = this.totalMs
       trace('gen-end', endFields)
+      // Accept now that compiled, status, modelWrote and compositionJson are
+      // final, so finishMetrics writes the run log with the run's true outcome
+      // instead of the mid-run 'Compiling (attempt N/3)...' state.
+      this.acceptRequest()
       this.closeRun(false, this.attempt)
       this.generating = false
       return
