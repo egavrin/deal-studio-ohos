@@ -395,6 +395,28 @@ export const INTENT_CATALOG: IntentSpec[] = [
 
 ]
 
+let curatedTargetCache: string[] = []
+
+/**
+ * Every target the curated catalogue exposes: bundle/module/ability, or
+ * bundle/module/ability/IntentName when the row carries an intent name.
+ * Raw device-registry intents are deliberately not included.
+ */
+export function intentTargets(): string[] {
+  if (curatedTargetCache.length > 0) { return curatedTargetCache }
+  for (let spec of INTENT_CATALOG) {
+    if (spec.tier === 'ignored') { continue }
+    let base = spec.bundle + '/' + spec.moduleName + '/' + spec.ability
+    curatedTargetCache.push(spec.via === 'launch' || spec.intentName.length === 0 ? base : base + '/' + spec.intentName)
+  }
+  return curatedTargetCache
+}
+
+/** Whether a target is one of the curated catalogue's rows. */
+export function isCuratedIntentTarget(target: string): boolean {
+  return intentTargets().indexOf(target.trim()) >= 0
+}
+
 /** The spec behind intent.<name>, or null when there is none. */
 export function intentByName(name: string): IntentSpec | null {
   for (let spec of INTENT_CATALOG) { if (spec.name === name) { return spec } }

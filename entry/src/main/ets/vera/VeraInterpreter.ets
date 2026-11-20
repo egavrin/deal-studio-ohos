@@ -63,6 +63,11 @@ export class EmptyHostEnvironment extends HostEnvironment {
   }
 }
 
+/** The largest array one value may hold, whether built by push or by a literal. */
+export const MAX_ARRAY_LENGTH: number = 4096
+/** A recursive Vera call may nest this deep; deeper is a trap, not a JS stack overflow. */
+export const MAX_CALL_DEPTH: number = 1000
+
 export class Instruction {
   op: string
   value: string = ''
@@ -137,6 +142,7 @@ export class VirtualMachine {
   private host: HostEnvironment
   private maxSteps: number
   private steps: number = 0
+  private depth: number = 0
 
   constructor(module: BytecodeModule, host: HostEnvironment = new EmptyHostEnvironment(), maxSteps: number = 5000000) {
     this.host = host
@@ -166,15 +172,22 @@ export class VirtualMachine {
       throw new RuntimeTrap('R0001', `entry function not found: ${entry}`)
     }
     this.steps = 0
+    this.depth = 0
     return this.run(new Frame(fn, [], args))
   }
 
   private run(frame: Frame): RuntimeValue {
+    if (this.depth >= MAX_CALL_DEPTH) {
+      throw new RuntimeTrap('R0031', 'call depth exceeded ' + MAX_CALL_DEPTH.toString())
+    }
+    this.depth += 1
     try {
       return this.runFrame(frame)
     } catch (e) {
       if (e instanceof RuntimeTrap && e.line === 0) { locateTrap(e, frame.fn, frame.pc - 1) }
       throw e as Error
+    } finally {
+      this.depth -= 1
     }
   }
 
@@ -257,12 +270,15 @@ export class VirtualMachine {
         case 'return':
           return this.pop(frame)
         case 'make-array':
+          if (inst.count > MAX_ARRAY_LENGTH) {
+            throw new RuntimeTrap('R0022', 'array length limit reached (4096)')
+          }
           frame.stack.push(new VeraArrayValue(this.take(frame, inst.count)))
           break
         case 'array-push': {
           let v = this.pop(frame)
           let arr = this.asArray(this.pop(frame))
-          if (arr.elements.length >= 4096) {
+          if (arr.elements.length >= MAX_ARRAY_LENGTH) {
             throw new RuntimeTrap('R0022', 'array length limit reached (4096)')
           }
           arr.elements.push(v)
