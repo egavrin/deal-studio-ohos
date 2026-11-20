@@ -13,10 +13,11 @@
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraNumberValue, VeraStringValue,
   VeraBooleanValue, VeraObjectValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock, formatVeraDate, unitAfter, keepUnits } from '../vera/VeraUi'
-import { veraStateStamp } from '../vera/VeraStateStamp'
+import { stateDigest, veraStateStamp } from '../vera/VeraStateStamp'
 import { scheduleCardRefresh } from '../vera/FormUpdater'
 import { runRawIntent } from '../vera/VeraIntents'
-import { runSdkAdapter } from '../vera/VeraSdkBackend'
+import { isSdkTargetImplemented, runSdkAdapter } from '../vera/VeraSdkBackend'
+import { MAX_APP_TIMERS, POLICY_ALLOW, POLICY_DENY, consentKeyFor, imageSourceError, intentTargetPolicy, sdkTargetPolicy, screenNodeProblem, stateSizeProblem } from '../vera/VeraRuntimePolicy'
 import { LengthMetrics, mediaquery, matrix4 } from '@kit.ArkUI'
 
 import { catalogKinds } from '../vera/VeraUiCatalog'
@@ -221,13 +222,18 @@ class LiveTheme {
 }
 
 /**
- * Whether a call is shown to the person before it runs.
+ * Whether a consequential call is shown to the person before it runs.
  *
- * Off by request: a program that blinks the torch every two seconds cannot ask
- * about every flash, and a demo that stops on a dialog is not a demo. On, it
- * asks once per program and per call and remembers the answer.
+ * The policy (VeraRuntimePolicy.ets) decides: read-only/local actions such as
+ * getters, torch and vibration run immediately; state-changing, privacy and
+ * paid actions ask once per program, target and exact parameter set. The
+ * blanket off switch is gone: the policy is the product rule now.
  */
-const ASK_BEFORE_CALLS: boolean = false
+const ASK_BEFORE_CALLS: boolean = true
+/** At most this many effects wait behind the one being run or the one being asked about. */
+const MAX_HELD_EFFECTS: number = 32
+/** A phone action that has not answered by then is reported as timed out; it is not cancelled. */
+const EFFECT_TIMEOUT_MS: number = 30000
 
 /**
  * One bar of a ui.Sparkline drawn with bars: true -- its height in vp, the category name under it
@@ -540,6 +546,10 @@ export struct VeraPreview {
    */
   @State pending: HostEffect | null = null
   private heldEffects: HostEffect[] = []
+  /** One effect runs at a time: concurrent system calls are not a queue, they are a flood. */
+  private effectBusy: boolean = false
+  /** Non-forced saves are debounced so a fast ticker cannot rewrite the state file every 16 ms. */
+  private lastPersistAt: number = 0
   private spinTimer: number = -1
   private motionClock: MotionClock = new MotionClock()
   private motionTimer: number = -1
@@ -674,6 +684,8 @@ export struct VeraPreview {
     this.effectGeneration += 1
     this.heldEffects = []
     this.pending = null
+    this.effectBusy = false
+    this.lastPersistAt = 0
     if (this.host !== null) { this.host!.pendingEffects = [] }
   }
 
@@ -932,9 +944,27 @@ export struct VeraPreview {
   private collectTickers(node: VeraUiNode, wanted: Map<string, TimerConfig>): void {
     if (node.kind === 'ticker' && node.checked && node.minimum > 0 &&
         node.tickerId.length > 0 && node.action.length > 0) {
-      wanted.set(node.tickerId, new TimerConfig(node.minimum, node.action))
+      // A screen that declares fifty tickers must not create fifty platform
+      // intervals. Existing ids still update; new ids past the cap are ignored.
+      if (wanted.has(node.tickerId) || wanted.size < MAX_APP_TIMERS) {
+        wanted.set(node.tickerId, new TimerConfig(node.minimum, node.action))
+      }
     }
     for (let child of node.children) { this.collectTickers(child, wanted) }
+  }
+
+  /** Counts the live tree without recursion and returns the policy error, if any. */
+  private liveNodeProblem(root: LiveNode): string {
+    let stack: LiveNode[] = [root]
+    let count = 0
+    while (stack.length > 0) {
+      let node = stack.pop() as LiveNode
+      count += 1
+      let problem = screenNodeProblem(count)
+      if (problem.length > 0) { return problem }
+      for (let child of node.children) { stack.push(child) }
+    }
+    return ''
   }
 
   private startTimer(id: string, config: TimerConfig): void {
@@ -1005,7 +1035,7 @@ export struct VeraPreview {
     this.retireWorlds()
     // A running surface saves every few seconds, and a world's knocks with the next event; what came since the last save
     // would otherwise be lost.
-    if ((this.liveSurfaces.length > 0 || this.worldUnsaved) && !this.previewOnly) { this.persistState() }
+    if ((this.liveSurfaces.length > 0 || this.worldUnsaved) && !this.previewOnly) { this.persistState(true) }
     // The same applies to the dark-mode listener: it holds this component, and
     // its callback re-enters the VM.
     if (this.darkListener !== null) {
@@ -1067,17 +1097,30 @@ export struct VeraPreview {
   private notifyStateSnapshot(): void {
     if (this.currentState === null || this.previewOnly) { return }
     try {
-      this.onStateSnapshot(JSON.stringify(encodeRuntimeValue(this.currentState!)))
+      let encoded = JSON.stringify(encodeRuntimeValue(this.currentState!))
+      if (stateSizeProblem(encoded.length).length > 0) {
+        console.warn('VERA-STATE snapshot skipped: ' + stateSizeProblem(encoded.length))
+        return
+      }
+      this.onStateSnapshot(encoded)
     } catch (e) {
       console.warn('VERA-STATE snapshot unavailable: ' + (e as Error).message)
     }
   }
 
-  private persistState(): void {
+  private persistState(force: boolean = false): void {
     let keys = this.stateKeys()
     if (keys.length === 0 || this.currentState === null) { return }
+    let now = Date.now()
+    if (!force && now - this.lastPersistAt < 250) { return }
     try {
       let encoded = JSON.stringify(encodeRuntimeValue(this.currentState!))
+      let problem = stateSizeProblem(encoded.length)
+      if (problem.length > 0) {
+        console.error('VERA-STATE save skipped: ' + problem)
+        return
+      }
+      this.lastPersistAt = now
       store.saveState(keys[0], keys[1], this.stamp(), encoded)
       this.diskState = encoded
       this.worldUnsaved = false
@@ -1122,6 +1165,11 @@ export struct VeraPreview {
         reconcile(this.liveRoot!, root!)
       }
       if (this.liveRoot !== null) {
+        let problem = this.liveNodeProblem(this.liveRoot!)
+        if (problem.length > 0) {
+          this.error = 'This screen is too large: ' + problem
+          return
+        }
         this.markLiveNodeGeneration(this.liveRoot!)
         markIconRoom(this.liveRoot!)
       }
@@ -2296,7 +2344,17 @@ export struct VeraPreview {
     let effects: HostEffect[] = this.host!.pendingEffects
     if (effects.length === 0) { return }
     this.host!.pendingEffects = []
-    for (let effect of effects) { this.heldEffects.push(effect) }
+    for (let effect of effects) {
+      if (this.heldEffects.length >= MAX_HELD_EFFECTS) {
+        // A program that queues a hundred calls in one handler is not given a
+        // hundred simultaneous platform requests. Answer the ones it cannot
+        // run, so its handlers are not left waiting silently.
+        this.dispatchFieldAction(effect.resultHandler,
+          new VeraStringValue('error: too many phone actions at once'))
+        continue
+      }
+      this.heldEffects.push(effect)
+    }
     this.runQueued()
   }
 
@@ -2308,7 +2366,7 @@ export struct VeraPreview {
    * whole mechanism exists to prevent.
    */
   private runQueued(): void {
-    if (this.disposed) { return }
+    if (this.disposed || this.effectBusy) { return }
     while (this.heldEffects.length > 0) {
       if (this.pending !== null) { return }
       let effect = this.heldEffects.shift() as HostEffect
@@ -2319,8 +2377,21 @@ export struct VeraPreview {
         this.pending = effect
         return
       }
-      this.runEffect(effect)
+      this.startEffect(effect)
+      return
     }
+  }
+
+  /** Starts one effect and, when its answer or timeout has been delivered, asks for the next. */
+  private startEffect(effect: HostEffect): void {
+    if (this.disposed || this.effectBusy) { return }
+    let generation = this.effectGeneration
+    this.effectBusy = true
+    this.runEffect(effect).finally(() => {
+      if (generation !== this.effectGeneration) { return }
+      this.effectBusy = false
+      this.runQueued()
+    })
   }
 
   /**
@@ -2333,29 +2404,34 @@ export struct VeraPreview {
    * it is safe.
    */
   private needsConsent(effect: HostEffect): boolean {
-    // Asking is off. Turn ASK_BEFORE_CALLS back on and every state-changing
-    // call is shown to the person again -- the sheet,
-    // the queue and the remembered grants are all still here and still work.
-    //
-    // What is lost while it is off is the only thing standing between a
-    // generated program and an intent nobody has checked: the phone accepts
-    // Pay and SendTextMessage as readily as OpenFlashlight, and the person
-    // sees neither. The log keeps the record -- VERA-INTENT-RAW carries the
-    // target and the payload of every call.
     if (!ASK_BEFORE_CALLS) { return false }
-    // Nothing about an sdk.call is curated or risk-classified, so "ask every
-    // time" is the only posture that makes sense until it is
-    // (docs/selector-design.md).
     if (effect.kind !== 'sdk') { return false }
-    // Already allowed, for this program and this call. The grant died with the
-    // previous version of the program: stamp() is the bytecode.
-    if (consent.has(this.stamp(), this.consentKey(effect))) { return false }
+    let target = effect.rawTarget
+    let policy = target.indexOf('/') >= 0 ? intentTargetPolicy(target) : sdkTargetPolicy(target)
+    // A denied target is answered with an error by runSdkAdapter/runRawIntent;
+    // it never becomes a dialog because there is no choice to offer.
+    if (policy === POLICY_DENY) { return false }
+    // Read-only/local actions do not interrupt the person.
+    if (policy === POLICY_ALLOW) { return false }
+    // An unknown or unimplemented target has no capability to approve; let it
+    // reach its honest "not implemented" answer instead of showing a dialog.
+    if (target.indexOf('/') < 0 && !isSdkTargetImplemented(target)) { return false }
+    // Already allowed, for this program, target and exact parameter set.
+    if (consent.has(this.consentStamp(), this.consentKey(effect))) { return false }
     return true
   }
 
-  /** What a grant is about: the target address, as the program wrote it. */
+  /**
+   * What a grant is about: the target, the mode and the exact values. A grant
+   * for "makeCall 123" must not silently cover "makeCall 911".
+   */
   private consentKey(effect: HostEffect): string {
-    return effect.rawTarget
+    return consentKeyFor(effect.rawTarget, effect.rawMode, effect.values)
+  }
+
+  /** A cryptographic-quality fingerprint of the bytecode, for consent keys only. */
+  private consentStamp(): string {
+    return stateDigest(this.vbc2)
   }
 
   /** What the dialog says this call is, in the person's words where there are any. */
@@ -2396,8 +2472,8 @@ export struct VeraPreview {
       console.info('VERA-CONSENT allowed ' + this.consentTarget(effect!))
       // Remembered, so the same program asking the same thing again is not a
       // question the person has to answer twice.
-      consent.remember(this.stamp(), this.consentKey(effect!))
-      this.runEffect(effect!)
+      consent.remember(this.consentStamp(), this.consentKey(effect!))
+      this.startEffect(effect!)
     }
     this.runQueued()
   }
@@ -2420,7 +2496,7 @@ export struct VeraPreview {
   }
 
   /** One effect, whichever host it belongs to, answered through its handler. */
-  private runEffect(effect: HostEffect): void {
+  private async runEffect(effect: HostEffect): Promise<void> {
     if (this.disposed) { return }
     let generation = this.effectGeneration
     let answer: Promise<string>
@@ -2437,13 +2513,20 @@ export struct VeraPreview {
     } else {
       answer = runSdkAdapter(effect.rawTarget, effect.values)
     }
-    answer.then((text: string) => {
+    let timer = -1
+    let timed = new Promise<string>((_resolve: (text: string) => void, reject: (error: Error) => void): void => {
+      timer = setTimeout((): void => { reject(new Error('phone action timed out')) }, EFFECT_TIMEOUT_MS)
+    })
+    try {
+      let text = await Promise.race([answer, timed])
       if (this.disposed || generation !== this.effectGeneration) { return }
       this.dispatchFieldAction(effect.resultHandler, new VeraStringValue(text))
-    }).catch((e: Error) => {
+    } catch (e) {
       if (this.disposed || generation !== this.effectGeneration) { return }
-      this.dispatchFieldAction(effect.resultHandler, new VeraStringValue('error: ' + e.message))
-    })
+      this.dispatchFieldAction(effect.resultHandler, new VeraStringValue('error: ' + (e as Error).message))
+    } finally {
+      if (timer >= 0) { clearTimeout(timer) }
+    }
   }
 
   build() {
@@ -5427,12 +5510,24 @@ export struct VeraPreview {
       // branch here, so every generated program that used one painted nothing
       // and still reported success.
       if (node.source.length > 0) {
-        Image(node.source)
-          .width('100%')
-          .height(180)
-          .objectFit(ImageFit.Contain)
-          .borderRadius(this.t().radiusControl)
-          .accessibilityText(node.alt)
+        if (imageSourceError(node.source).length > 0) {
+          Text('Image blocked: ' + imageSourceError(node.source))
+            .fontSize(this.t().sizeCaption + 1)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().dangerInk)
+            .width('100%')
+            .height(180)
+            .textAlign(TextAlign.Center)
+            .backgroundColor(this.t().surface)
+            .borderRadius(this.t().radiusControl)
+        } else {
+          Image(node.source)
+            .width('100%')
+            .height(180)
+            .objectFit(ImageFit.Contain)
+            .borderRadius(this.t().radiusControl)
+            .accessibilityText(node.alt)
+        }
       } else {
         Text(node.alt.length > 0 ? node.alt : 'image')
           .fontSize(this.t().sizeCaption + 1)

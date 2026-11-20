@@ -24,6 +24,8 @@ const DOMAIN = 0x0000
 
 export const SOURCE_TARGET: string = 'Vera.Source.fetch'
 export const SOURCE_MAX_FIGURES: number = 3
+/** Reads a public API at most this often per app process. */
+export const SOURCE_PER_MINUTE: number = 20
 const SOURCE_MAX_CHARS: number = 400000
 const VALUE_CHARS: number = 40
 
@@ -191,12 +193,24 @@ export async function httpGetText(url: string): Promise<SourceResponse> {
 function pad2(n: number): string { return n < 10 ? '0' + n.toString() : n.toString() }
 
 /** The answer to one `Vera.Source.fetch` call. Never throws. */
+let sourceCalls: number[] = []
+/** Forgets the source-rate history, for host checks. */
+export function resetSourceRate(): void { sourceCalls = [] }
+/** Whether another source read may go out now, counting it when it may. */
+export function sourceRateAllowed(now: number): boolean {
+  sourceCalls = sourceCalls.filter((t: number): boolean => now - t < 60000)
+  if (sourceCalls.length >= SOURCE_PER_MINUTE) { return false }
+  sourceCalls.push(now)
+  return true
+}
+
 export async function sourceFetch(params: Map<string, string>): Promise<string> {
   let started = Date.now()
   let url = (params.get('url') ?? '').trim()
   let paths = (params.get('paths') ?? '').split('|').map((p: string): string => p.trim())
   let asof = (params.get('asof') ?? '').trim()
   if (url.length === 0 || paths.length === 0 || paths[0].length === 0) { return 'error: no address or figure to read' }
+  if (!sourceRateAllowed(Date.now())) { return 'error: reading a live source too often, try again in a minute' }
   let got = await httpGetText(url)
   if (got.error.length > 0) {
     hilog.info(DOMAIN, 'VERA', 'VERA-SOURCE ' + domainOf(url) + ' failed: ' + got.error + ' ms=' + (Date.now() - started).toString())

@@ -13,6 +13,7 @@ import {
 import { resolveStyle } from './VeraUiCatalog'
 import { invokeStdGfx } from './VeraGfx'
 import { invokeStdScene } from './VeraScene'
+import { sdkParamProblem } from './VeraRuntimePolicy'
 
 export class VeraUiNode {
   id: number = 0
@@ -994,12 +995,16 @@ export class UiHostEnvironment extends HostEnvironment {
       throw new RuntimeTrap('R0027',
         'sdk.call parameters are name and value in pairs; got ' + pairs.length.toString() + ' items')
     }
+    let raw: string[] = []
+    for (let item of pairs) { raw.push(asString(item)) }
+    let tooLarge = sdkParamProblem(target, raw)
+    if (tooLarge.length > 0) { throw new RuntimeTrap('R0030', tooLarge) }
     let values = new Map<string, string>()
     let order: string[] = []
-    for (let i = 0; i + 1 < pairs.length; i = i + 2) {
-      let key = asString(pairs[i]).trim()
+    for (let i = 0; i + 1 < raw.length; i = i + 2) {
+      let key = raw[i].trim()
       if (key.length === 0) { continue }
-      values.set(key, asString(pairs[i + 1]))
+      values.set(key, raw[i + 1])
       order.push(key)
     }
     let mode = args.length > 3 ? asString(args[3]) : 'background'

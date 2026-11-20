@@ -197,15 +197,27 @@ async function askModel(system: string, user: string): Promise<string | null> {
  * Only answers that were read are kept; an error is tried again.
  */
 export const LIVE_REUSE_MS: number = 30000
+/** Searches + model calls a generated program may cause per minute. */
+export const LIVE_PER_MINUTE: number = 6
 const LIVE_KEPT: number = 20
 class LiveAnswer {
   at: number = 0
   text: string = ''
 }
 let liveAnswers: Map<string, LiveAnswer> = new Map<string, LiveAnswer>()
+let liveCalls: number[] = []
 
 /** Forgets the answers kept, for the host checks. */
 export function resetLiveAnswers(): void { liveAnswers = new Map<string, LiveAnswer>() }
+/** Forgets the live-call rate history, for host checks. */
+export function resetLiveRate(): void { liveCalls = [] }
+/** Whether another search/model live read may go out now, counting it when it may. */
+export function liveRateAllowed(now: number): boolean {
+  liveCalls = liveCalls.filter((t: number): boolean => now - t < 60000)
+  if (liveCalls.length >= LIVE_PER_MINUTE) { return false }
+  liveCalls.push(now)
+  return true
+}
 
 /** The answer to one `Vera.Live.fetch` call. Never throws. */
 export async function liveFetch(params: Map<string, string>): Promise<string> {
@@ -226,6 +238,7 @@ export async function liveFetch(params: Map<string, string>): Promise<string> {
   let key = query + '\n' + labels.join('|')
   let kept = liveAnswers.get(key)
   if (kept !== undefined && started - kept.at < LIVE_REUSE_MS) { return kept.text }
+  if (!liveRateAllowed(started)) { return 'error: looking up live data too often, try again in a minute' }
   let found: SearchHits = await webSearchHits(query)
   let searchMs = Date.now() - started
   if (found.error.length > 0) {
