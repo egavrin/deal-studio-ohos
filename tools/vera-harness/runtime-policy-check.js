@@ -54,7 +54,14 @@ assert.equal(policy.intentTargetDenied('com.example/phone/MainAbility/Pay'), tru
 assert.equal(policy.intentTargetDenied('com.example/phone/MainAbility/SendTextMessage'), true)
 assert.equal(policy.intentTargetDenied('com.example/phone/MainAbility/RequestPayment'), true)
 assert.equal(policy.intentTargetDenied('com.example/phone/MainAbility/OpenCamera'), false)
-assert.equal(policy.intentTargetPolicy('com.example/phone/MainAbility/OpenCamera'), policy.POLICY_ASK)
+// Only curated catalogue targets are available; a raw target is denied even
+// when its name is not on the payment/messaging deny list.
+assert.equal(policy.intentTargetPolicy('com.example/phone/MainAbility/OpenCamera'), policy.POLICY_DENY)
+const catalogue = loadVera('VeraIntentCatalog')
+const curated = catalogue.intentTargets()
+assert.ok(curated.length > 0)
+assert.equal(catalogue.isCuratedIntentTarget(curated[0]), true)
+assert.equal(policy.intentTargetPolicy(curated[0]), policy.POLICY_ASK)
 assert.equal(policy.intentTargetPolicy('com.example/phone/MainAbility/Pay'), policy.POLICY_DENY)
 
 // The consent key binds target, mode and every parameter; order does not matter.
@@ -128,5 +135,8 @@ assert.equal(backend.isSdkTargetImplemented('CameraKit.CameraManager.setTorchMod
   const intent = loadVera('VeraIntents')
   const refused = await intent.runRawIntent('com.example/phone/MainAbility/Pay', new Map(), 'background')
   assert.match(refused, /not available to generated apps/)
+  // A raw, non-curated target is refused even though it is not a payment name.
+  const raw = await intent.runRawIntent('com.example/phone/MainAbility/OpenCamera', new Map(), 'background')
+  assert.match(raw, /not available to generated apps/)
   console.log('runtime-policy-check: all checks passed')
 })().catch(e => { console.error(e); process.exit(1) })

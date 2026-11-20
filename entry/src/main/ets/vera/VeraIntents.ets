@@ -17,7 +17,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { AbilityContext } from './VeraPermissions'
 import { unreachableTarget } from './VeraIntentCatalog'
-import { intentTargetDenied } from './VeraRuntimePolicy'
+import { POLICY_DENY, intentTargetPolicy } from './VeraRuntimePolicy'
 
 const DOMAIN = 0x0000
 
@@ -67,8 +67,8 @@ export async function runRawIntent(target: string, values: Map<string, string>, 
   // A generated program may not trigger payment, messaging, sharing or
   // installation intents, whatever the compiler saw: the target may have been
   // built dynamically. Say no before any platform call is made.
-  if (intentTargetDenied(target)) {
-    hilog.info(DOMAIN, 'VERA', 'VERA-INTENT-RAW ' + target + ' refused: blocked by runtime policy')
+  if (intentTargetPolicy(target) === POLICY_DENY) {
+    hilog.info(DOMAIN, 'VERA', 'VERA-INTENT-RAW ' + target + ' refused: not a curated intent target')
     return 'error: this action is not available to generated apps'
   }
   // An app known to accept and then ignore calls from here: say so, rather than pass on its empty 'ok'.

@@ -18,6 +18,8 @@
  *        runtime returns an error instead of executing it.
  */
 
+import { isCuratedIntentTarget } from './VeraIntentCatalog'
+
 export const POLICY_ALLOW: string = 'allow'
 export const POLICY_ASK: string = 'ask'
 export const POLICY_DENY: string = 'deny'
@@ -194,9 +196,14 @@ export function intentTargetDenied(target: string): boolean {
   return DENIED_INTENT_NAMES.indexOf(name) >= 0
 }
 
-/** What a generated program may do with an intent target. */
+/**
+ * What a generated program may do with an intent target. Only curated
+ * catalogue rows are available; a raw device-registry intent has no reviewed
+ * contract and is denied. Curated intents still ask for consent.
+ */
 export function intentTargetPolicy(target: string): string {
-  return intentTargetDenied(target) ? POLICY_DENY : POLICY_ASK
+  if (intentTargetDenied(target)) { return POLICY_DENY }
+  return isCuratedIntentTarget(target) ? POLICY_ASK : POLICY_DENY
 }
 
 /**
