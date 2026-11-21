@@ -13,7 +13,7 @@ import { OperationCancellation, isCancelled, throwIfCancelled } from './Operatio
 import { Sketch, SketchInput, ListField, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
   listNeeds, clockOptions, listOptions, choice, askReady, askLive, SketchQuestion, answerTo, keepAnswers, LIST_SECTIONS, LIST_PUBLISHERS, PART } from './VeraCompose'
 import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
-  needOf } from './NeedsPlan'
+  ensureCameraNeed, needOf } from './NeedsPlan'
 
 /** Whether the list keeps a reading in a unit the request gives a number in: a temperature, a pressure, a weight. */
 export function readsMeasure(sketch: Sketch, prompt: string): boolean {
@@ -321,6 +321,7 @@ async function drawOnce(askPlan: SketchAsk, prompt: string, onSketch: (partial: 
     if (isCancelled(cancellation)) { return }
     let plan = parseNeedsPlan(reply)
     if (plan === null) { return }
+    ensureCameraNeed(plan!, prompt)
     let sketch = sketchFrom(plan!)
     if (sketch === null) { return }
     let signature = sketchSignature(sketch!)
@@ -349,6 +350,7 @@ async function drawPlan(askPlan: SketchAsk, prompt: string, onSketch: (partial: 
     let reply = await drawOnce(askPlan, user, onSketch, attempt === 2, cancellation)
     throwIfCancelled(cancellation)
     let plan = reply !== null ? parseNeedsPlan(reply!) : null
+    if (plan !== null) { ensureCameraNeed(plan!, prompt) }
     let sketch = plan !== null ? sketchFrom(plan!) : null
     if (plan !== null && sketch !== null) {
       out.text = reply!
