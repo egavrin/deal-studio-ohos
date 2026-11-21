@@ -9,7 +9,7 @@ import { CustomRequest, CustomResult, writeSection, stillWorks } from './AgentCu
 import { FragmentSpec, StateFieldSpec, cameraCaptureFragment } from '../VeraTemplates'
 import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED, NOTICE_SPLIT, NOTICE_INSTEAD_TITLE } from '../ScreenPlan'
 import { PartsContract } from '../VeraCompose'
-import { isCameraNeed } from '../NeedsPlan'
+import { isCameraCaptureNeed } from '../NeedsPlan'
 import { withoutRepeatedButtons } from './AgentClaims'
 
 const OUTCOME_WRITTEN: string = 'written'
@@ -117,16 +117,20 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   let slots: PlanSlot[] = plan.toWrite()
   if (slots.length === 0) { return null }
   // A camera view is ready-made: the live preview, its shutter and the photos it kept.
-  // It is filled here, not written by the model, so a camera need never competes with
-  // the screen's own list or clock (measured: Exam Prep's writer duplicated its list
-  // and the camera section was lost).
-  let cameraSlots = slots.filter((s: PlanSlot): boolean => isCameraNeed(s.need))
+  // It is filled here, not written by the model, so a capture-only camera need never
+  // competes with the screen's own list or clock (measured: Exam Prep's writer
+  // duplicated its list and the camera section was lost). Only a need the fragment can
+  // satisfy on its own -- frame a preview, snap a photo, keep it -- is filled here; a
+  // compound need (scan a QR, decode it, open the URL) or one that mentions a camera
+  // only in passing (a settings checklist) stays open for the writer instead of being
+  // marked done by a fragment that does not implement the rest of it.
+  let cameraSlots = slots.filter((s: PlanSlot): boolean => isCameraCaptureNeed(s.need))
   if (cameraSlots.length > 0) {
     let cameraSpec = cameraCaptureFragment()
     plan.components.push(new PlanComponent(FILL_HOLE, cameraSpec, new Map<string, string>()))
     let cameraAt = plan.components.length - 1
     for (let s of cameraSlots) { plan.fillWith(s, FILL_HOLE, cameraAt) }
-    slots = slots.filter((s: PlanSlot): boolean => !isCameraNeed(s.need))
+    slots = slots.filter((s: PlanSlot): boolean => !isCameraCaptureNeed(s.need))
     if (slots.length === 0) {
       let done = new CustomResult()
       done.section = cameraSpec
