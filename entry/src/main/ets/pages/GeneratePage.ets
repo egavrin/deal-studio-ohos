@@ -17,6 +17,7 @@ import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText }
 import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError, carryWidget, withoutWidget, widgetRefinementError } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
 import { smokeRun } from '../vera/VeraSmoke'
+import { appRefinementNote, removedAppScreens, smokeRefinement, sourceScreenIds } from '../vera/VeraAppRefine'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
 import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS, SideCall } from '../vera/DeepSeekEngine'
 import { OperationController, throwIfCancelled } from '../vera/OperationCancellation'
@@ -342,6 +343,8 @@ export struct GeneratePage {
   /** The running preview's state as it last changed; not @State, as writing it must not redraw the page. */
   private liveState: string = ''
   private previewController: VeraPreviewController = new VeraPreviewController()
+  @State snapshotting: boolean = false
+  private snapshotRequestId: number = 0
   /** What the next compiled program starts from (VeraPreview.seedState): the state at the moment a refine was asked for. */
   @State carriedState: string = ''
   /**
@@ -513,6 +516,8 @@ export struct GeneratePage {
   private acceptedComposition: string = ''
   private acceptedOrigin: string = ''
   private acceptedMetrics: VersionMetrics | null = null
+  private screenRemovalAsked: boolean = false
+  private allowedScreenRemovals: string[] = []
   private metricTotals: VersionMetrics = new VersionMetrics()
   /**
    * This run alone. `metricTotals` is cumulative across every request a page
@@ -547,6 +552,8 @@ export struct GeneratePage {
     this.finishMetrics(this.runId)
     this.pendingBase = this.currentBase()
     if (this.makeWidget && this.widgetFresh) { this.previousSource = withoutWidget(this.compiledSource) }
+    this.screenRemovalAsked = false
+    this.allowedScreenRemovals = []
     this.pendingRequest = ask
     let history = this.modelRequestHistory()
     this.pendingHistory = history.length > 0 ? history + '\n\nRefinement:\n' + ask : ask
@@ -747,6 +754,8 @@ export struct GeneratePage {
   }
 
   private startNew(): void {
+    this.snapshotRequestId++
+    this.snapshotting = false
     this.previewController = new VeraPreviewController()
     this.savedVbc2 = ''
     this.historyOpen = false
@@ -877,6 +886,8 @@ export struct GeneratePage {
 
   aboutToDisappear(): void {
     this.disposed = true
+    this.snapshotRequestId++
+    this.snapshotting = false
     if (this.readyNoteTimer >= 0) {
       clearTimeout(this.readyNoteTimer)
       this.readyNoteTimer = -1
@@ -1186,7 +1197,7 @@ export struct GeneratePage {
   }
 
   private doGenerate(): void {
-    if (this.disposed || this.prompt.trim().length === 0 || this.baseError.length > 0 || this.generating) { return }
+    if (this.disposed || this.prompt.trim().length === 0 || this.baseError.length > 0 || this.generating || this.snapshotting) { return }
     // Sent before the prompt and the catalogue were read: it goes when they are (aboutToAppear).
     if (!this.resourcesLoaded) { this.runOnOpen = true; return }
     if (this.compiledSource.length > 0) { this.previousSource = this.compiledSource }
@@ -1362,7 +1373,7 @@ export struct GeneratePage {
     // true outcome instead of the mid-run 'Composing...' state.
     this.acceptRequest()
     this.closeRun(true, 0)
-    if (!hadProgram) { this.openWhole() }
+    if (!hadProgram) { this.openWhole(true) }
   }
 
   /**
@@ -1448,7 +1459,7 @@ export struct GeneratePage {
       let genStart = Date.now()
       // Refinement: send the base version's source so the server can edit it
       // instead of regenerating from scratch.
-      let requested = this.pendingHistory + (this.makeWidget ? '\n\n' + widgetRefinementPrompt() : '')
+      let requested = this.pendingHistory + (this.makeWidget ? '\n\n' + widgetRefinementPrompt() : '') + appRefinementNote(this.previousSource)
       let requestBody: string = requested
       let contentType: string = 'text/plain; charset=utf-8'
       if (this.previousSource.length > 0) {
@@ -1481,14 +1492,14 @@ export struct GeneratePage {
           return
         }
         this.generatedSource = decoded.source
-        if (this.makeWidget) {
+        if (this.makeWidget || sourceScreenIds(this.previousSource).length > 1) {
           // A widget is spliced into the saved program here, so the server's bytecode is not the program's: it is compiled
           // and held to the widget's checks on the phone. Any other server result is taken as the server built it.
-          decoded.source = spliceWidget(this.widgetBase, decoded.source)
+          if (this.makeWidget) { decoded.source = spliceWidget(this.widgetBase, decoded.source) }
           this.generatedSource = decoded.source
           let local = compileVeraSource(decoded.source)
-          let validation = smokeRun(local)
-          if (validation.length === 0) { validation = await validateWidgetOffMain(this.widgetBase, decoded.source, local.vbc2) }
+          let validation = smokeRefinement(local, this.previousSource)
+          if (validation.length === 0 && this.makeWidget) { validation = await validateWidgetOffMain(this.widgetBase, decoded.source, local.vbc2) }
           if (validation.length > 0) { throw new Error(validation) }
           decoded.bytecode = local.vbc2
         }
@@ -1576,6 +1587,25 @@ export struct GeneratePage {
     }
   }
 
+  /** Ask at most once per request; approval covers only the exact ids shown, never later removals. */
+  private async confirmScreenRemovals(removed: string[]): Promise<string[]> {
+    if (removed.length === 0 || this.screenRemovalAsked) { return this.allowedScreenRemovals }
+    this.screenRemovalAsked = true
+    let run = this.runId
+    // The model cannot authorize losing unrelated views. Only the person may allow this structural change.
+    try {
+      let answer = await this.getUIContext().getPromptAction().showDialog({
+        title: 'Remove app screens?',
+        message: 'This change removes these screens: ' + removed.join(', ') + '. Allow this only if you asked to remove or combine them.',
+        buttons: [{ text: 'Keep screens', color: '#334155' }, { text: 'Allow removal', color: '#B91C1C' }]
+      })
+      if (!this.disposed && run === this.runId && !this.cancelRequested && answer.index === 1) {
+        this.allowedScreenRemovals = removed.slice()
+      }
+    } catch (_e) { /* Dismissing the dialog never permits a removal. */ }
+    return this.allowedScreenRemovals
+  }
+
   private async runAttempt(userPrompt: string, errorFeedback: string, operation: OperationController): Promise<void> {
     if (operation.isCancelled()) { return }
     let run = this.runId
@@ -1584,7 +1614,7 @@ export struct GeneratePage {
     metrics.attempt = this.attempt
 
     let request = new GenerateRequest()
-    request.systemPrompt = this.systemPrompt + (this.makeWidget ? '\n\n' + widgetRefinementPrompt() : '')
+    request.systemPrompt = this.systemPrompt + (this.makeWidget ? '\n\n' + widgetRefinementPrompt() : '') + appRefinementNote(this.previousSource)
     request.uiSelected = this.uiSelected
     request.uiTool = this.uiSelected.length > 0
     request.grammar = this.grammar
@@ -1714,7 +1744,10 @@ export struct GeneratePage {
       // Run once before serving: a program that compiles can still stop at its first tap, and that is
       // repaired here like a compile error rather than found on the screen.
       let smokeStart = Date.now()
-      errors = smokeRun(result)
+      let removed = removedAppScreens(this.previousSource, result)
+      let allowed = await this.confirmScreenRemovals(removed)
+      if (this.disposed || run !== this.runId || operation.isCancelled()) { return }
+      errors = smokeRefinement(result, this.previousSource, allowed)
       if (errors.length === 0 && this.makeWidget) {
         errors = await validateWidgetOffMain(this.widgetBase, this.generatedSource.trim(), result.vbc2)
       }
@@ -1764,7 +1797,7 @@ export struct GeneratePage {
       this.modelWrote = true
       this.compositionJson = ''
       this.status = 'Compiled successfully on attempt ' + this.attempt
-      if (!hadProgram) { this.openWhole() }
+      if (!hadProgram) { this.openWhole(true) }
       logMark('gen-compiled', 'attempt=' + this.attempt.toString())
       let endFields: Record<string, Object> = {}
       endFields['ok'] = true
@@ -2068,16 +2101,35 @@ export struct GeneratePage {
    * writing a new one, and a failed attempt still gets the three compiler
    * retries.
    */
-  private doRefine(): void {
+  private async doRefine(): Promise<void> {
     let ask = this.refinePrompt.trim()
-    if (this.disposed || ask.length === 0 || this.compiledSource.length === 0 || this.generating || this.baseError.length > 0) { return }
+    if (this.disposed || ask.length === 0 || this.compiledSource.length === 0 || this.generating || this.snapshotting || this.baseError.length > 0) { return }
     // What the person typed is what the widget shows; the instructions for a widget are the system prompt's (widgetRefinementPrompt).
     if (this.makeWidget) { ask = WIDGET_ASK + ask }
     // What the person typed into the preview is kept through the refine. The widget screen draws no app preview: what it
     // carries is the saved data it was opened with.
     if (!this.makeWidget) {
-      if (!this.previewController.flushAndSnapshot()) { return }
-      this.carriedState = this.liveState
+      let controller = this.previewController
+      let run = this.runId
+      let project = this.projectId
+      let version = this.baseVersionId
+      let program = this.compiledVbc2
+      let source = this.compiledSource
+      let request = ++this.snapshotRequestId
+      let current = (): boolean => !this.disposed && request === this.snapshotRequestId && run === this.runId &&
+        controller === this.previewController && project === this.projectId && version === this.baseVersionId &&
+        program === this.compiledVbc2 && source === this.compiledSource
+      this.snapshotting = true
+      try {
+        let snapshot = await controller.flushAndSnapshot()
+        if (!current()) { return }
+        this.carriedState = snapshot.length > 0 ? snapshot : this.liveState
+      } catch (e) {
+        if (current()) { this.status = 'Could not capture app state: ' + (e as Error).message }
+        return
+      } finally {
+        if (request === this.snapshotRequestId) { this.snapshotting = false }
+      }
     }
     // A change that only adds, removes, replaces or moves a block of a composed screen is made on its
     // record, with no model rewrite; anything else, and any step that does not hold, refines as before.
@@ -2351,6 +2403,11 @@ host.worldGuide = this.worldGuide
   }
 
   private stopGeneration(): void {
+    if (this.snapshotting) {
+      this.snapshotRequestId++
+      this.snapshotting = false
+      this.status = 'Stopped'
+    }
     if (!this.generating) { return }
     let run = this.runId
     this.markMetricsPartial()
@@ -3208,7 +3265,7 @@ host.worldGuide = this.worldGuide
         .height(44)
         .fontSize(16)
         .backgroundColor(Color.Transparent)
-        .enabled(!this.generating && this.baseError.length === 0)
+        .enabled(!this.generating && !this.snapshotting && this.baseError.length === 0)
       this.actionButton()
     }
     .width('100%')
@@ -3239,7 +3296,7 @@ host.worldGuide = this.worldGuide
   /** The round button on the right of the box; see composer. */
   @Builder
   actionButton() {
-    if (this.generating) {
+    if (this.generating || this.snapshotting) {
       this.roundButton({ symbol: 'sys.symbol.square_fill', enabled: true, tap: () => { this.stopGeneration() } })
     } else {
       this.roundButton({ symbol: 'sys.symbol.arrow_up', enabled: this.draft.trim().length > 0 && this.canGenerate(),
@@ -3307,9 +3364,18 @@ host.worldGuide = this.worldGuide
    * a slot (the Try one of these demos). Only a new one: a change keeps whichever view the person was in. The run's line stays
    * over it for a few seconds; the collapse button and Back return to the pane, where the line, Code and Metrics are.
    */
-  private openWhole(): void {
-    if (this.fullscreen) { return }
-    this.setFullscreen(true)
+  private async openWhole(firstPresentation: boolean = false): Promise<void> {
+    if (this.disposed || this.snapshotting || this.fullscreen) { return }
+    if (firstPresentation) {
+      this.cornerHidden = false
+      this.tab = TAB_PREVIEW
+      this.composerHidden = false
+      this.fullscreen = true
+    } else {
+      let pending = this.setFullscreen(true)
+      let request = this.snapshotRequestId
+      if (!await pending || this.disposed || request !== this.snapshotRequestId || !this.fullscreen) { return }
+    }
     this.readyNote = true
     // The line of an earlier run goes with its own timer, not this run's line with it.
     if (this.readyNoteTimer >= 0) { clearTimeout(this.readyNoteTimer) }
@@ -3320,13 +3386,34 @@ host.worldGuide = this.worldGuide
   showCorner(): void { this.cornerHidden = false }
 
   /** What was typed into the program goes with it to the other view, which draws a program of its own. */
-  private setFullscreen(on: boolean): void {
-    this.cornerHidden = false
-    if (!this.previewController.flushAndSnapshot()) { return }
-    this.carriedState = this.liveState
-    this.tab = TAB_PREVIEW
-    this.composerHidden = false
-    this.fullscreen = on
+  private async setFullscreen(on: boolean): Promise<boolean> {
+    if (this.disposed || this.snapshotting) { return false }
+    let controller = this.previewController
+    let run = this.runId
+    let project = this.projectId
+    let version = this.baseVersionId
+    let program = this.compiledVbc2
+    let source = this.compiledSource
+    let request = ++this.snapshotRequestId
+    let current = (): boolean => !this.disposed && request === this.snapshotRequestId && run === this.runId &&
+      controller === this.previewController && project === this.projectId && version === this.baseVersionId &&
+      program === this.compiledVbc2 && source === this.compiledSource
+    this.snapshotting = true
+    try {
+      let snapshot = await controller.flushAndSnapshot()
+      if (!current()) { return false }
+      this.cornerHidden = false
+      this.carriedState = snapshot.length > 0 ? snapshot : this.liveState
+      this.tab = TAB_PREVIEW
+      this.composerHidden = false
+      this.fullscreen = on
+      return true
+    } catch (e) {
+      if (current()) { this.status = 'Could not capture app state: ' + (e as Error).message }
+      return false
+    } finally {
+      if (request === this.snapshotRequestId) { this.snapshotting = false }
+    }
   }
 
   /**
@@ -3344,7 +3431,7 @@ host.worldGuide = this.worldGuide
           onStateSnapshot: this.previewSnapshot(this.previewController),
           // The two round buttons lie over the program's corner: on the way down they would cover its rows (a stop's
           // Navigate button, measured on Istanbul layover), so they step aside and come back on the way up.
-          onReadingDown: (down: boolean): void => { animateTo({ duration: 180 }, () => { this.cornerHidden = down }) } })
+          onReadingDown: (down: boolean): void => { this.getUIContext().animateTo({ duration: 180 }, () => { this.cornerHidden = down }) } })
           .width('100%')
           .height('100%')
         Row({ space: 8 }) {
@@ -3916,7 +4003,7 @@ host.worldGuide = this.worldGuide
 
   /** A suggestion or Try again: sent as if typed into the box. */
   private sendWidget(ask: string, label: string = ''): void {
-    if (this.generating) { return }
+    if (this.generating || this.snapshotting) { return }
     this.chipLabel = label
     this.draft = ask
     this.send()
@@ -3975,9 +4062,9 @@ host.worldGuide = this.worldGuide
     if (leave && placed) { this.close() }
   }
 
-  private send(): void {
+  private async send(): Promise<void> {
     let text = this.draft.trim()
-    if (this.disposed || text.length === 0 || this.generating) { return }
+    if (this.disposed || text.length === 0 || this.generating || this.snapshotting) { return }
     this.widgetOffer = false
     this.requestLabel = this.chipLabel
     this.chipLabel = ''
@@ -3995,14 +4082,19 @@ host.worldGuide = this.worldGuide
     }
     if (this.hasResult()) {
       this.refinePrompt = text
-      this.doRefine()
+      let controller = this.previewController
+      let project = this.projectId
+      let pending = this.doRefine()
+      let request = this.snapshotRequestId
+      await pending
+      if (this.disposed || request !== this.snapshotRequestId || controller !== this.previewController || project !== this.projectId) { return }
     } else {
       this.prompt = text
       this.doGenerate()
     }
     // Emptied only once the request has gone: with no key, no model or no server it did not, and the words stay to be sent
     // when that is put right.
-    if (this.generating || this.runOnOpen) { this.draft = '' }
+    if ((this.generating || this.runOnOpen) && this.draft.trim() === text) { this.draft = '' }
     this.scrollDown()
   }
 

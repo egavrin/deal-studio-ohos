@@ -91,6 +91,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['spacer', ['none', 'small', 'default', 'large']],
   ['path', ['default', 'accent', 'success', 'warning', 'danger', 'muted', 'light']],
   ['image', ['default']],
+  ['camera', ['default']],
   ['field', ['default', 'multiline']],
   ['toggle', ['default']],
   ['checkbox', ['default']],
@@ -171,6 +172,11 @@ export const CATALOG: ComponentSpec[] = [
     [style('row'), new PropSpec('children', 'view[]')], 'horizontal stack', '', '', true),
   new ComponentSpec('Card', 'card',
     [style('card'), new PropSpec('children', 'view[]')], 'framed group'),
+  new ComponentSpec('Screen', 'screen',
+    [new PropSpec('id', 'string'), new PropSpec('children', 'view[]')],
+    'the active screen, with a stable identity; changing id replaces its native controls without restarting the program',
+    '',
+    'Use one named view function per screen, all taking the same AppState. view(state) chooses only the active function with if/else, inside one AppTheme. Return ui.Screen(id, children) from each screen function. Change a state field in ordinary handlers to switch screens; there is no second VM, init or state per screen. Keep the id stable while editing; include the record id when the same editor opens a different record. Leaving a screen discards its native input controllers and pending edits, removes its tickers/surfaces, and opens the next screen at the top. Use BackHandler on secondary screens; navigation and draft commit/cancel are ordinary state transitions. Do not eagerly construct inactive screens with ui.When or Tabs. A tabbed shell may put the active Screen at the selected index and empty Columns at inactive indices; call only that active screen function.'),
   new ComponentSpec('Scroll', 'scroll',
     [style('column'), new PropSpec('children', 'view[]')], 'scrolling group'),
   new ComponentSpec('Text', 'text',
@@ -179,6 +185,13 @@ export const CATALOG: ComponentSpec[] = [
     [style('spacer')], 'vertical gap', '', '', true),
   new ComponentSpec('Image', 'image',
     [style('image'), new PropSpec('src', 'string'), new PropSpec('alt', 'string')], 'https image'),
+  new ComponentSpec('Camera', 'camera',
+    [style('camera'), new PropSpec('action', 'string'),
+      new PropSpec('facing', 'string', '', true), new PropSpec('label', 'string', '', true)],
+    'live camera preview inside the app with a shutter; the handler takes (state, value: string), the captured photo as a file URI',
+    'string',
+    'For a screen that looks through the camera: photographing revision notes, a receipt, a label or a form, then showing or keeping what was captured. The preview is live and stays inside this app; the person frames the shot and taps the shutter. The handler receives the captured JPEG as a file URI (file://...), which ui.Image can show, and the preview stays open for another shot. Do not use an sdk.call camera target for this: that opens the system camera app instead. facing is "back" (the default) or "front"; label is the shutter text (the default is "Take photo").'),
+
   new ComponentSpec('Path', 'path',
     [style('path'), new PropSpec('commands', 'string'), new PropSpec('spinPeriodMs', 'number'),
       new PropSpec('action', 'string', '', true), new PropSpec('value', 'number', '', true)],
@@ -286,14 +299,18 @@ export const CATALOG: ComponentSpec[] = [
     'direction alternating with each throw; on e.kind === "settled" keep what e.values say in the state and show it (say it ' +
     'is still in the air while state.throws is ahead of the throw last read). Putting things back: state.round in every id, ' +
     'a Button adding 1. Bodies that stand together touch (a stack of side s is s higher each level); bodies to be told apart ' +
-    'start apart. Bodies circling a centre: no floor, a glowing centre if it shines, each body painted as what it is ' +
+    'start apart. Prefer a matching model from the model catalogue (scene.model; its y is where it stands, not its centre) ' +
+    'to one built from primitives, and paint surfaces as what they are (scene.paint): std/scene below says how each works. ' +
+    'Bodies circling a centre: no floor, a glowing centre if it shines, each body painted as what it is ' +
     '(scene.paint, a real body in its real colours) and turning on its tilted axis, scene.orbit(scene.spin(scene.turn(' +
     'scene.paint(scene.sphere(id, 0, 0, 0, r, colour), pattern, colour2), 0, 0, tilt), dayS), centreId, radius, periodS, ' +
     'phaseDeg), every body the request implies within 4.5 (smaller rather than left out), neighbouring orbits further apart ' +
     'than the two bodies reach (radius, rings, what circles them), style full and an orbiting scene.camera high above the ' +
     'centre. A tap names the body (e.body) in state, scene.mark marks it and a ui.Text shows it. scene.sky(colour, stars) ' +
     'for what is behind the world, scene.trail on the bodies whose paths should show: the host adds no sky, stars or paths ' +
-    'by itself.'),
+    'by itself. scene.burst(id, trigger, x, y, z, kind, color) gives a brief particle effect on each trigger change after ' +
+    'the world\'s first state (start the count at 0; changing back to 0 emits). Blasts already give debris and smoke; shots ' +
+    'hitting bodies give sparks and hard watched knocks give dust: do not duplicate these with scene.burst.'),
   new ComponentSpec('ListItem', 'listitem',
     [style('listitem'), new PropSpec('text', 'string'), new PropSpec('label', 'string'),
       new PropSpec('value', 'string'), new PropSpec('action', 'string'),
@@ -309,7 +326,7 @@ export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('BackHandler', 'backhandler',
     [new PropSpec('action', 'string')],
     'draws nothing; calls the handler, with 0, on the system back gesture', 'number',
-    'VERA has no separate navigation stack -- "screens" are just a state.screen-style field and ui.When choosing which View to draw. Add one ui.BackHandler wherever a screen other than the first is showing, so the hardware/system back gesture does something sensible (return to the previous screen, close a dialog) instead of the OS default, which exits the app. Leave it out of the first screen so back still exits normally. Only one should be live at a time; if several are drawn in the same frame the last one decoded wins.'),
+    'VERA has no separate navigation stack -- screens are a state.screen-style field and if/else choosing which screen view function to call (wrap its children in ui.Screen). Add one ui.BackHandler wherever a screen other than the first is showing, so the hardware/system back gesture does something sensible (return to the previous screen, close a dialog) instead of the OS default, which exits the app. Leave it out of the first screen so back still exits normally. Only one should be live at a time; if several are drawn in the same frame the last one decoded wins.'),
   new ComponentSpec('Progress', 'progress',
     [style('progress'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
       new PropSpec('maximum', 'number')], 'a progress bar'),
@@ -458,7 +475,7 @@ export const CATALOG: ComponentSpec[] = [
     [style('datefield'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
       new PropSpec('action', 'string')],
     'a calendar date, as a local day number; the handler takes (state, value: number)', 'number',
-    'For a date the person chooses -- a due date, a birthday, a trip. The value is the day number time.daysSinceEpoch() returns, so start it at today with time.daysSinceEpoch(), compare it with today directly, and subtract two of them for a count of days. ui.dateToString(day) writes it as "30 Oct 2026" inside another component\'s text; (day + 4) % 7 is its weekday, 0=Sunday, as time.weekday() counts. Pair it with ui.TimeField for a date and a time.'),
+    'For a date the person chooses -- a due date, a birthday, a trip. The value is the day number time.daysSinceEpoch() returns, so initialize new date drafts AND reset them after Add/Save with time.daysSinceEpoch(), never 0 (which means 1 Jan 1970), unless another default is explicitly requested. When editing, preserve the stored date. Read the clock in init or handlers, not view. Compare it with today directly, and subtract two of them for a count of days. ui.dateToString(day) writes it as "30 Oct 2026" inside another component\'s text; (day + 4) % 7 is its weekday, 0=Sunday, as time.weekday() counts. Pair it with ui.TimeField for a date and a time.'),
   new ComponentSpec('NumberListItem', 'numberlistitem',
     [style('numberlistitem'), new PropSpec('title', 'string'), new PropSpec('subtitle', 'string'),
       new PropSpec('value', 'number'), new PropSpec('prefix', 'string'),
@@ -640,6 +657,7 @@ export const CHILD_RULES: ChildRule[] = [
   new ChildRule('Motion', [], ['Motion']),
   new ChildRule('Layers', [], ['Layers']),
   new ChildRule('Tabs', [], ['Tabs']),
+  new ChildRule('Screen', [], ['Screen']),
   new ChildRule('Transform', [], ['Transform', 'World']),
   // One look per program.
   new ChildRule('AppTheme', [], ['AppTheme']),

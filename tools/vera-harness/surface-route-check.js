@@ -13,22 +13,21 @@ const {AgentRequest} = loadVera('agent/VeraAgent')
 const {compileVeraSource} = loadVera('VeraCompiler')
 const {playSurface} = loadVera('VeraSurfacePlay')
 
-const rawfile = name => fs.readFileSync(path.join(__dirname, '../../entry/src/main/resources/rawfile', name), 'utf8')
+const rawfile = name => fs.readFileSync(path.join(__dirname, '../../entry/src/main/resources/rawfile', name), 'utf8').replace(/\r\n/g, '\n')
+const exampleFile = name => fs.readFileSync(path.join(__dirname, 'examples', name), 'utf8').replace(/\r\n/g, '\n')
 const guide = rawfile('vera-surface-skill.txt')
 const worldGuide = rawfile('vera-world-skill.txt')
-const worldBasics = fs.readFileSync(path.join(__dirname, 'examples/world-basics.vera'), 'utf8')
+const worldBasics = exampleFile('world-basics.vera')
 // A dice app as the model might write one: the fixture for the route's 3D tests (not what the guide shows).
-const worldDice = fs.readFileSync(path.join(__dirname, 'examples/world-dice.vera'), 'utf8')
+const worldDice = exampleFile('world-dice.vera')
 const language = rawfile('vera-skill.txt')
 const example = guide.slice(guide.indexOf('--- EXAMPLE ---') + '--- EXAMPLE ---'.length, guide.indexOf('--- END EXAMPLE ---')).trim()
 
 // The guide's example is the program the model copies its structure from: it must compile, run and play.
 assert.equal(S.checkSurfaceProgram(example), '', 'the guide\'s example compiles, runs once and plays')
-assert.equal(example.trim(), fs.readFileSync(path.join(__dirname, 'examples/surface-basics.vera'), 'utf8')
-  .slice(fs.readFileSync(path.join(__dirname, 'examples/surface-basics.vera'), 'utf8').indexOf('@jsonable')).trim(),
-'the guide carries examples/surface-basics.vera as it is (regenerate the rawfile when the example changes)')
+assert.equal(example.trim(), exampleFile('surface-basics.vera').slice(exampleFile('surface-basics.vera').indexOf('@jsonable')).trim(),
+ 'the guide carries examples/surface-basics.vera as it is (regenerate the rawfile when the example changes)')
 
-// The world guide's example is examples/world-basics.vera byte for byte, and it compiles, runs once and its world plays.
 {
   const open = '--- EXAMPLE ---\n', close = '--- END EXAMPLE ---'
   const worldExample = worldGuide.slice(worldGuide.indexOf(open) + open.length, worldGuide.indexOf(close))
@@ -37,12 +36,19 @@ assert.equal(example.trim(), fs.readFileSync(path.join(__dirname, 'examples/surf
   assert.match(S.checkWorldProgram(example), /^1:1 P0008 .*shows no ui.World/, 'a flat game is not a 3D program')
   const tOpen = '--- TRAVEL EXAMPLE ---\n', tClose = '--- END TRAVEL EXAMPLE ---'
   const travel = worldGuide.slice(worldGuide.indexOf(tOpen) + tOpen.length, worldGuide.indexOf(tClose))
-  assert.equal(travel, fs.readFileSync(path.join(__dirname, 'examples/world-walk.vera'), 'utf8'),
+  assert.equal(travel, exampleFile('world-walk.vera'),
     'the world guide carries examples/world-walk.vera as it is (regenerate the rawfile when the example changes)')
   for (const t of ['none', 'self', 'steered', 'both']) {
     assert.equal(S.checkWorldProgram(travel, t), '', 'the travel example plays for travel ' + t)
   }
   assert.match(S.checkWorldProgram(worldExample, 'self'), /P0014 .*goes anywhere by itself/, 'the throwing example has nothing that travels')
+  // The guide tells of shooting, breaking and a blast in general terms, and of what struck, a tap and action carry.
+  for (const w of ['"struck"', 'e.dx, e.dy, e.dz', 'e.other its\n  label', '- Shooting: whatever shoots', '- Breaking:', '- A blast:', 'scene.split(thing, n, burst)',
+    'scene.shoot says how many', 'never "shot", "piece" or "body"']) assert.ok(worldGuide.includes(w), 'the world guide says ' + w)
+  // The fixtures for shooting and breaking play through the route's own check.
+  for (const name of ['world-shoot', 'world-break']) {
+    assert.equal(S.checkWorldProgram(fs.readFileSync(path.join(__dirname, 'examples', name + '.vera'), 'utf8')), '', name + ' passes the route check')
+  }
 }
 
 // The gate: game words ask, everything else goes straight to the agent.
@@ -55,6 +61,10 @@ for (const p of ['帮我做一个小时候红白机风格的坦克大战', '霓�
 for (const p of ['dice game', '3D solar system', 'cubes knocking over', 'a 3D cube', 'planets orbiting the sun', 'physics stack of blocks',
   'dominoes toppling'])
   assert.ok(S.looksLikeSurface(p), p + ' is asked about')
+for (const p of ['break the 3D vases', 'smash crates', 'shatter glass', 'destroy the tower', 'a 3D cannon', 'exploding barrels'])
+  assert.ok(S.looksLikeSurface(p), p + ' is asked about')
+for (const p of ['breakfast log', 'a meal planner for breakfast and lunch'])
+  assert.ok(!S.looksLikeSurface(p), p + ' is not asked about')
 for (const p of ['立方体', '太阳系模型', '掷骰子', '三维地球', '物理堆叠'])
   assert.ok(S.looksLikeSurface(p), p + ' is asked about')
 for (const p of ['帮我创建一张吃药卡，提醒我每天吃药', '西湖一日游', '成绩和绩点计算器'])
@@ -73,6 +83,8 @@ assert.equal(S.parseSurfaceBrief('{"surface": "whole", "engine": "world", "trave
 assert.equal(S.parseSurfaceBrief('{"surface": "whole", "engine": "flat", "travel": "steered", "title": "T", "design": "D"}').travel, 'none',
   'a flat app has no travel')
 for (const w of ['"travel"', '"self"', '"steered"']) assert.ok(S.SURFACE_CLASSIFY_PROMPT.includes(w), 'the classifier says ' + w)
+for (const w of ['up to two buttons beside', 'what it or anything else shoots', 'a tap that aims at the point tapped',
+  'what breaks into pieces when struck hard enough']) assert.ok(S.SURFACE_CLASSIFY_PROMPT.includes(w), 'the world design asks ' + w)
 assert.equal(S.parseSurfaceBrief('not json'), null)
 // The engine: world only for a whole app that says so, flat otherwise.
 assert.equal(S.parseSurfaceBrief('{"surface": "whole", "title": "T", "design": "D"}').engine, S.ENGINE_FLAT, 'no engine is flat')
@@ -104,7 +116,7 @@ assert.ok(!worldSystem.includes('FULL-CANVAS APPS'))
 
 // The play check refuses a surface that never moves, one that traps mid-game, and a program with no surface: on a game
 // with rounds (examples/surface-catch.vera, a fixture, not what the guide shows).
-const catchGame = fs.readFileSync(path.join(__dirname, 'examples/surface-catch.vera'), 'utf8')
+const catchGame = exampleFile('surface-catch.vera')
 const still = catchGame.replace('if (state.phase !== "playing") {\n    if (p.phase !== "down") {', 'if (true) {\n    if (true) {')
 assert.match(playSurface(compileVeraSource(still)), /nothing on the surface changed/, 'a game that never starts is refused')
 const trapping = catchGame.replace('let dt: number = math.min(elapsedMs, 50) / 1000;',
