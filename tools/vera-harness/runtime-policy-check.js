@@ -31,6 +31,12 @@ ask('AudioKit.AudioManager.setVolume')
 ask('NotificationKit.notificationManager.publish')
 ask('ConnectivityKit.wifiManager.enableWifi')
 ask('TelephonyKit.call.setMuted')
+// Sensitive device-identifier reads ask: the implemented IMEISV target, whose
+// ASK entry was once misspelled (getMEISV) and fell through the get* heuristic
+// to ALLOW -- a device identifier read without consent.
+ask('TelephonyKit.radio.getIMEISV')
+ask('TelephonyKit.radio.getIMEI')
+ask('TelephonyKit.radio.getUniqueDeviceId')
 
 // Destructive/system actions are never available to generated code.
 for (const target of [
@@ -73,6 +79,16 @@ assert.notEqual(policy.consentKeyFor('X/y/z/Send', 'background', a), policy.cons
 assert.notEqual(policy.consentKeyFor('X/y/z/Send', 'background', a), policy.consentKeyFor('X/y/z/Send', 'foreground', a))
 assert.notEqual(policy.consentKeyFor('X/y/z/Send', 'background', a), policy.consentKeyFor('X/y/z/Other', 'background', a))
 
+// The in-app camera shutter is gated as an ASK target (verified above). Its
+// consent key carries no program-supplied parameters -- the program hands the
+// capture handler, not capture settings -- so two shutter taps in the same
+// program share one grant, and a different target does not inherit it.
+const camTarget = 'CameraKit.PhotoOutput.capture'
+const camKey = policy.consentKeyFor(camTarget, '', new Map())
+assert.equal(policy.consentKeyFor(camTarget, '', new Map()), camKey)
+assert.notEqual(camKey, policy.consentKeyFor(camTarget, 'foreground', new Map()))
+assert.notEqual(camKey, policy.consentKeyFor('CameraKit.CameraManager.setTorchMode', '', new Map()))
+
 // sdk.call payload caps: target, pair count and total characters.
 assert.equal(policy.sdkParamProblem('CameraKit.CameraManager.setTorchMode', ['mode', 'ON']), '')
 assert.match(policy.sdkParamProblem('x'.repeat(policy.MAX_SDK_TARGET_CHARS + 1), []), /target is longer/)
@@ -88,6 +104,19 @@ assert.match(policy.imageSourceError('https://localhost/a.jpg'), /public interne
 assert.match(policy.imageSourceError('https://127.0.0.1/a.jpg'), /public host, not a number/)
 assert.match(policy.imageSourceError('https://user:pass@example.org/a.jpg'), /user name or password/)
 assert.match(policy.imageSourceError('file:///data/storage/../secret.jpg'), /\.\./)
+// The host is parsed separately from an explicit port and from a query or
+// fragment that appears before the path: a port must not smuggle a numeric or
+// local host past the checks.
+assert.match(policy.imageSourceError('https://127.0.0.1:443/private.png'), /not a number/)
+assert.match(policy.imageSourceError('https://192.168.1.1:8443/private.png'), /not a number/)
+assert.match(policy.imageSourceError('https://0x7f.0.0.1:443/a.png'), /not a number/)
+assert.match(policy.imageSourceError('https://printer.local:443/photo.png'), /public internet host/)
+assert.match(policy.imageSourceError('https://localhost:8443/a.png'), /public internet host/)
+assert.match(policy.imageSourceError('https://printer.local?src=x'), /public internet host/)
+assert.match(policy.imageSourceError('https://printer.local#frag'), /public internet host/)
+assert.match(policy.imageSourceError('https://example.org:notaport/a.png'), /port must be a number/)
+assert.equal(policy.imageSourceError('https://example.org:443/photo.jpg'), '')
+assert.equal(policy.imageSourceError('https://example.org?size=large'), '')
 
 // Source/live rate limits are bounded and reset for checks.
 const source = loadVera('VeraSource')
@@ -129,6 +158,7 @@ const backend = loadVera('VeraSdkBackend')
 assert.equal(backend.isSdkTargetImplemented('ArkTS.process.abort'), false)
 assert.equal(backend.isSdkTargetImplemented('ConnectivityKit.wifiManager.factoryReset'), false)
 assert.equal(backend.isSdkTargetImplemented('CameraKit.CameraManager.setTorchMode'), true)
+assert.equal(backend.isSdkTargetImplemented('CameraKit.PhotoOutput.capture'), true)
 ;(async () => {
   const denied = await backend.runSdkAdapter('ArkTS.process.abort', new Map())
   assert.match(denied, /not available to generated apps/)

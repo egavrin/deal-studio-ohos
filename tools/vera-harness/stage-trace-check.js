@@ -163,7 +163,7 @@ function probe(askBeforeCalls = false) {
     '../vera/VeraGfx': {...loadVera('VeraGfx'), decodeGfx: value => value},
     '../vera/VeraStateCarry': loadVera('VeraStateCarry'), '../vera/ProjectStore': {store: mocks.store},
     './trace/StageTrace': {StageTrace}, '../vera/VeraConsentStore': {consent: mocks.consent},
-    '../vera/VeraIntents': {runRawIntent: platform}, '../vera/VeraSdkBackend': {runSdkAdapter: platform}
+    '../vera/VeraIntents': {runRawIntent: platform}, '../vera/VeraSdkBackend': {runSdkAdapter: platform, isSdkTargetImplemented: () => true}
   }
   const cache = new Map()
   function load(file) {

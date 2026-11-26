@@ -45,14 +45,15 @@ const forbidden = name => new Proxy({}, { get(_target, key) {
   throw Error('Forbidden platform access: ' + name + '.' + String(key))
 } })
 const consent = {
-  has(stamp, target) {
-    consentChecks.push([stamp, target])
-    return grants.get(stamp)?.has(target) === true
+  has(stamp, key) {
+    consentChecks.push([stamp, key])
+    const granted = grants.get(stamp)
+    return granted === '*' || (granted !== undefined && granted.has(key) === true)
   },
-  remember(stamp, target) {
-    remembered.push([stamp, target])
-    if (!grants.has(stamp)) grants.set(stamp, new Set())
-    grants.get(stamp).add(target)
+  remember(stamp, key) {
+    remembered.push([stamp, key])
+    if (!grants.has(stamp) || grants.get(stamp) === '*') grants.set(stamp, new Set())
+    grants.get(stamp).add(key)
   }
 }
 function adapter(route, target, values, mode) {
@@ -75,8 +76,13 @@ function load(file) {
   cache.set(file, module)
   const importer = name => {
     if (name.endsWith('/VeraIntents')) return { runRawIntent: (target, values, mode) => adapter('intent', target, values, mode) }
-    if (name.endsWith('/VeraSdkBackend')) return { runSdkAdapter: (target, values) => adapter('sdk', target, values) }
+    if (name.endsWith('/VeraSdkBackend')) return { runSdkAdapter: (target, values) => adapter('sdk', target, values),
+      isSdkTargetImplemented: t => t === sdkTarget }
+    // The policy consults the catalogue; the fixture targets are the curated
+    // rows as far as these checks are concerned.
+    if (name.endsWith('/VeraIntentCatalog')) return { isCuratedIntentTarget: t => t === target }
     if (name.endsWith('/VeraConsentStore')) return { consent }
+    if (name.endsWith('/AppActor')) return { AppActor: DebounceOffAppActor }
     if (name === '@kit.CoreFileKit') return { fileIo: filesystem }
     if (name === '@kit.PerformanceAnalysisKit') return { hilog: forbidden('hilog') }
     if (name.startsWith('@kit.') || name === 'libllama.so') return forbidden(name)
@@ -88,16 +94,20 @@ function load(file) {
 }
 const runtime = name => load(path.join(root, 'runtime', name + '.ets'))
 const vera = name => load(path.join(root, 'vera', name + '.ets'))
+const RealAppActor = runtime('AppActor').AppActor
+class DebounceOffAppActor extends RealAppActor { constructor(...args) { super(...args); this.saveDebounceMs = 0 } }
 const { InProcessHost } = runtime('InProcessHost')
 const { HostEffectsBridge } = runtime('HostEffectsBridge')
 const { StageTrace } = runtime('trace/StageTrace')
-const { EffectController, executeEffect, effectValues, effectConsentKey, effectConsentTitle, effectConsentValues } = runtime('EffectController')
+const { EffectController, executeEffect, effectValues, effectConsentKey, effectConsentTitle, effectConsentValues, MAX_HELD_EFFECTS } = runtime('EffectController')
 const { compileVeraSource } = vera('VeraCompiler')
 const { veraStateStamp } = vera('VeraStateStamp')
 const { store } = vera('ProjectStore')
 store.init('/effects-fixture')
 const target = 'com.example.effects/entry/EntryAbility/Record'
-const sdkTarget = 'Fixture.device.read'
+const sdkTarget = 'Fixture.device.write'
+const policy = vera('VeraRuntimePolicy')
+const keyFor = req => policy.consentKeyFor(req.rawTarget, req.mode, effectValues(req))
 const effectCode = (label = 'fire', name = target, mode = '') =>
   `sdk.call("${name}", ["label", "${label}", "value", ui.numberToString(state.n)], "answered"${mode ? ', "' + mode + '"' : ''});`
 function fixture({ refresh = false, refreshCount = 1, initial = 1, bad = false } = {}) {
@@ -259,6 +269,7 @@ function harness(options = {}) {
   }
   p.bridge = new HostEffectsBridge(host, {
     askBeforeCalls: false,
+    effectTimeoutMs: 0,
     onPending: effect => p.pending.push(effect),
     flushPendingInputFor: appId => p.flushInput(appId),
     onAdmitted: (effect, seq) => p.admissions.push({ effect, seq }),
@@ -304,7 +315,7 @@ function request(effectId = 1, extra = {}) {
 }
 function controller(options = {}) {
   const p = { pending: [], completed: [], epoch: 1, stamp: 'version-a', active: true }
-  p.controller = new EffectController({ askBeforeCalls: true, stamp: () => p.stamp,
+  p.controller = new EffectController({ askBeforeCalls: true, effectTimeoutMs: 0, stamp: () => p.stamp,
     generation: () => p.epoch, isCurrent: () => p.active,
     onPending: effect => p.pending.push(effect), complete: (effect, text) => p.completed.push({ effect, text }), ...options })
   return p
@@ -375,9 +386,9 @@ test('slash predicate requires sdk kind; other-kind slash remains SDK and Map pr
     { route: 'sdk', target, values: [['z', 'last'], ['a', '']], mode: undefined },
     { route: 'intent', target, values: [], mode: 'background' }
   ])
-  assert.equal(effectConsentKey(effect), target)
+  assert.equal(effectConsentKey(effect), keyFor(effect))
   assert.equal(effectConsentTitle(request()), 'Run Record')
-  assert.equal(effectConsentTitle(request(2, { rawTarget: sdkTarget })), 'Run read')
+  assert.equal(effectConsentTitle(request(2, { rawTarget: sdkTarget })), 'Run write')
   assert.equal(effectConsentValues(effect), 'z: last\na: ')
   assert.equal(effectConsentValues(request()), '(no parameters)')
 })
@@ -418,10 +429,12 @@ test('consent grants are keyed by captured stamp and raw target; replacement ver
   p.post()
   p.bridge.allowPending()
   await pump()
-  assert.deepEqual(remembered, [[programs.basic.vbc2, target]])
+  assert.deepEqual(remembered, [[programs.basic.vbc2, keyFor(p.effects[0])]])
+  // The same call again is covered by the remembered grant.
   p.post()
   await pump()
   assert.equal(calls.length, 2)
+  // A different sdk target asks on its own.
   p.post('sdkFire')
   assert.equal(p.pending.at(-1).rawTarget, sdkTarget)
   assert.equal(calls.length, 2)
@@ -431,10 +444,10 @@ test('consent grants are keyed by captured stamp and raw target; replacement ver
   p.post()
   assert.equal(calls.length, 2)
   assert.equal(p.pending.at(-1).rawTarget, target)
-  assert.deepEqual(consentChecks.at(-1), [programs.newer.vbc2, target])
+  assert.deepEqual(consentChecks.at(-1), [programs.newer.vbc2, keyFor(p.effects.at(-1))])
   p.bridge.allowPending()
   await pump()
-  assert.deepEqual(remembered, [[programs.basic.vbc2, target], [programs.newer.vbc2, target]])
+  assert.deepEqual(remembered, [[programs.basic.vbc2, keyFor(p.effects[0])], [programs.newer.vbc2, keyFor(p.effects.at(-1))]])
   assert.equal(calls.length, 3)
 })
 
@@ -448,7 +461,7 @@ test('pending consent holds even no-consent followers, then allowed calls overla
   assert.equal(p.pending.filter(Boolean).length, 1)
   p.controller.allowPending()
   assert.equal(calls.length, 3)
-  assert.deepEqual(remembered, [['version-a', target]])
+  assert.deepEqual(remembered, [['version-a', keyFor(request())]])
   second.resolve('second')
   third.resolve('third')
   first.resolve('first')
@@ -489,16 +502,53 @@ for (const [name, fail, text] of [
   })
 }
 
+test('effect bound is enforced at enqueue: overflow is answered immediately and the queue never grows past the cap', async () => {
+  const p = controller()
+  const flood = Array.from({ length: MAX_HELD_EFFECTS + 10 }, (_, i) => request(i + 1))
+  p.controller.accept(flood)
+  const held = p.controller.heldEffects.slice(p.controller.heldIndex).map(work => work.effect)
+  // The first is the pending consent; exactly the cap minus it wait behind;
+  // the rest are answered at once, not silently dropped.
+  assert.deepEqual(held.map(effect => effect.effectId),
+    flood.slice(1, MAX_HELD_EFFECTS).map(effect => effect.effectId))
+  assert.deepEqual(p.completed.map(item => item.text), flood.slice(MAX_HELD_EFFECTS).map(() => 'error: too many phone actions at once'))
+  assert.deepEqual(p.completed.map(item => item.effect.effectId),
+    flood.slice(MAX_HELD_EFFECTS).map(effect => effect.effectId))
+  assert.equal(calls.length, 0)
+  // The overflow answers travel the ordinary result path, so a retrying
+  // handler cannot re-enter the queue synchronously. Allowing the pending
+  // call grants its exact key, which the identical followers share: the whole
+  // bounded queue then drains, one platform call per effect -- and nothing
+  // beyond the cap ever runs.
+  p.controller.allowPending()
+  await microtasks()
+  assert.equal(calls.length, MAX_HELD_EFFECTS)
+})
+
+test('a phone action that never answers is reported as timed out and does not block the queue', async () => {
+  const p = controller({ effectTimeoutMs: 100 })
+  grants.set('version-a', '*')
+  platform = () => new Promise(() => {})
+  p.controller.accept([request(1)])
+  now += 101
+  await pump()
+  assert.deepEqual(p.completed.map(item => item.text), ['error: phone action timed out'])
+  assert.deepEqual(remembered, [])
+  // The timer is cleared once the answer or the timeout settles.
+  assert.equal(timers.size, 0)
+})
+
 test('controller captures stamp at acceptance and copies request params across consent wait', async () => {
   const p = controller()
   const effect = request(1, { params: ['key', 'original'] })
+  const expectedKey = keyFor(effect)
   p.controller.accept([effect])
   effect.params[1] = 'mutated'
   effect.rawTarget = 'wrong.target'
   p.stamp = 'version-b'
   p.controller.allowPending()
   await microtasks()
-  assert.deepEqual(remembered, [['version-a', target]])
+  assert.deepEqual(remembered, [['version-a', expectedKey]])
   assert.deepEqual(calls[0].values, [['key', 'original']])
   assert.equal(p.completed[0].effect.rawTarget, target)
 })
@@ -863,7 +913,9 @@ for (const lifecycle of ['invalidate', 'replace']) {
 test('synchronous post fast-frame reentrant refusal appends result without losing or duplicating queued completion', async () => {
   const p = harness({ askBeforeCalls: true })
   await p.acquire()
-  grants.set(programs.basic.vbc2, new Set([target]))
+  // Exactly the pair's two calls are granted; the sdkFire target still asks.
+  grants.set(programs.basic.vbc2, new Set(['first', 'second'].map(label =>
+    policy.consentKeyFor(target, 'background', new Map([['label', label], ['value', '1']])))))
   p.post('pair')
   p.post('sdkFire')
   assert.equal(p.pending.at(-1).rawTarget, sdkTarget)
@@ -1032,7 +1084,7 @@ for (const allowed of [true, false]) {
     assert.deepEqual(order, allowed
       ? ['execute:1', 'execute:2', 'execute:3', 'complete:1', 'complete:2', 'complete:3']
       : ['complete:1', 'execute:2', 'execute:3', 'complete:2', 'complete:3'])
-    assert.deepEqual(remembered, allowed ? [['version-a', target]] : [])
+    assert.deepEqual(remembered, allowed ? [['version-a', keyFor(tagged(1))]] : [])
   })
 }
 

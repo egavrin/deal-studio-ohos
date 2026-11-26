@@ -122,7 +122,7 @@ const ASK_SDK_TARGETS: string[] = [
   'MediaKit.AVRecorder.start',
   'CameraKit.PhotoOutput.capture',
   'TelephonyKit.radio.getIMEI',
-  'TelephonyKit.radio.getMEISV',
+  'TelephonyKit.radio.getIMEISV',
   'TelephonyKit.radio.getMEID',
   'TelephonyKit.radio.getUniqueDeviceId',
   'PerformanceAnalysisKit.hidebug.getPss',
@@ -221,8 +221,17 @@ export function imageSourceError(source: string): string {
   if (/^https:\/\/[^\/?#]*@/i.test(s)) { return 'an image source must not carry a user name or password' }
   if (/^https:\/\/\[/i.test(s)) { return 'an image source must name a public host, not a number' }
   let rest = s.substring('https://'.length)
-  let slash = rest.indexOf('/')
-  let host = (slash >= 0 ? rest.substring(0, slash) : rest).toLowerCase().replace(/\.+$/, '')
+  // The authority ends at the first path, query or fragment marker; anything
+  // after a colon inside it is a port. The host is validated on its own: a
+  // port (or a query before the path) must not smuggle a numeric or local
+  // host past the checks that follow.
+  let cut = rest.search(/[\/?#]/)
+  let authority = cut >= 0 ? rest.substring(0, cut) : rest
+  let colon = authority.indexOf(':')
+  if (colon >= 0 && !/^[0-9]+$/.test(authority.substring(colon + 1))) {
+    return 'an image source port must be a number'
+  }
+  let host = (colon >= 0 ? authority.substring(0, colon) : authority).toLowerCase().replace(/\.+$/, '')
   if (host.length === 0 || host.indexOf('.') < 0) { return 'an image source must name a public internet host' }
   if (host.split('.').every((label: string): boolean => /^(0x[0-9a-f]*|[0-9]+)$/i.test(label))) {
     return 'an image source must name a public host, not a number'
