@@ -12,7 +12,6 @@
 
 import { VeraUiNode, formatVeraNumber, formatVeraClock, formatVeraDate, unitAfter, keepUnits } from '../vera/VeraUi'
 import { veraStateStamp } from '../vera/VeraStateStamp'
-import { scheduleCardRefresh } from '../vera/FormUpdater'
 import { LengthMetrics, mediaquery, matrix4 } from '@kit.ArkUI'
 
 import { catalogKinds } from '../vera/VeraUiCatalog'
@@ -33,7 +32,8 @@ import { WorldBox, WorldPick, WorldGesture, playerOf } from './VeraWorld3D'
 import { SimEvent } from '../vera/VeraPhysics'
 import { StageTrace } from '../runtime/trace/StageTrace'
 import { InProcessHost, HostOperationFailure } from '../runtime/InProcessHost'
-import { ProgramRef, AcquireOptions, EffectRequest, ActorHandle, AppSubscriber, FrameEnvelope,
+import { ProgramRef, AcquireOptions, EffectRequest, ActorHandle, AppSubscriber, RevisionedFrameEnvelope,
+  RevisionedEffectRequest, StateSnapshotEnvelope, HostStateVersion,
   InputPayload, InputEvent, DrawRequest, TickEvent, SurfaceFrameEvent, AdmissionResult } from '../runtime/shared/Messages'
 import { HostEffectsBridge, HostEffectsBinding, EffectResultHost } from '../runtime/HostEffectsBridge'
 import { effectConsentTitle, effectConsentValues } from '../runtime/EffectController'
@@ -62,22 +62,24 @@ function scenePayload(kind: string, body: string, other: string, x: number, y: n
 }
 
 class PreviewSubscriber implements AppSubscriber {
-  private viewFrame: (frame: FrameEnvelope) => void
+  private viewFrame: (frame: RevisionedFrameEnvelope) => void
   private errorHandler: (kind: string, message: string, inputSeq?: number) => void
-  private stateSnapshot: (encoded: string) => void
+  private stateSnapshot: (encoded: string, snapshot?: StateSnapshotEnvelope) => void
   private stateSaved: (projectId: string) => void
-  private effectRequest: (effect: EffectRequest) => void
+  private effectRequest: (effect: RevisionedEffectRequest) => void
   private flushInput: (appId: string) => void | Promise<void>
   private mailboxWritable: () => void
+  private actorHandle: (handle: ActorHandle, reason?: 'REPLACE' | 'PROMOTE') => void
 
   constructor(
-    viewFrame: (frame: FrameEnvelope) => void,
+    viewFrame: (frame: RevisionedFrameEnvelope) => void,
     errorHandler: (kind: string, message: string, inputSeq?: number) => void,
-    stateSnapshot: (encoded: string) => void,
+    stateSnapshot: (encoded: string, snapshot?: StateSnapshotEnvelope) => void,
     stateSaved: (projectId: string) => void,
-    effectRequest: (effect: EffectRequest) => void,
+    effectRequest: (effect: RevisionedEffectRequest) => void,
     flushInput: (appId: string) => void | Promise<void>,
-    mailboxWritable: () => void
+    mailboxWritable: () => void,
+    actorHandle: (handle: ActorHandle, reason?: 'REPLACE' | 'PROMOTE') => void
   ) {
     this.viewFrame = viewFrame
     this.errorHandler = errorHandler
@@ -86,15 +88,17 @@ class PreviewSubscriber implements AppSubscriber {
     this.effectRequest = effectRequest
     this.flushInput = flushInput
     this.mailboxWritable = mailboxWritable
+    this.actorHandle = actorHandle
   }
 
-  onViewFrame(frame: FrameEnvelope): void { this.viewFrame(frame) }
+  onViewFrame(frame: RevisionedFrameEnvelope): void { this.viewFrame(frame) }
   onError(kind: string, message: string, inputSeq?: number): void {
     this.errorHandler(kind, message, inputSeq)
   }
-  onStateSnapshot(encoded: string): void { this.stateSnapshot(encoded) }
+  onStateSnapshot(encoded: string, snapshot?: StateSnapshotEnvelope): void { this.stateSnapshot(encoded, snapshot) }
   onStateSaved(projectId: string): void { this.stateSaved(projectId) }
-  onEffectRequest(effect: EffectRequest): void { this.effectRequest(effect) }
+  onEffectRequest(effect: RevisionedEffectRequest): void { this.effectRequest(effect) }
+  onActorHandle(handle: ActorHandle, reason?: 'REPLACE' | 'PROMOTE'): void { this.actorHandle(handle, reason) }
   flushPendingInputFor(appId: string): void | Promise<void> { return this.flushInput(appId) }
   onMailboxWritable(): void { this.mailboxWritable() }
 }
@@ -123,6 +127,10 @@ class PreviewEffectResultHost implements EffectResultHost {
   ): AdmissionResult {
     return this.postResult(handle, effectId, text)
   }
+}
+
+interface PreviewPublicationVersion extends HostStateVersion {
+  readonly appId: string
 }
 
 interface PreviewGfx {
@@ -538,25 +546,31 @@ export struct VeraPreview {
   private revision: number = 0
   @State error: string = ''
   private viewError: string = ''
+  private static teardowns: WeakMap<InProcessHost, Map<string, Promise<void>>> =
+    new WeakMap<InProcessHost, Map<string, Promise<void>>>()
   private runtime: InProcessHost = InProcessHost.get()
   private handle: ActorHandle | null = null
   private subscriber: AppSubscriber | null = null
   private operations: Promise<void> = Promise.resolve()
   private acquireGeneration: number = 0
+  private transitionPersistKey: string = ''
   private loadGeneration: number = 0
   private subscriberGeneration: number = 0
   private draining: boolean = false
   private mountRequested: boolean = false
   private transitioning: boolean = false
+  private awaitingReplacement: boolean = false
   private activeProgram: string = ''
   private activeOptions: AcquireOptions = { mode: 'PREVIEW', persistKey: '', seedState: '' }
   private frameAppId: string = ''
   private frameVmGeneration: number = 0
+  private publicationVersion: PreviewPublicationVersion | null = null
+  private publicationAppId: string = ''
   private lastFrameSeq: number = 0
   private lastAppliedSeq: number = 0
   private observedErrors: Set<number> = new Set<number>()
   private inFlight: FieldAction | null = null
-  private deferredFrames: FrameEnvelope[] = []
+  private deferredFrames: RevisionedFrameEnvelope[] = []
   private postDrain: boolean = false
   private postEdits: boolean = false
   private postingEffect: boolean = false
@@ -773,6 +787,8 @@ export struct VeraPreview {
     this.observedErrors.clear()
     this.acquireGeneration++
     this.subscriber = null
+    this.publicationVersion = null
+    this.publicationAppId = ''
     this.pageHidden = this.destinationHidden
     let missing: string[] = []
     for (let kind of catalogKinds()) {
@@ -811,6 +827,71 @@ export struct VeraPreview {
     return generation === this.acquireGeneration && (!this.disposed || this.draining)
   }
 
+  private acceptPublication(publication: PreviewPublicationVersion, allowPreview: boolean): boolean {
+    if (this.awaitingReplacement || publication === undefined || publication === null ||
+        publication.runtimeMode !== this.activeOptions.mode ||
+        (!allowPreview && publication.runtimeMode === 'PREVIEW') ||
+        typeof publication.appId !== 'string' || publication.appId.length === 0 ||
+        !Number.isSafeInteger(publication.vmGeneration) || publication.vmGeneration < 0 ||
+        publication.vmGeneration >= Number.MAX_SAFE_INTEGER ||
+        !Number.isSafeInteger(publication.stateRevision) || publication.stateRevision < 0 ||
+        publication.stateRevision >= Number.MAX_SAFE_INTEGER ||
+        (publication.runtimeMode !== 'LIVE_PERSISTENT' && publication.stateRevision !== 0)) { return false }
+    if (publication.runtimeMode === 'LIVE_PERSISTENT' && publication.appId !== this.activeOptions.persistKey) {
+      return false
+    }
+    if (!this.transitioning && this.handle !== null &&
+        (publication.appId !== this.handle!.appId || publication.vmGeneration !== this.handle!.vmGeneration)) {
+      return false
+    }
+    if ((this.transitioning || this.handle === null) && this.publicationAppId.length > 0 &&
+        publication.appId !== this.publicationAppId) { return false }
+    let previous = this.publicationVersion
+    if (previous !== null && publication.appId === previous.appId) {
+      if (publication.vmGeneration < previous.vmGeneration ||
+          (publication.vmGeneration === previous.vmGeneration && publication.stateRevision < previous.stateRevision)) {
+        return false
+      }
+    }
+    this.publicationVersion = { appId: publication.appId, runtimeMode: publication.runtimeMode,
+      vmGeneration: publication.vmGeneration, stateRevision: publication.stateRevision }
+    this.publicationAppId = publication.appId
+    return true
+  }
+
+  private resetPublicationLineage(): void {
+    this.publicationVersion = null
+    this.frameAppId = ''
+    this.frameVmGeneration = 0
+    this.lastFrameSeq = 0
+    this.lastAppliedSeq = 0
+  }
+
+  private acceptActorHandle(handle: ActorHandle): void {
+    let previous = this.handle
+    if (this.transitioning || previous === null || handle.leaseId !== previous.leaseId ||
+        handle.appId !== previous.appId || !Number.isSafeInteger(handle.vmGeneration) ||
+        handle.vmGeneration <= previous.vmGeneration || handle.vmGeneration >= Number.MAX_SAFE_INTEGER) { return }
+    this.handle = handle
+    this.flushFailure = new Error('Preview activation changed')
+    this.posts = []
+    this.invalidateEffects()
+    this.numberDraft.clear()
+    this.numberEpoch++
+    this.stopAllTimers('REPLACE')
+    this.worldEvents = []
+    this.worldEventNodes = []
+    this.observedErrors.clear()
+    this.lastFrameSeq = 0
+    this.lastAppliedSeq = 0
+    this.admissionBlocked = false
+    let binding = this.bridge().beginBinding(veraStateStamp(this.activeProgram))
+    this.effectsBinding = binding
+    binding.bind(handle)
+    this.flushFailure = null
+    this.syncEditGate()
+  }
+
   private createSubscriber(generation: number): AppSubscriber {
     let subscriberGeneration = ++this.subscriberGeneration
     let current = (): boolean =>
@@ -818,12 +899,13 @@ export struct VeraPreview {
       subscriberGeneration === this.subscriberGeneration
 
     return new PreviewSubscriber(
-      (frame: FrameEnvelope): void => {
+      (frame: RevisionedFrameEnvelope): void => {
         if (current()) { this.acceptFrame(frame) }
       },
 
       (kind: string, message: string, inputSeq?: number): void => {
         if (!current()) { return }
+        if (kind.toUpperCase() === 'STATE' && message === 'STATE_RECOVERY') { return }
         if (inputSeq !== undefined) { this.observedErrors.add(inputSeq) }
         let viewFailure = kind.toUpperCase() === 'VIEW'
         this.worldTransitionError = ''
@@ -838,16 +920,22 @@ export struct VeraPreview {
         this.scheduleFieldActions()
       },
 
-      (encoded: string): void => {
-        if (current() && !this.disposed) { this.onStateSnapshot(encoded) }
+      (encoded: string, snapshot?: StateSnapshotEnvelope): void => {
+        if (!current() || this.disposed || snapshot === undefined || snapshot.encoded !== encoded ||
+            typeof encoded !== 'string' || encoded.length === 0) { return }
+        let publication: PreviewPublicationVersion = { appId: snapshot.appId, runtimeMode: snapshot.runtimeMode,
+          vmGeneration: snapshot.vmGeneration, stateRevision: snapshot.stateRevision }
+        if (!this.acceptPublication(publication, false)) { return }
+        this.onStateSnapshot(encoded)
       },
 
-      (projectId: string): void => {
-        if (current()) { scheduleCardRefresh(projectId) }
-      },
+      (_projectId: string): void => {},
 
-      (effect: EffectRequest): void => {
+      (effect: RevisionedEffectRequest): void => {
         if (!current() || this.disposed || this.effectsBinding === null) { return }
+        let publication: PreviewPublicationVersion = { appId: effect.appId, runtimeMode: effect.runtimeMode,
+          vmGeneration: effect.vmGeneration, stateRevision: effect.stateRevision }
+        if (!this.acceptPublication(publication, false)) { return }
         this.effectsBinding!.onEffectRequest(effect)
       },
 
@@ -862,12 +950,30 @@ export struct VeraPreview {
         this.resumePosts()
         if (this.effectsBridge !== null) { this.effectsBridge!.onMailboxWritable() }
         this.syncEditGate()
+      },
+
+      (handle: ActorHandle, reason?: 'REPLACE' | 'PROMOTE'): void => {
+        if (!current()) { return }
+        if (reason === 'REPLACE' && this.transitioning && this.awaitingReplacement && this.handle !== null &&
+            handle !== this.handle && handle.leaseId === this.handle!.leaseId &&
+            (this.publicationAppId.length === 0 || handle.appId === this.publicationAppId) &&
+            Number.isSafeInteger(handle.vmGeneration) && handle.vmGeneration >= 0 &&
+            handle.vmGeneration < Number.MAX_SAFE_INTEGER) {
+          this.resetPublicationLineage()
+          this.publicationAppId = handle.appId
+          this.awaitingReplacement = false
+        }
+        this.acceptActorHandle(handle)
       }
     )
   }
 
-  private async configure(generation: number, loadGeneration: number): Promise<void> {
+  private async configure(generation: number, loadGeneration: number, teardown?: Promise<void>): Promise<void> {
     if (!this.activationCurrent(generation) || this.disposed || loadGeneration !== this.loadGeneration) { return }
+    if (teardown !== undefined) {
+      await teardown
+      if (!this.activationCurrent(generation) || this.disposed || loadGeneration !== this.loadGeneration) { return }
+    }
     let program: ProgramRef = { vbc2: this.vbc2, stamp: this.stamp() }
     let options = this.actorOptions()
     if (this.handle !== null && this.activeProgram === program.vbc2 &&
@@ -887,10 +993,13 @@ export struct VeraPreview {
     let original = this.handle
     let originalProgram = this.activeProgram
     let originalOptions = this.activeOptions
+    this.transitionPersistKey = originalOptions.mode === 'LIVE_PERSISTENT' ? originalOptions.persistKey : ''
     let originalAppId = this.frameAppId
     let originalGeneration = this.frameVmGeneration
     let originalFrameSeq = this.lastFrameSeq
     let originalAppliedSeq = this.lastAppliedSeq
+    let originalPublicationVersion = this.publicationVersion
+    let originalPublicationAppId = this.publicationAppId
     let originalReleased = false
     let originalInvalid = false
     this.transitioning = true
@@ -903,6 +1012,11 @@ export struct VeraPreview {
     this.observedErrors.clear()
     this.activeProgram = program.vbc2
     this.activeOptions = options
+    this.publicationAppId = options.mode === 'LIVE_PERSISTENT' ? options.persistKey :
+      original !== null && originalOptions.mode === options.mode ? original.appId : ''
+    this.awaitingReplacement = original !== null && (originalProgram !== program.vbc2 ||
+      (options.mode === 'PREVIEW' && originalOptions.mode !== 'PREVIEW'))
+    if (original === null) { this.resetPublicationLineage() }
     this.pendingWorldProgram = this.worldProgram !== program.vbc2 ? program.vbc2 : null
     this.worldTransitionError = ''
     this.error = ''
@@ -921,6 +1035,7 @@ export struct VeraPreview {
           try {
             next = await this.changeRuntime(original, program, options, originalProgram, originalOptions)
           } catch (e) {
+            if (e instanceof HostOperationFailure && e.handleInvalidated) { throw e }
             if ((e as HostOperationFailure).code !== 'INVALID_HANDLE') { throw e as Error }
             originalInvalid = true
             if (this.handle === null || this.handle === original) { throw e as Error }
@@ -934,7 +1049,8 @@ export struct VeraPreview {
             }
           }
         } catch (e) {
-          if ((e as HostOperationFailure).code === 'APP_ID_CONFLICT') {
+          if ((e as HostOperationFailure).code === 'APP_ID_CONFLICT' &&
+              !(e instanceof HostOperationFailure && e.handleInvalidated)) {
             originalReleased = true
             this.handle = null
             try {
@@ -946,10 +1062,9 @@ export struct VeraPreview {
             }
             if (!this.activationCurrent(generation) || this.disposed) { throw new Error('Preview was released') }
             this.subscriber = this.createSubscriber(generation)
-            this.frameAppId = ''
-            this.frameVmGeneration = 0
-            this.lastFrameSeq = 0
-            this.lastAppliedSeq = 0
+            this.awaitingReplacement = false
+            this.resetPublicationLineage()
+            this.publicationAppId = options.mode === 'LIVE_PERSISTENT' ? options.persistKey : ''
             this.observedErrors.clear()
             next = await this.runtime.acquire(options.mode === 'LIVE_PERSISTENT' ? options.persistKey : '',
               program, options, this.subscriber!)
@@ -974,7 +1089,9 @@ export struct VeraPreview {
       binding.bind(next)
     } catch (e) {
       binding.failBinding()
+      if (e instanceof HostOperationFailure && e.handleInvalidated) { originalInvalid = true }
       if (this.activationCurrent(generation)) {
+        this.awaitingReplacement = false
         this.handle = originalReleased || originalInvalid ? null : original
         this.activeProgram = originalProgram
         this.activeOptions = originalOptions
@@ -984,6 +1101,8 @@ export struct VeraPreview {
         this.frameVmGeneration = originalReleased || originalInvalid ? 0 : originalGeneration
         this.lastFrameSeq = originalReleased || originalInvalid ? 0 : originalFrameSeq
         this.lastAppliedSeq = originalReleased || originalInvalid ? 0 : originalAppliedSeq
+        this.publicationVersion = originalReleased || originalInvalid ? null : originalPublicationVersion
+        this.publicationAppId = originalInvalid ? '' : originalPublicationAppId
         if (originalInvalid) {
           this.subscriber = null
           this.subscriberGeneration++
@@ -995,6 +1114,7 @@ export struct VeraPreview {
           try {
             if (originalReleased) {
               this.subscriber = this.createSubscriber(generation)
+              this.resetPublicationLineage()
               let restored = await this.runtime.acquire(originalAppId,
                 { vbc2: originalProgram, stamp: veraStateStamp(originalProgram) }, originalOptions, this.subscriber!)
               if (!this.activationCurrent(generation) || this.disposed) {
@@ -1020,6 +1140,7 @@ export struct VeraPreview {
         }
       }
     } finally {
+      this.transitionPersistKey = ''
       if (generation === this.acquireGeneration && loadGeneration === this.loadGeneration) {
         this.transitioning = false
         this.syncEditGate()
@@ -1087,7 +1208,10 @@ export struct VeraPreview {
     this.invalidateEffects()
     this.stopAllTimers('REPLACE')
     this.syncEditGate()
-    this.operations = this.operations.then(() => this.configure(generation, loadGeneration)).catch((error: Error): void => {
+    let options = this.actorOptions()
+    let teardown = options.mode === 'LIVE_PERSISTENT'
+      ? VeraPreview.teardowns.get(this.runtime)?.get(options.persistKey) : undefined
+    this.operations = this.operations.then(() => this.configure(generation, loadGeneration, teardown)).catch((error: Error): void => {
       if (this.activationCurrent(generation) && loadGeneration === this.loadGeneration && !this.disposed) {
         this.transitioning = false
         this.flushFailure = error
@@ -1525,6 +1649,28 @@ export struct VeraPreview {
         }
       }
     })
+    let keys: Set<string> = new Set<string>()
+    if (this.transitionPersistKey.length > 0) { keys.add(this.transitionPersistKey) }
+    if (this.activeOptions.mode === 'LIVE_PERSISTENT') { keys.add(this.activeOptions.persistKey) }
+    let requested = this.actorOptions()
+    if (requested.mode === 'LIVE_PERSISTENT') { keys.add(requested.persistKey) }
+    if (keys.size > 0) {
+      let pending = VeraPreview.teardowns.get(this.runtime)
+      if (pending === undefined) {
+        pending = new Map<string, Promise<void>>()
+        VeraPreview.teardowns.set(this.runtime, pending)
+      }
+      let drains = pending
+      for (let key of keys) {
+        let previous = drains.get(key)
+        let settled = Promise.all(previous === undefined ? [this.operations] : [previous, this.operations])
+          .then((): void => {}, (): void => {})
+        drains.set(key, settled)
+        settled.then((): void => {
+          if (drains.get(key) === settled) { drains.delete(key) }
+        })
+      }
+    }
     // The same applies to the dark-mode listener: it holds this component, and
     // its callback re-enters the VM.
     if (this.darkListener !== null) {
@@ -1575,14 +1721,18 @@ export struct VeraPreview {
     for (let frame of frames) { this.acceptFrame(frame) }
   }
 
-  private acceptFrame(frame: FrameEnvelope): void {
+  private acceptFrame(frame: RevisionedFrameEnvelope): void {
+    if (!Number.isSafeInteger(frame.frameSeq) || frame.frameSeq < 0 || frame.frameSeq >= Number.MAX_SAFE_INTEGER ||
+        !Number.isSafeInteger(frame.appliedSeq) || frame.appliedSeq < 0 || frame.appliedSeq >= Number.MAX_SAFE_INTEGER ||
+        (frame.appId === this.frameAppId && (frame.vmGeneration < this.frameVmGeneration ||
+          (frame.vmGeneration === this.frameVmGeneration && frame.frameSeq <= this.lastFrameSeq)))) { return }
+    let publication: PreviewPublicationVersion = { appId: frame.appId, runtimeMode: frame.runtimeMode,
+      vmGeneration: frame.vmGeneration, stateRevision: frame.stateRevision }
+    if (!this.acceptPublication(publication, true)) { return }
     if (this.inFlight !== null && this.inFlight!.posting) {
       this.deferredFrames.push(frame)
       return
     }
-    if (frame.vmGeneration < this.frameVmGeneration ||
-        (frame.vmGeneration === this.frameVmGeneration && frame.appId === this.frameAppId &&
-          frame.frameSeq <= this.lastFrameSeq)) { return }
     if (this.pendingWorldProgram !== null && frame.view !== null &&
         (frame.appId !== this.frameAppId || frame.vmGeneration !== this.frameVmGeneration)) {
       this.commitWorldProgram(this.pendingWorldProgram!)
@@ -2973,6 +3123,7 @@ export struct VeraPreview {
       result = { status: 'REJECTED', reason: (e as Error).message }
     }
     next.posting = false
+    if (next.generation !== this.effectGeneration) { return { status: 'REJECTED', reason: 'INVALID_HANDLE' } }
     if (result.status === 'ACCEPTED' && result.inputSeq !== undefined) {
       next.inputSeq = result.inputSeq
       this.drainFrames()
@@ -3087,6 +3238,7 @@ export struct VeraPreview {
         this.inFlight !== null || this.postingEffect || this.renderingDepth > 0 || this.admissionBlocked) { return }
     this.posting = true
     let progressed = false
+    let postingGeneration = this.effectGeneration
     try {
       while (this.posts.length > 0 && this.inFlight === null && !this.admissionBlocked && !this.transitioning && !this.disposed) {
         let post = this.posts[0]
@@ -3121,6 +3273,7 @@ export struct VeraPreview {
         } catch (e) {
           result = { status: 'REJECTED', reason: (e as Error).message }
         }
+        if (postingGeneration !== this.effectGeneration) { progressed = false; break }
         if (result.status === 'BACKPRESSURE') { this.admissionBlocked = true; break }
         if (this.posts[0] === post) { this.posts.shift() }
         progressed = true
@@ -3190,6 +3343,7 @@ export struct VeraPreview {
         try {
           let admission = this.runtime.postEffectResult(handle, effectId, text)
           next.posting = false
+          if (next.generation !== this.effectGeneration) { return { status: 'REJECTED', reason: 'INVALID_HANDLE' } }
           if (admission.status === 'ACCEPTED' && admission.inputSeq !== undefined) {
             next.inputSeq = admission.inputSeq
             this.drainFrames()

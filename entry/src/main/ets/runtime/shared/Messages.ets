@@ -93,6 +93,16 @@ export interface FrameEnvelope {
   scenes?: SceneDraw[]
 }
 
+export interface HostStateVersion {
+  readonly runtimeMode: RuntimeMode
+  readonly vmGeneration: number
+  readonly stateRevision: number
+}
+
+export interface RevisionedFrameEnvelope extends FrameEnvelope, HostStateVersion {
+  readonly vmGeneration: number
+}
+
 export interface EffectRequest {
   appId: string
   vmGeneration: number
@@ -104,12 +114,22 @@ export interface EffectRequest {
   mode: string
 }
 
+export interface RevisionedEffectRequest extends EffectRequest, HostStateVersion {
+  readonly vmGeneration: number
+}
+
+export interface StateSnapshotEnvelope extends HostStateVersion {
+  readonly appId: string
+  readonly encoded: string
+}
+
 export interface AppSubscriber {
-  onViewFrame(frame: FrameEnvelope): void
+  onViewFrame(frame: RevisionedFrameEnvelope): void
   onError(kind: string, message: string, inputSeq?: number): void
-  onStateSnapshot(encoded: string): void
+  onStateSnapshot(encoded: string, snapshot?: StateSnapshotEnvelope): void
   onStateSaved(projectId: string): void
-  onEffectRequest(effect: EffectRequest): void
+  onEffectRequest(effect: RevisionedEffectRequest): void
+  onActorHandle?(handle: ActorHandle, reason?: 'REPLACE' | 'PROMOTE'): void
   flushPendingInputFor(appId: string): void | Promise<void>
   onMailboxWritable(): void
 }

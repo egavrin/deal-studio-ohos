@@ -3,13 +3,39 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const ts = require(process.env.VERA_TYPESCRIPT_PATH || 'typescript')
+let currentMemory
+const worker = require('./state-io-check').createWorkerFixture('/fixture/files/vera', event => {
+  if (currentMemory) currentMemory.workerEvent(event)
+})
+const executeWorker = worker.taskpool.execute.bind(worker.taskpool)
+worker.taskpool.execute = (task, priority) => {
+  const memory = currentMemory
+  assert(memory, 'worker requires the current fixture')
+  assert.equal(worker.memory.fds.size, 0, 'worker descriptors released before fixture synchronization')
+  assert([...worker.memory.nodes.values()].every(node => node.owner === null), 'worker locks released before fixture synchronization')
+  worker.memory.nodes.clear()
+  for (const [file, text] of memory.entries) {
+    worker.memory.put(file, text === null ? '' : text, text === null ? 'dir' : 'file', memory.ages.get(file) || 0)
+  }
+  return executeWorker(task, priority).finally(() => {
+    memory.entries.clear()
+    for (const [file, node] of worker.memory.nodes) memory.entries.set(file, node.kind === 'dir' ? null : node.data.toString('utf8'))
+  })
+}
+const platform = {
+  '@kit.ArkTS': {util: worker.util, taskpool: worker.taskpool},
+  '@ohos.fileio': {default: worker.legacyFilesystem},
+  '@kit.CryptoArchitectureKit': {cryptoFramework: worker.cryptoFramework},
+  '@kit.BasicServicesKit': {systemDateTime: {TimeType: {STARTUP: 0}, getUptime: () => 10000}}
+}
 const sourceRoot = path.resolve(process.env.VERA_SOURCE_ROOT || path.join(__dirname, '../../entry/src/main/ets'))
 const compiled = new Map()
 
-function load(name, dependencies, console) {
+function load(name, dependencies, console, cache = new Map()) {
+  const file = path.resolve(sourceRoot, 'vera', name + '.ets')
+  if (cache.has(file)) return cache.get(file).exports
   if (!compiled.has(name)) {
-    const file = path.join(sourceRoot, 'vera', name + '.ets')
-    const result = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    const result = ts.transpileModule(fs.readFileSync(file, 'utf8').replace(/^@Concurrent\s*$/gm, ''), {
       fileName: file.replace(/\.ets$/, '.ts'),
       compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
       reportDiagnostics: true
@@ -19,9 +45,19 @@ function load(name, dependencies, console) {
     compiled.set(name, result.outputText)
   }
   const mod = {exports: {}}
+  cache.set(file, mod)
   new Function('require', 'module', 'exports', 'console', compiled.get(name))(dependency => {
-    assert.ok(Object.hasOwn(dependencies, dependency), 'Unexpected ' + name + ' dependency: ' + dependency)
-    return dependencies[dependency]
+    if (dependency === '@kit.CoreFileKit' && path.dirname(file).startsWith(path.join(sourceRoot, 'runtime'))) {
+      return {fileIo: worker.filesystem}
+    }
+    if (dependency === '@kit.BasicServicesKit') return {...platform[dependency], ...dependencies[dependency]}
+    if (Object.hasOwn(dependencies, dependency)) return dependencies[dependency]
+    if (Object.hasOwn(platform, dependency)) return platform[dependency]
+    if (dependency.startsWith('.')) {
+      const relative = path.relative(path.join(sourceRoot, 'vera'), path.resolve(path.dirname(file), dependency))
+      return load(relative, dependencies, console, cache)
+    }
+    assert.fail('Unexpected ' + name + ' dependency: ' + dependency)
   }, mod, mod.exports, console)
   return mod.exports
 }
@@ -34,7 +70,7 @@ const checks = []
 
 function memoryFs() {
   const entries = new Map([['/', null]])
-  const handles = new Map()
+  const handles = new Map(), ages = new Map()
   const calls = [], faults = []
   let nextFd = 1
   const within = (entry, dir) => entry === dir || entry.startsWith(dir + '/')
@@ -54,9 +90,12 @@ function memoryFs() {
     if (!entries.has(name)) { throw businessError(13900002, 'No such file or directory: ' + name) }
     return entries.get(name)
   }
-  function record(method, name) {
-    calls.push({method, path: name})
-    const at = faults.findIndex(f => f.method === method && (f.path === undefined || f.path === name))
+  function record(method, name, flags, to) {
+    calls.push(flags === undefined ? {method, path: name} : {method, path: name, flags})
+    if (to !== undefined) calls[calls.length - 1].to = to
+    if (isIndexTemp(name)) calls[calls.length - 1].destination = entries.get(indexPath)
+    const at = faults.findIndex(f => f.method === method &&
+      (f.path === undefined || (typeof f.path === 'function' ? f.path(name) : f.path === name)))
     if (at < 0) { return }
     const fault = faults.splice(at, 1)[0]
     if (fault.partial) { fault.partial() }
@@ -114,7 +153,7 @@ function memoryFs() {
       record('close', name)
     },
     renameSync(from, to) {
-      record('rename', from)
+      record('rename', from, undefined, to)
       assert.ok(![...handles.values()].includes(from), 'Rename must follow close')
       assert.equal(typeof requireEntry(from), 'string')
       entries.set(to, entries.get(from))
@@ -131,12 +170,18 @@ function memoryFs() {
       erase(dir)
     }
   }
-  return {disk, entries, calls, faults, handles, file, directory, erase,
+  currentMemory = {disk, entries, calls, faults, handles, ages, file, directory, erase,
+    workerEvent(event) {
+      const method = ({stat: 'stat', read: 'read', list: 'list', open: 'open', write: 'write',
+        close: 'close', rename: 'rename', unlink: 'unlink', mkdir: 'mkdir'})[event.op]
+      if (method) record(method, event.path, event.flags)
+    },
     inject(method, name, error, partial) { faults.push({method, path: name, error, partial}) },
     snapshot(dir = '/') {
       return [...entries].filter(([name]) => dir === '/' || within(name, dir))
         .sort(([a], [b]) => a.localeCompare(b))
     }}
+  return currentMemory
 }
 
 function fixture(versionCount = 2) {
@@ -163,6 +208,7 @@ function fixture(versionCount = 2) {
         prompt: 'Request ' + i, createdAt: 200 + i})
       memory.file(root + '/' + p.id + '/' + version.id + '.json', JSON.stringify(version))
       memory.file(root + '/' + p.id + '/' + version.id + '.state.json', JSON.stringify({stamp: 'stamp', value: {count: i}}))
+      memory.file(root + '/' + p.id + '/' + version.id + '.state.json.commit.lock', '')
       if (p === project) { versions.push(version) }
     }
     memory.file(root + '/' + p.id + '/assets/nested/data.bin', 'nested saved data')
@@ -196,13 +242,33 @@ function fixture(versionCount = 2) {
     status: operationsModule.ProjectOperationStatus, errors, warnings, platformCalls}
 }
 
-const mutations = f => f.calls.filter(c => ['mkdir', 'open', 'write', 'unlink', 'rmdir'].includes(c.method))
-const indexCalls = f => f.calls.filter(c => c.path === indexPath && ['open', 'write'].includes(c.method))
-const deletionCalls = f => mutations(f).filter(c => c.method === 'rmdir' || c.path === indexPath)
-const expectedDeletion = [
-  {method: 'rmdir', path: projectDir},
-  {method: 'open', path: indexPath},
-  {method: 'write', path: indexPath}
+const mutations = f => f.calls.filter(c => ['mkdir', 'write', 'unlink', 'rmdir'].includes(c.method) ||
+  c.method === 'open' && (c.flags === undefined || (c.flags & worker.filesystem.OpenMode.CREATE) !== 0))
+const isIndexTemp = name => name.startsWith(indexPath + '.') && name.endsWith('.tmp') && path.posix.dirname(name) === root
+const indexCalls = f => {
+  const calls = f.calls.filter(c => (c.path === indexPath || isIndexTemp(c.path)) &&
+    ['open', 'write', 'close', 'rename', 'unlink'].includes(c.method))
+  for (const call of calls) {
+    assert(isIndexTemp(call.path), 'Never open, write, close, rename or unlink the index destination directly')
+    assert.equal(call.path, calls[0].path, 'One sibling temporary file per index publication')
+    if (call.method !== 'unlink') assert.equal(call.destination, calls[0].destination, 'The index destination must remain unchanged until rename')
+    if (call.method === 'rename') assert.equal(call.to, indexPath, 'Publish the sibling temporary file to the index destination')
+  }
+  return calls
+}
+const deletionCalls = f => {
+  const index = indexCalls(f)
+  return f.calls.filter(c => c.method === 'unlink' || index.includes(c)).map(c => index.includes(c) ?
+    {method: c.method, path: indexPath + '.tmp', ...(c.to === undefined ? {} : {to: c.to})} : c)
+}
+const expectedDeletion = count => [
+  ...Array.from({length: count}, (_, i) => ({method: 'unlink', path: projectDir + '/v' + i + '.state.json'})),
+  ...Array.from({length: count}, (_, i) => ({method: 'unlink', path: projectDir + '/v' + (count - i - 1) + '.json'})),
+  {method: 'open', path: indexPath + '.tmp'},
+  {method: 'write', path: indexPath + '.tmp'},
+  {method: 'close', path: indexPath + '.tmp'},
+  {method: 'rename', path: indexPath + '.tmp', to: indexPath},
+  {method: 'unlink', path: indexPath + '.tmp'}
 ]
 function throwsIdentity(action, error) {
   assert.throws(action, caught => {
@@ -215,34 +281,44 @@ function preserved(f, index, other) {
   assert.deepEqual(f.snapshot(root + '/' + f.other.id), other, 'The other project must be unchanged')
   assert.deepEqual(f.faults, [], 'The injected fault must have been reached')
   assert.equal(f.handles.size, 0, 'No file handles may leak')
+  assert.equal(worker.memory.fds.size, 0, 'No worker descriptors may leak')
+  assert([...worker.memory.nodes.values()].every(node => node.owner === null), 'No worker locks may leak')
 }
 function deleted(f, other) {
-  assert.deepEqual(f.snapshot(projectDir), [], 'All project files and nested directories must be deleted')
+  assert.deepEqual(f.snapshot(projectDir), [
+    [projectDir, null], [projectDir + '/assets', null], [projectDir + '/assets/nested', null],
+    [projectDir + '/assets/nested/data.bin', 'nested saved data'],
+    ...f.versions.map(version => [projectDir + '/' + version.id + '.state.json.commit.lock', ''])
+  ].sort(([a], [b]) => a.localeCompare(b)), 'Only stable locks and unrelated assets survive project metadata/state removal')
   assert.deepEqual(f.store.listProjects().map(p => p.id), [f.other.id])
   assert.deepEqual(f.snapshot(root + '/' + f.other.id), other, 'The other project must be unchanged')
   assert.equal(f.handles.size, 0, 'No file handles may leak')
+  assert.equal(worker.memory.fds.size, 0, 'No worker descriptors may leak')
+  assert([...worker.memory.nodes.values()].every(node => node.owner === null), 'No worker locks may leak')
 }
 function check(name, run) { checks.push({name, run}) }
 
-check('recursive deletion precedes index write and preserves the other project and its summary', () => {
+check('state cleanup and metadata deletion precede index write and preserve the other project and its summary', async () => {
   const f = fixture(), other = f.snapshot(root + '/' + f.other.id)
   f.store.summaryOf(f.project)
   const otherSummary = f.store.summaryOf(f.other)
-  f.store.deleteProject(f.project.id)
-  assert.deepEqual(deletionCalls(f), expectedDeletion)
-  assert.deepEqual(f.calls.filter(c => c.method === 'unlink'), [])
+  await f.store.deleteProject(f.project.id)
+  assert.deepEqual(deletionCalls(f), expectedDeletion(2))
+  assert.deepEqual(f.calls.filter(c => c.method === 'rmdir'), [])
   deleted(f, other)
   assert.strictEqual(f.store.summaryOf(f.other), otherSummary)
   assert.equal(f.store.summaryOf(f.project).versions, 0)
 })
 
-check('missing directory code 13900002 still cleans up the index', () => {
+check('missing directory code 13900002 still cleans up the index', async () => {
   const f = fixture(), other = f.snapshot(root + '/' + f.other.id)
   const cached = f.store.summaryOf(f.project)
   f.erase(projectDir)
-  f.store.deleteProject(f.project.id)
-  assert.deepEqual(deletionCalls(f), expectedDeletion)
-  deleted(f, other)
+  await f.store.deleteProject(f.project.id)
+  assert.deepEqual(deletionCalls(f), expectedDeletion(0))
+  assert.deepEqual(f.snapshot(projectDir), [])
+  assert.deepEqual(f.store.listProjects().map(p => p.id), [f.other.id])
+  assert.deepEqual(f.snapshot(root + '/' + f.other.id), other)
   const summary = f.store.summaryOf(f.project)
   assert.notStrictEqual(summary, cached)
   assert.equal(summary.versions, 0)
@@ -260,40 +336,61 @@ const failures = [
   ['undefined', () => undefined]
 ]
 for (const [name, makeError] of failures) {
-  check(name + ' propagates unchanged, preserves the index without writes, and permits retry', () => {
+  check(name + ' is normalized across TaskPool, preserves the index without writes, and ' +
+    (name === 'null' || name === 'undefined' ? 'retains the uncertain cleanup fence' : 'permits retry'), async () => {
     const f = fixture(), error = makeError(), before = f.snapshot()
     const index = f.entries.get(indexPath), other = f.snapshot(root + '/' + f.other.id)
-    f.inject('rmdir', projectDir, error)
-    throwsIdentity(() => f.store.deleteProject(f.project.id), error)
-    assert.deepEqual(indexCalls(f), [], 'A failed rmdir must not even open the index for writing')
-    assert.deepEqual(mutations(f), [{method: 'rmdir', path: projectDir}])
+    f.inject('list', projectDir, error)
+    const code = error == null ? 'STATE_COMMIT_UNCERTAIN' : error.code === 13900012 ? 'STATE_UNAVAILABLE' : 'STATE_READ_FAILED'
+    await assert.rejects(f.store.deleteProject(f.project.id), caught => {
+      assert.equal(caught.code, code)
+      assert.equal(caught.stage, error == null ? 'cleanup-worker' : 'removal-list')
+      return true
+    })
+    assert.deepEqual(indexCalls(f), [], 'Failed worker cleanup must not open the index for writing')
+    assert.deepEqual(deletionCalls(f), [])
     assert.deepEqual(f.snapshot(), before)
     preserved(f, index, other)
     f.calls.length = 0
-    f.store.deleteProject(f.project.id)
-    assert.deepEqual(deletionCalls(f), expectedDeletion)
-    deleted(f, other)
+    if (error == null) {
+      await assert.rejects(f.store.deleteProject(f.project.id), /Project state admission fenced: target\/@project/)
+      assert.throws(() => f.store.assertStateAdmission('target/v0'), /Project state admission fenced: target\/v0/)
+      await assert.rejects(f.store.trackStateOperation('target/v0', () => {
+        assert.fail('Uncertain cleanup must not admit storage work')
+      }), /Project state admission fenced: target\/v0/)
+      assert.doesNotThrow(() => f.store.assertStateAdmission('target-copy/v0'))
+      assert.deepEqual(mutations(f), [])
+      assert.deepEqual(f.snapshot(), before)
+      preserved(f, index, other)
+    } else {
+      await f.store.deleteProject(f.project.id)
+      assert.deepEqual(deletionCalls(f), expectedDeletion(2))
+      deleted(f, other)
+    }
   })
 }
 
-check('unknown project leaves even an orphan directory untouched', () => {
+check('unknown project leaves even an orphan directory untouched', async () => {
   const f = fixture()
   f.file(root + '/unknown/nested/keep.json', '{"keep":true}')
   const before = f.snapshot()
-  f.store.deleteProject('unknown')
+  await f.store.deleteProject('unknown')
   assert.deepEqual(mutations(f), [])
   assert.deepEqual(f.snapshot(), before)
 })
 
-check('index open failure follows rmdir, invalidates summary, and retry removes the residual index entry', () => {
+check('index open failure follows cleanup, invalidates summary, and retry removes the residual index entry', async () => {
   const f = fixture(), error = businessError(13900012, 'Cannot open index')
   const index = f.entries.get(indexPath), other = f.snapshot(root + '/' + f.other.id)
   const cached = f.store.summaryOf(f.project)
   assert.equal(cached.versions, 2)
-  f.inject('open', indexPath, error)
-  throwsIdentity(() => f.store.deleteProject(f.project.id), error)
-  assert.deepEqual(deletionCalls(f), expectedDeletion.slice(0, 2))
-  assert.deepEqual(f.snapshot(projectDir), [])
+  f.inject('open', isIndexTemp, error)
+  await assert.rejects(f.store.deleteProject(f.project.id), caught => caught === error)
+  assert.deepEqual(deletionCalls(f), [
+    ...expectedDeletion(2).slice(0, -4),
+    {method: 'unlink', path: indexPath + '.tmp'}
+  ])
+  assert(f.snapshot(projectDir).every(([name]) => !/\/v\d+\.(?:state\.)?json$/.test(name)))
   preserved(f, index, other)
   assert.ok(f.store.getProject(f.project.id), 'Failed index open must retain the index entry')
   const summary = f.store.summaryOf(f.project)
@@ -302,21 +399,18 @@ check('index open failure follows rmdir, invalidates summary, and retry removes 
   assert.equal(summary.request, '')
   assert.equal(summary.updatedAt, f.project.createdAt)
   f.calls.length = 0
-  f.store.deleteProject(f.project.id)
-  assert.deepEqual(deletionCalls(f), expectedDeletion)
+  await f.store.deleteProject(f.project.id)
+  assert.deepEqual(deletionCalls(f), expectedDeletion(0))
   deleted(f, other)
 })
 
-check('partial rmdir failure invalidates summary before deletion while preserving the index for retry', () => {
-  const f = fixture(), error = businessError(13900014, 'Partial recursive removal')
+check('partial metadata removal invalidates summary while preserving the index for retry', async () => {
+  const f = fixture(), error = businessError(13900014, 'Partial metadata removal')
   const index = f.entries.get(indexPath), other = f.snapshot(root + '/' + f.other.id)
   const cached = f.store.summaryOf(f.project)
   assert.equal(cached.request, 'Request 1')
-  f.inject('rmdir', projectDir, error, () => {
-    f.entries.delete(projectDir + '/v1.json')
-    f.entries.delete(projectDir + '/v1.state.json')
-  })
-  throwsIdentity(() => f.store.deleteProject(f.project.id), error)
+  f.inject('unlink', projectDir + '/v0.json', error)
+  await assert.rejects(f.store.deleteProject(f.project.id), caught => caught === error)
   assert.deepEqual(indexCalls(f), [])
   preserved(f, index, other)
   const summary = f.store.summaryOf(f.project)
@@ -324,21 +418,21 @@ check('partial rmdir failure invalidates summary before deletion while preservin
   assert.equal(summary.versions, 1)
   assert.equal(summary.request, 'Request 0')
   assert.equal(summary.updatedAt, 200)
-  f.store.deleteProject(f.project.id)
+  await f.store.deleteProject(f.project.id)
   deleted(f, other)
 })
 
-check('last-version deletion propagates rmdir failure and retry deletes the project, version, and state', () => {
+check('last-version deletion propagates cleanup failure and retry deletes the project, version, and state', async () => {
   const f = fixture(1), error = businessError(13900012, 'Last version removal denied')
   const before = f.snapshot(), index = f.entries.get(indexPath), other = f.snapshot(root + '/' + f.other.id)
-  f.inject('rmdir', projectDir, error)
-  throwsIdentity(() => f.store.deleteVersion(f.project.id, f.versions[0].id), error)
+  f.inject('open', projectDir + '/v0.state.json.commit.lock', error)
+  await assert.rejects(f.store.deleteVersion(f.project.id, f.versions[0].id), {code: 'STATE_UNAVAILABLE'})
   assert.deepEqual(indexCalls(f), [])
   assert.deepEqual(f.snapshot(), before)
   preserved(f, index, other)
   f.calls.length = 0
-  assert.equal(f.store.deleteVersion(f.project.id, f.versions[0].id), true)
-  assert.deepEqual(deletionCalls(f), expectedDeletion)
+  assert.equal(await f.store.deleteVersion(f.project.id, f.versions[0].id), true)
+  assert.deepEqual(deletionCalls(f), expectedDeletion(1))
   deleted(f, other)
 })
 
@@ -349,23 +443,26 @@ for (const method of ['deleteProject', 'deleteVersion']) {
       const index = f.entries.get(indexPath), other = f.snapshot(root + '/' + f.other.id)
       const operation = method === 'deleteProject' ? 'Delete project' : 'Delete Version ' + f.versions[0].id
       const invoke = () => f.operations[method](f.context, f.project.id, f.versions[0].id)
-      f.inject('rmdir', projectDir, error)
+      f.inject('open', projectDir + '/v0.state.json.commit.lock', error)
       const pending = invoke()
       assert.equal(await invoke(), f.status.Busy, 'The real operation must hold its lock while awaiting platform calls')
       assert.equal(await pending, f.status.Failed)
+      const code = error.code === 13900012 ? 'STATE_UNAVAILABLE' : 'STATE_LOCK_UNAVAILABLE'
       assert.deepEqual(f.errors, [operation + ' failed for project "target": error code = ' +
-        (error.code === undefined ? 'unknown' : error.code) + ', message = "' + error.message + '"'])
+        code + ', message = "' + code + ' at lock-open"'])
       assert.equal(f.warnings.length, 1)
       assert.match(f.warnings[0], /is busy$/)
       assert.deepEqual(indexCalls(f), [])
       assert.deepEqual(f.snapshot(), before)
+      assert.deepEqual(f.platformCalls, method === 'deleteProject' ? ['bundle', 'account', 'shortcuts'] : [])
       preserved(f, index, other)
       f.calls.length = 0
       assert.equal(await invoke(), method === 'deleteProject' ? f.status.Success : f.status.ProjectDeleted,
         'Retry must not return Busy after the failed operation')
-      assert.deepEqual(deletionCalls(f), expectedDeletion)
+      assert.deepEqual(deletionCalls(f), expectedDeletion(1))
       assert.equal(f.errors.length, 1, 'Successful retry must not log a failure')
-      assert.equal(f.platformCalls.filter(c => c === 'shortcuts').length, 2)
+      assert.deepEqual(f.platformCalls, method === 'deleteProject' ?
+        ['bundle', 'account', 'shortcuts', 'account', 'shortcuts'] : ['bundle', 'account', 'shortcuts'])
       deleted(f, other)
     })
   }
@@ -373,7 +470,7 @@ for (const method of ['deleteProject', 'deleteVersion']) {
     const f = fixture(1), other = f.snapshot(root + '/' + f.other.id)
     const invoke = () => f.operations[method](f.context, f.project.id, f.versions[0].id)
     assert.equal(await invoke(), method === 'deleteProject' ? f.status.Success : f.status.ProjectDeleted)
-    assert.deepEqual(deletionCalls(f), expectedDeletion)
+    assert.deepEqual(deletionCalls(f), expectedDeletion(1))
     assert.deepEqual(f.platformCalls, ['bundle', 'account', 'shortcuts'])
     assert.deepEqual(f.errors, [])
     assert.deepEqual(f.warnings, [])
@@ -387,15 +484,31 @@ for (const method of ['deleteProject', 'deleteVersion']) {
 const atomicTargets = [
   {
     name: 'project state', path: projectDir + '/v0.state.json',
-    before: {stamp: 'old-stamp', value: ['number', 1]}, after: {stamp: 'new-stamp', value: ['number', 2]},
-    setup(memory) {
-      const {ProjectStore} = load('ProjectStore', {
-        '@kit.CoreFileKit': {fileIo: memory.disk}, '@kit.BasicServicesKit': {},
-        './ProjectText': load('ProjectText', {}, console)
-      }, console)
+    before: ['n', 1], after: ['n', 2],
+    async setup(memory) {
+      const dependencies = {'@kit.CoreFileKit': {fileIo: memory.disk}, '@kit.BasicServicesKit': {}}
+      const cache = new Map()
+      const {ProjectStore} = load('ProjectStore', dependencies, console, cache)
+      const {StateManager} = load('../runtime/StateManager', dependencies, console, cache)
+      const V = load('VeraInterpreter', dependencies, console, cache)
+      const format = load('../runtime/StateFileFormat', dependencies, console, cache)
       const store = new ProjectStore(); store.init('/fixture/files')
-      return {save: () => store.saveState('target', 'v0', 'new-stamp', '["number",2]'),
-        read: () => store.loadState('target', 'v0', 'new-stamp'), expected: '["number",2]'}
+      memory.file(this.path, format.assembleStateFile({appId: 'target/v0', schemaVersion: 1,
+        vmGeneration: 1, revision: 1, stamp: 'new-stamp'}, JSON.stringify(this.before)))
+      const guard = new V.VirtualMachine(new V.BytecodeModule([], []), new V.EmptyHostEnvironment(), 0,
+        {now: () => 10000, deadlineMs: 1000}, {journalMode: 'JOURNAL'})
+      const manager = new StateManager({appId: 'target/v0', stamp: 'new-stamp', mode: 'LIVE_PERSISTENT',
+        stateMaxBytes: 1048576, initialState: V.NULL_VALUE, storage: store.createStateStorage(),
+        rollbackGuard: guard, now: () => 10000})
+      assert.equal((await manager.load()).kind, 'READY')
+      assert.equal((await manager.publishGeneration()).status, 'COMMITTED')
+      return {manager, format,
+        async save() {
+          const tx = manager.beginTurn('IMMEDIATE', 'INPUT')
+          manager.setWorkingState(tx, new V.VeraNumberValue(2))
+          return manager.commitTurn(tx)
+        },
+        read: () => store.loadState('target', 'v0', 'new-stamp'), expected: '["n",2]'}
     }
   },
   {
@@ -437,34 +550,65 @@ const atomicTargets = [
 ]
 
 for (const target of atomicTargets) {
-  function atomicFixture() {
-    const memory = memoryFs(), api = target.setup(memory)
-    memory.file(target.path, JSON.stringify(target.before))
+  async function atomicFixture() {
+    const memory = memoryFs(), api = await target.setup(memory)
+    if (!api.manager) memory.file(target.path, JSON.stringify(target.before))
     memory.file(root + '/unrelated.json', '{"keep":true}')
     memory.calls.length = 0
+    worker.memory.trace.length = 0
     return {...memory, ...api}
   }
   function atomicCalls(f) {
-    return f.calls.filter(c => ['open', 'write', 'close', 'rename', 'unlink'].includes(c.method))
+    return f.calls.filter(c => ['open', 'write', 'close', 'rename', 'unlink'].includes(c.method) &&
+      (!f.manager || c.path.startsWith(target.path + '.') && c.path.endsWith('.tmp')))
   }
   function checkedTemp(f) {
-    const calls = atomicCalls(f), temp = calls[0].path
+    const calls = atomicCalls(f).filter(call => !f.orphan || call.path !== f.orphan), temp = calls[0].path
     assert.ok(temp.startsWith(target.path + '.') && temp.endsWith('.tmp'), 'Use a sibling temporary file')
     assert.ok(calls.every(c => c.path === temp), 'Only the temporary file may be opened, written, closed, renamed or unlinked')
     assert.equal(f.handles.size, 0, 'Every opened handle must be closed, including after write failure')
+    if (f.manager) {
+      assert.equal(worker.memory.fds.size, 0, 'Every worker descriptor must be closed')
+      assert([...worker.memory.nodes.values()].every(node => node.owner === null), 'Every stable lock must be released')
+      const writes = f.calls.filter(call => ['write', 'rename', 'unlink'].includes(call.method) ||
+        call.method === 'open' && (call.flags & worker.filesystem.OpenMode.CREATE) !== 0 &&
+        !call.path.endsWith('.commit.lock'))
+      assert(writes.every(call => call.path === temp || call.path === f.orphan),
+        'Never write the destination directly or mutate unrelated files')
+    }
     assert.deepEqual(f.faults, [], 'Every injected fault must be reached')
     assert.equal(f.entries.get(root + '/unrelated.json'), '{"keep":true}')
     return temp
   }
   for (const cleanupFails of [false, true]) {
-    check(target.name + ' keeps its schema and commits only after close' + (cleanupFails ? ' despite unlink failure' : ''), () => {
-      const f = atomicFixture()
+    check(target.name + ' keeps its schema and commits only after close' + (cleanupFails ? ' despite unlink failure' : ''), async () => {
+      const f = await atomicFixture()
+      if (f.manager) {
+        try {
+          const orphan = target.path + '.00000000-0000-4000-8000-000000000000.tmp'
+          f.orphan = orphan
+          f.file(orphan, 'incomplete JSON')
+          f.ages.set(orphan, 120000)
+          if (cleanupFails) f.inject('unlink', orphan, new Error('Cleanup failure'))
+          const result = await f.save()
+          assert.equal(result.status, 'COMMITTED')
+          const methods = atomicCalls(f).filter(call => call.path !== orphan).map(call => call.method)
+          assert.deepEqual(methods, ['open', 'write', 'close', 'rename'])
+          const decoded = f.format.validateStateFile(f.entries.get(target.path), 'target/v0', 1)
+          assert.equal(decoded.revision, 2)
+          assert.equal(decoded.vmGeneration, 2)
+          assert.equal(decoded.encodedState, JSON.stringify(target.after))
+          assert.equal(await f.read(), f.expected)
+          checkedTemp(f)
+        } finally { await f.manager.close() }
+        return
+      }
       if (cleanupFails) { f.inject('unlink', undefined, new Error('Cleanup failure')) }
-      f.save()
+      await f.save()
       assert.deepEqual(atomicCalls(f).map(c => c.method), ['open', 'write', 'close', 'rename', 'unlink'])
       assert.equal(f.entries.has(checkedTemp(f)), false)
       assert.equal(f.entries.get(target.path), JSON.stringify(target.after))
-      assert.equal(f.read(), f.expected)
+      assert.equal(await f.read(), f.expected)
     })
   }
   const atomicFailures = [
@@ -480,9 +624,63 @@ for (const target of atomicTargets) {
   for (const scenario of atomicFailures) {
     for (const cleanupFails of [false, true]) {
       check(target.name + ' preserves destination and original error on ' + scenario.name +
-        (cleanupFails ? ' plus cleanup failure' : ''), () => {
-        const f = atomicFixture(), before = f.snapshot()
+        (cleanupFails ? ' plus cleanup failure' : ''), async () => {
+        const f = await atomicFixture(), before = f.snapshot()
         const error = Object.hasOwn(scenario, 'error') ? scenario.error : businessError(13900005, scenario.name)
+        if (f.manager) {
+          try {
+            const destination = f.entries.get(target.path)
+            const isTemp = name => name.startsWith(target.path + '.') && name.endsWith('.tmp')
+            f.inject(scenario.method, isTemp, error, scenario.partial ? () => {
+              const temp = f.calls[f.calls.length - 1].path
+              worker.memory.put(temp, 'incomplete JSON')
+            } : undefined)
+            if (scenario.closeFails) f.inject('close', isTemp, new Error('Secondary close failure'))
+            if (cleanupFails) {
+              if (scenario.method === 'open') {
+                f.orphan = target.path + '.00000000-0000-4000-8000-000000000000.tmp'
+                f.file(f.orphan, 'incomplete JSON')
+                f.ages.set(f.orphan, 120000)
+                f.inject('unlink', f.orphan, new Error('Secondary cleanup failure'))
+              } else f.inject('unlink', isTemp, new Error('Secondary cleanup failure'))
+            }
+            const result = await f.save()
+            assert.equal(result.status, 'FAILED')
+            assert.equal(result.code, scenario.method === 'rename' ? 'STATE_PUBLISH_FAILED' : 'STATE_WRITE_FAILED')
+            assert.equal(result.stage, error == null ? 'commit' :
+              'commit-main-' + (scenario.method === 'rename' ? 'rename' : 'temp-' + scenario.method))
+            assert.equal(f.entries.get(target.path), destination, 'The previous destination must survive')
+            const completedCalls = atomicCalls(f).filter(call => call.path !== f.orphan)
+            if (scenario.closeFails) {
+              const failedClose = f.calls.filter(call => call.method === 'close' && isTemp(call.path))
+              assert.equal(failedClose.length, 1, 'The secondary close fault must be reached')
+              const descriptors = [...worker.memory.fds.values()]
+              assert.equal(descriptors.length, 1, 'Only the descriptor whose close failed remains open')
+              assert.equal(descriptors[0].path, failedClose[0].path)
+              worker.memory.closeSync(descriptors[0].fd)
+            }
+            assert.equal(await f.read(), JSON.stringify(target.before))
+            const temp = checkedTemp(f)
+            const expected = ['open']
+            if (scenario.method !== 'open') expected.push('write', 'close')
+            if (scenario.method === 'close') expected.push('close')
+            if (scenario.method === 'rename') expected.push('rename')
+            if (scenario.method !== 'open') expected.push('unlink')
+            assert.deepEqual(completedCalls.map(call => call.method), expected,
+              'Never rename after an open, write or close failure')
+            assert.deepEqual(f.snapshot().filter(([name]) => name !== temp && name !== f.orphan), before)
+            if (scenario.method !== 'open' && !cleanupFails) assert.equal(f.entries.has(temp), false)
+            if (scenario.method === 'open' && scenario.partial) assert.equal(f.entries.get(temp), 'incomplete JSON',
+              'An unowned partial-open artifact must never be removed')
+            f.calls.length = 0
+            assert.equal((await f.save()).status, 'COMMITTED', 'A retry must still succeed')
+            assert.equal(await f.read(), f.expected)
+            assert.equal(f.format.validateStateFile(f.entries.get(target.path), 'target/v0', 1).revision, 2)
+            assert.equal(worker.memory.fds.size, 0)
+            assert([...worker.memory.nodes.values()].every(node => node.owner === null))
+          } finally { await f.manager.close() }
+          return
+        }
         f.inject(scenario.method, undefined, error, scenario.partial ? () => {
           const temp = f.calls[f.calls.length - 1].path
           f.file(temp, 'incomplete JSON')
@@ -503,13 +701,288 @@ for (const target of atomicTargets) {
           assert.deepEqual(f.snapshot(), before, 'Best-effort cleanup must remove even partially written temporary files')
         }
         f.calls.length = 0
-        f.save()
+        await f.save()
         assert.equal(f.entries.get(target.path), JSON.stringify(target.after), 'A retry must still succeed')
-        assert.equal(f.read(), f.expected)
+        assert.equal(await f.read(), f.expected)
         assert.equal(f.handles.size, 0)
       })
     }
   }
+}
+
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail })
+  return {promise, resolve, reject}
+}
+
+const recoveryTick = () => new Promise(resolve => setImmediate(resolve))
+
+function recoveryLifecycle(f, options = {}) {
+  const events = []
+  const unregister = f.store.registerStateLifecycle({
+    fenceAllAdmissions() {
+      events.push('removal-fence')
+      return {
+        async quiesceActorsAndFinalSave() { events.push('removal-quiesce') },
+        async drainAllCallersAndStorage() { events.push('removal-drain') },
+        release(outcome) { events.push(outcome) }
+      }
+    },
+    fenceRecoveryAdmissions(appId, owner) {
+      events.push(['recovery-fence', appId, owner])
+      if (options.fenceError) throw options.fenceError
+      return {
+        async drainOtherActorsAndStorage() {
+          events.push('recovery-drain')
+          if (options.drain) await options.drain()
+        },
+        release() {
+          events.push('recovery-release')
+          if (options.releaseError) throw options.releaseError
+        }
+      }
+    }
+  })
+  return {events, unregister}
+}
+
+check('recovery excludes only its tracked activation and drains every other caller before completion', async () => {
+  const f = fixture(), writer = deferred(), reader = deferred(), host = deferred(), finish = deferred()
+  const lifecycle = recoveryLifecycle(f, {drain: () => host.promise})
+  const writing = f.store.trackStateOperation('target/v0', () => writer.promise)
+  const reading = f.store.trackStateOperation('target/v0', () => reader.promise)
+  let entered = false, token, scope
+  const activation = f.store.trackStateActivation('target/v0', async owner => {
+    token = owner
+    return f.store.withExclusiveStateRecovery('target/v0', owner, async recovery => {
+      entered = true
+      scope = recovery
+      await finish.promise
+      recovery.complete()
+      return 42
+    })
+  })
+  assert.deepEqual(lifecycle.events[0], ['recovery-fence', 'target/v0', token])
+  assert.throws(() => f.store.assertStateAdmission('target/v0'), /fenced/)
+  let admitted = false
+  await assert.rejects(f.store.trackStateOperation('target/v0', async () => { admitted = true }), /fenced/)
+  await assert.rejects(f.store.trackStateActivation('target/v0', async () => { admitted = true }), /fenced/)
+  await assert.rejects(f.store.loadState('target', 'v0', 'stamp'), /fenced/)
+  await assert.rejects(f.store.clearState('target', 'v0'), /fenced/)
+  await assert.rejects(f.store.deleteVersion('target', 'v1'), /fenced/)
+  await assert.rejects(f.store.deleteProject('target'), /fenced/)
+  assert.equal(admitted, false)
+  assert.equal(await f.store.trackStateOperation('target/v1', async () => 'other version'), 'other version')
+  assert.equal(await f.store.trackStateOperation('target-copy/v0', async () => 'other project'), 'other project')
+  writer.resolve(); host.resolve()
+  await Promise.all([writing, host.promise]); await recoveryTick()
+  assert.equal(entered, false, 'Every non-owner caller must drain')
+  reader.resolve(); await reading; await recoveryTick()
+  assert.equal(entered, true, 'The owner pending promise must not be awaited')
+  assert.throws(() => f.store.assertStateAdmission('target/v0'), /fenced/)
+  finish.resolve()
+  assert.equal(await activation, 42)
+  assert.equal(lifecycle.events.at(-1), 'recovery-release')
+  f.store.assertStateAdmission('target/v0')
+  assert.throws(() => scope.complete(), /closed/)
+  assert.deepEqual(mutations(f), [])
+})
+
+check('recovery drains migration loads, headers, and initial-state publication as non-owner operations', async () => {
+  const {ProjectStateMigration} = load('ProjectStateMigration', {}, console)
+  const loading = deferred(), header = deferred(), initial = deferred(), events = []
+  const version = {projectId: 'target', id: 'v0'}
+  const migration = new ProjectStateMigration({
+    prepareVersion: () => version,
+    publishVersion: () => events.push('publish')
+  }, {load: () => loading.promise, readHeader: () => header.promise}, {
+    acceptInitialState: () => initial.promise
+  }, {
+    fenceAllAdmissions() { assert.fail('No removal') },
+    fenceRecoveryAdmissions() { return {async drainOtherActorsAndStorage() {}, release() { events.push('release') }} }
+  }, {async removeStateFilesKeepingStableLocks() { assert.fail('No cleanup') }})
+  const loadState = migration.loadStateResult('target', 'v0', 'stamp')
+  const readHeader = migration.readHeader('target', 'v0')
+  const creating = migration.createVersion({projectId: 'target', initialState: '["n",1]', initialStamp: 'stamp'})
+  const activation = migration.trackStateActivation('target/v0', owner =>
+    migration.withExclusiveStateRecovery('target/v0', owner, async scope => { events.push('recover'); scope.complete() }))
+  loading.resolve({kind: 'ABSENT'}); header.resolve(null)
+  await Promise.all([loadState, readHeader]); await recoveryTick()
+  assert.deepEqual(events, [])
+  initial.resolve({status: 'COMMITTED'})
+  await Promise.all([creating, activation])
+  assert.deepEqual(events, ['publish', 'recover', 'release'])
+})
+
+check('activation reservation rejects competing uninitialized actors without waiting and allows reuse after settlement', async () => {
+  const f = fixture(), gate = deferred()
+  let firstToken, competing = false
+  const activation = f.store.trackStateActivation('target/v0', owner => {
+    firstToken = owner
+    return gate.promise
+  })
+  await assert.rejects(f.store.trackStateActivation('target/v0', async () => { competing = true }), /already pending/)
+  assert.equal(competing, false)
+  assert.equal(await f.store.trackStateActivation('target/v1', async () => 2), 2)
+  gate.resolve(); await activation; await recoveryTick()
+  await f.store.trackStateActivation('target/v0', async owner => {
+    assert.notStrictEqual(owner, firstToken)
+    return f.store.withExclusiveStateRecovery('target/v0', owner, async scope => { scope.complete() })
+  })
+  f.store.assertStateAdmission('target/v0')
+})
+
+check('recovery rejects fabricated, cross-app, stale, and foreign-authority tokens without fencing', async () => {
+  const f = fixture(), gate = deferred()
+  let token
+  const activation = f.store.trackStateActivation('target/v0', owner => { token = owner; return gate.promise })
+  let entered = false
+  const operation = async scope => { entered = true; scope.complete() }
+  await assert.rejects(f.store.withExclusiveStateRecovery('target/v0', {}, operation), /Invalid.*owner/)
+  await assert.rejects(f.store.withExclusiveStateRecovery('target/v1', token, operation), /Invalid.*owner/)
+  const {ProjectStore} = load('ProjectStore', {'@kit.CoreFileKit': {fileIo: f.disk}, '@kit.BasicServicesKit': {}}, console)
+  const foreign = new ProjectStore(); foreign.init('/foreign/files')
+  await assert.rejects(foreign.withExclusiveStateRecovery('target/v0', token, operation), /Invalid.*owner/)
+  gate.resolve(); await activation; await recoveryTick()
+  await assert.rejects(f.store.withExclusiveStateRecovery('target/v0', token, operation), /Invalid.*owner/)
+  f.store.assertStateAdmission('target/v0')
+  f.store.assertStateAdmission('target/v1')
+  assert.equal(entered, false)
+})
+
+check('recovery owner is single-use even while its activation remains pending', async () => {
+  const f = fixture()
+  await f.store.trackStateActivation('target/v0', async owner => {
+    await f.store.withExclusiveStateRecovery('target/v0', owner, async scope => { scope.complete() })
+    await assert.rejects(f.store.withExclusiveStateRecovery('target/v0', owner, async scope => {
+      scope.complete()
+    }), /Invalid.*owner/)
+  })
+  f.store.assertStateAdmission('target/v0')
+})
+
+for (const failure of ['callback', 'completed callback', 'missing completion', 'host drain', 'host release', 'host fence']) {
+  check('recovery remains fenced after ' + failure + ' failure', async () => {
+    const f = fixture(), error = new Error(failure)
+    const lifecycle = recoveryLifecycle(f, {
+      fenceError: failure === 'host fence' ? error : undefined,
+      releaseError: failure === 'host release' ? error : undefined,
+      drain: async () => { if (failure === 'host drain') throw error }
+    })
+    let entered = false
+    const activation = f.store.trackStateActivation('target/v0', owner =>
+      f.store.withExclusiveStateRecovery('target/v0', owner, async scope => {
+        entered = true
+        if (failure !== 'missing completion' && failure !== 'callback') scope.complete()
+        if (failure === 'callback' || failure === 'completed callback') throw error
+      }))
+    await assert.rejects(activation, failure === 'missing completion' ? /completion required/ : caught => caught === error)
+    assert.equal(entered, !['host drain', 'host fence'].includes(failure))
+    assert.throws(() => f.store.assertStateAdmission('target/v0'), /fenced/)
+    await assert.rejects(f.store.clearState('target', 'v0'), /fenced/)
+    await assert.rejects(f.store.deleteProject('target'), /fenced/)
+    await assert.rejects(f.store.deleteVersion('target', 'v1'), /fenced/)
+    assert.equal(lifecycle.events.includes('removal-fence'), false)
+    assert.equal(lifecycle.events.includes('recovery-release'), failure === 'host release')
+    f.store.assertStateAdmission('target/v1')
+    assert.deepEqual(mutations(f), [])
+  })
+}
+
+check('failed non-owner callers still drain all peers and prevent recovery', async () => {
+  const f = fixture(), first = deferred(), second = deferred(), error = new Error('writer failed')
+  const lifecycle = recoveryLifecycle(f)
+  const writer = f.store.trackStateOperation('target/v0', () => first.promise)
+  const rejected = assert.rejects(writer, caught => caught === error)
+  const peer = f.store.trackStateOperation('target/v0', () => second.promise)
+  let entered = false, settled = false
+  const activation = f.store.trackStateActivation('target/v0', owner =>
+    f.store.withExclusiveStateRecovery('target/v0', owner, async scope => { entered = true; scope.complete() }))
+  const recoveryFailed = assert.rejects(activation, caught => caught === error).then(() => { settled = true })
+  first.reject(error); await rejected; await recoveryTick()
+  assert.equal(settled, false)
+  second.resolve(); await peer; await recoveryFailed
+  assert.equal(entered, false)
+  assert.equal(lifecycle.events.includes('recovery-release'), false)
+  assert.throws(() => f.store.assertStateAdmission('target/v0'), /fenced/)
+})
+
+check('missing recovery capability fails closed while all capable hosts fence and drain', async () => {
+  const f = fixture(), first = recoveryLifecycle(f)
+  let removalCalled = false
+  f.store.registerStateLifecycle({fenceAllAdmissions() { removalCalled = true; assert.fail('No removal barrier') }})
+  const second = recoveryLifecycle(f)
+  let entered = false
+  await assert.rejects(f.store.trackStateActivation('target/v0', owner =>
+    f.store.withExclusiveStateRecovery('target/v0', owner, async scope => { entered = true; scope.complete() })), /unsupported/)
+  assert.equal(entered, false)
+  assert.equal(removalCalled, false)
+  for (const host of [first, second]) {
+    assert.equal(host.events[0][0], 'recovery-fence')
+    assert(host.events.includes('recovery-drain'))
+    assert.equal(host.events.includes('recovery-release'), false)
+  }
+  assert.throws(() => f.store.assertStateAdmission('target/v0'), /fenced/)
+})
+
+check('one host drain failure still waits for every other host and never releases', async () => {
+  const f = fixture(), gate = deferred(), error = new Error('host failed')
+  const first = recoveryLifecycle(f, {drain: async () => { throw error }})
+  const second = recoveryLifecycle(f, {drain: () => gate.promise})
+  let settled = false
+  const activation = f.store.trackStateActivation('target/v0', owner =>
+    f.store.withExclusiveStateRecovery('target/v0', owner, async () => { assert.fail('No recovery') }))
+  const failed = assert.rejects(activation, caught => caught === error).then(() => { settled = true })
+  await recoveryTick()
+  assert.equal(settled, false)
+  gate.resolve(); await failed
+  assert.equal(first.events.includes('recovery-release'), false)
+  assert.equal(second.events.includes('recovery-release'), false)
+})
+
+check('partial host release failure leaves authority and later hosts fenced', async () => {
+  const f = fixture(), error = new Error('release failed')
+  const first = recoveryLifecycle(f)
+  const second = recoveryLifecycle(f, {releaseError: error})
+  const third = recoveryLifecycle(f)
+  await assert.rejects(f.store.trackStateActivation('target/v0', owner =>
+    f.store.withExclusiveStateRecovery('target/v0', owner, async scope => { scope.complete() })), caught => caught === error)
+  assert(first.events.includes('recovery-release'))
+  assert(second.events.includes('recovery-release'))
+  assert.equal(third.events.includes('recovery-release'), false)
+  assert.throws(() => f.store.assertStateAdmission('target/v0'), /fenced/)
+})
+
+check('host registration cannot join an active or failed recovery without its fence', async () => {
+  const f = fixture(), gate = deferred()
+  const host = {fenceAllAdmissions() { assert.fail('No removal') }}
+  const activation = f.store.trackStateActivation('target/v0', owner =>
+    f.store.withExclusiveStateRecovery('target/v0', owner, async scope => { await gate.promise; scope.complete() }))
+  assert.throws(() => f.store.registerStateLifecycle(host), /registration fenced/)
+  gate.resolve(); await activation
+  f.store.registerStateLifecycle(host)()
+  await assert.rejects(f.store.trackStateActivation('target/v0', owner =>
+    f.store.withExclusiveStateRecovery('target/v0', owner, async () => {})), /completion required/)
+  assert.throws(() => f.store.registerStateLifecycle(host), /registration fenced/)
+})
+
+for (const removal of ['clearState', 'deleteVersion', 'deleteProject']) {
+  check(removal + ' reserves before recovery and drains the rejected activation without deadlock', async () => {
+    const f = fixture(), gate = deferred()
+    const lifecycle = recoveryLifecycle(f)
+    const activation = f.store.trackStateActivation('target/v0', async owner => {
+      await gate.promise
+      await assert.rejects(f.store.withExclusiveStateRecovery('target/v0', owner, async () => {
+        assert.fail('Removal wins')
+      }), /fenced/)
+    })
+    const removing = f.store[removal]('target', 'v0')
+    assert.equal(lifecycle.events[0], 'removal-fence')
+    gate.resolve(); await activation; await removing
+    assert.equal(lifecycle.events.some(event => Array.isArray(event)), false)
+    assert.equal(lifecycle.events.includes('removal-drain'), true)
+  })
 }
 
 ;(async () => {

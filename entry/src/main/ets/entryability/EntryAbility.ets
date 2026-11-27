@@ -11,7 +11,7 @@ import { resetLogprobsProbe } from '../vera/JevProxy'
 import { requestCalendarPermissions, requestMicrophonePermission } from '../vera/VeraPermissions'
 import { runProbe } from '../vera/IntentProbe'
 import { runSdkProbe, requestSdkSearch } from '../vera/VeraSdkProbe'
-import { requestBenchmark } from '../vera/VeraSearchBenchmark'
+import { requestBenchmark, runVmSafetyBenchmark } from '../vera/VeraSearchBenchmark'
 import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
@@ -27,7 +27,9 @@ import { util } from '@kit.ArkTS'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
 import { setFloorGainOverride } from '../vera/VeraLook3D'
 import { startedByApp, presentDevParameters, describeCaller } from '../components/LaunchTrust'
-import { StageTrace } from '../runtime/trace/StageTrace'
+import { StageTrace, StateLifecycleDiag } from '../runtime/trace/StageTrace'
+import { InProcessHost } from '../runtime/InProcessHost'
+import { backgroundTaskManager } from '@kit.BackgroundTasksKit'
 
 const DOMAIN = 0x0000
 
@@ -49,9 +51,21 @@ export default class EntryAbility extends UIAbility {
   private routeDrainGeneration: number = -1
   private navigationSession: AppNavigationSession | null = null
   private normalLayoutFullScreen: boolean = false
+  private diagnosticForegroundCount: number = 0
+  private vmSafetyLaunchMode: string = 'normal'
+  private vmSafetyBenchmarkActive: boolean = false
+  private vmSafetyBenchmarkTimer: number = -1
+  private vmSafetyBenchmarkGeneration: number = 0
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onCreate')
+    if (this.vmSafetyLaunchRequested(want)) {
+      const runId = this.vmSafetyRunId(want)
+      this.vmSafetyLaunchMode = runId.length > 0 ? 'benchmark' : 'ignored'
+      if (runId.length > 0) { this.scheduleVmSafetyBenchmark(runId) }
+      return
+    }
+    StateLifecycleDiag.emit('MAIN', 'CREATE')
     try {
       this.context.setOnNewWantSkipScenarios(
         contextConstant.Scenarios.SCENARIO_MOVE_MISSION_TO_FRONT |
@@ -80,9 +94,53 @@ export default class EntryAbility extends UIAbility {
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onNewWant')
+    if (this.vmSafetyLaunchMode !== 'normal' || this.vmSafetyLaunchRequested(want)) {
+      const runId = this.vmSafetyRunId(want)
+      if (runId.length > 0) {
+        if (this.vmSafetyLaunchMode === 'benchmark' && !this.vmSafetyBenchmarkActive) {
+          this.scheduleVmSafetyBenchmark(runId)
+        } else {
+          hilog.info(DOMAIN, 'VERA', 'VERA-P2 %{public}s', JSON.stringify({
+            protocol: 2, runId: runId, event: 'end', outcome: 'busy', restartRequired: this.vmSafetyLaunchMode !== 'benchmark'
+          }))
+        }
+      }
+      return
+    }
     this.extractProjectId(want)
     this.extractDevParameters(want)
     this.navigateToProject()
+  }
+
+  private vmSafetyLaunchRequested(want: Want): boolean {
+    if (startedByApp(want) || want.parameters === null || want.parameters === undefined) { return false }
+    return Object.keys(want.parameters).indexOf('veraVmSafetyBenchmark') >= 0
+  }
+
+  private vmSafetyRunId(want: Want): string {
+    if (!this.vmSafetyLaunchRequested(want)) { return '' }
+    const runId = (want.parameters as Record<string, Object>)['veraVmSafetyBenchmark']
+    return typeof runId === 'string' && /^[A-Za-z0-9_-]{1,48}$/.test(runId) && runId.trim() === runId ? runId : ''
+  }
+
+  private scheduleVmSafetyBenchmark(runId: string): void {
+    const generation = ++this.vmSafetyBenchmarkGeneration
+    this.vmSafetyBenchmarkActive = true
+    this.vmSafetyBenchmarkTimer = setTimeout(async (): Promise<void> => {
+      this.vmSafetyBenchmarkTimer = -1
+      if (this.vmSafetyLaunchMode !== 'benchmark' || this.vmSafetyBenchmarkGeneration !== generation) { return }
+      try {
+        store.init(this.context.filesDir)
+        await runVmSafetyBenchmark(runId, (): boolean =>
+          this.vmSafetyLaunchMode === 'benchmark' && this.vmSafetyBenchmarkGeneration === generation)
+      } catch {
+        hilog.error(DOMAIN, 'VERA', 'VERA-P2 %{public}s', JSON.stringify({
+          protocol: 2, runId: runId, event: 'end', outcome: 'failed'
+        }))
+      } finally {
+        if (this.vmSafetyBenchmarkGeneration === generation) { this.vmSafetyBenchmarkActive = false }
+      }
+    }, 1500)
   }
 
   /**
@@ -111,6 +169,8 @@ export default class EntryAbility extends UIAbility {
     }
 
     if (want.parameters === null || want.parameters === undefined) { return }
+
+    if (present.indexOf('veraVmSafetyBenchmark') >= 0) { return }
 
     this.extractApiKey(want)
     this.extractApiBase(want)
@@ -566,6 +626,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    if (this.vmSafetyLaunchMode !== 'normal') { return }
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onWindowStageCreate')
     this.contentReady = false
     let generation = ++this.windowStageGeneration
@@ -647,6 +708,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   private navigateToProject(): void {
+    if (this.vmSafetyLaunchMode !== 'normal') { return }
     let generation = this.windowStageGeneration
     if (!this.contentReady || this.activeWindowStage === null || this.pendingRoute === null ||
       this.navigationSession === null || this.navigationSession.pathStack === null ||
@@ -793,6 +855,16 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
+    if (this.vmSafetyLaunchMode !== 'normal') {
+      this.vmSafetyLaunchMode = 'destroyed'
+      this.vmSafetyBenchmarkGeneration++
+      this.vmSafetyBenchmarkActive = false
+      if (this.vmSafetyBenchmarkTimer !== -1) {
+        clearTimeout(this.vmSafetyBenchmarkTimer)
+        this.vmSafetyBenchmarkTimer = -1
+      }
+      return
+    }
     this.invalidateWindowStage()
     this.launchRevision++
     this.pendingRoute = null
@@ -801,19 +873,110 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void {
+    if (this.vmSafetyLaunchMode !== 'normal') { return }
     this.invalidateWindowStage()
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onWindowStageDestroy')
   }
 
   onForeground(): void {
+    if (this.vmSafetyLaunchMode !== 'normal') { return }
+    this.diagnosticForegroundCount++
+    StateLifecycleDiag.emit('MAIN', 'FOREGROUND')
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onForeground')
     AppStorage.setOrCreate('veraForeground', true)
     AppStorage.setOrCreate('veraResume', Date.now())
     refreshForms()
   }
 
+  private async checkpointBackground(): Promise<void> {
+    const operation = StateLifecycleDiag.operation()
+    const started = StateLifecycleDiag.now()
+    const foregroundCount = this.diagnosticForegroundCount
+    StateLifecycleDiag.emit('MAIN', 'BG_BEGIN', operation)
+    let requestId = -1
+    let expiryTimer = -1
+    let expired = false
+    let cancelGrant = (): void => {
+      if (expiryTimer !== -1) {
+        let timer = expiryTimer
+        expiryTimer = -1
+        try { clearTimeout(timer) }
+        catch {
+          try { hilog.warn(DOMAIN, 'VERA', 'Background state timer cleanup failed') } catch {}
+        }
+      }
+      if (requestId < 0) { return }
+      let id = requestId
+      requestId = -1
+      try {
+        backgroundTaskManager.cancelSuspendDelay(id)
+        StateLifecycleDiag.emit('MAIN', 'BG_CANCEL', operation, 'CANCELLED', StateLifecycleDiag.elapsed(started),
+          this.diagnosticForegroundCount !== foregroundCount, undefined, expired)
+      } catch {
+        StateLifecycleDiag.emit('MAIN', 'BG_CANCEL', operation, 'FAILED', StateLifecycleDiag.elapsed(started),
+          this.diagnosticForegroundCount !== foregroundCount, undefined, expired)
+        try { hilog.warn(DOMAIN, 'VERA', 'Background state grant cancellation failed') } catch {}
+      }
+    }
+    let grantUnavailable = false
+    try {
+      grantUnavailable = typeof backgroundTaskManager.requestSuspendDelay !== 'function'
+      let grant = backgroundTaskManager.requestSuspendDelay('VERA state checkpoint', (): void => {
+        expired = true
+        StateLifecycleDiag.emit('MAIN', 'BG_EXPIRED', operation, 'CALLBACK', StateLifecycleDiag.elapsed(started),
+          this.diagnosticForegroundCount !== foregroundCount, undefined, true)
+        cancelGrant()
+      })
+      if (Number.isSafeInteger(grant.requestId) && grant.requestId >= 0) {
+        requestId = grant.requestId
+        StateLifecycleDiag.emit('MAIN', 'BG_GRANT', operation,
+          !Number.isFinite(grant.actualDelayTime) || grant.actualDelayTime <= 0 ? 'INVALID' : 'GRANTED',
+          StateLifecycleDiag.elapsed(started), this.diagnosticForegroundCount !== foregroundCount, undefined, expired)
+        if (expired || !Number.isFinite(grant.actualDelayTime) || grant.actualDelayTime <= 0) {
+          cancelGrant()
+        } else {
+          try {
+            expiryTimer = setTimeout((): void => {
+              expiryTimer = -1
+              expired = true
+              StateLifecycleDiag.emit('MAIN', 'BG_EXPIRED', operation, 'TIMER', StateLifecycleDiag.elapsed(started),
+                this.diagnosticForegroundCount !== foregroundCount, undefined, true)
+              cancelGrant()
+            }, Math.min(grant.actualDelayTime, 2147483647))
+          } catch {
+            StateLifecycleDiag.emit('MAIN', 'BG_TIMER_FAILED', operation, 'FAILED', StateLifecycleDiag.elapsed(started),
+              this.diagnosticForegroundCount !== foregroundCount, undefined, expired)
+            cancelGrant()
+          }
+        }
+      } else {
+        StateLifecycleDiag.emit('MAIN', 'BG_GRANT', operation, 'INVALID', StateLifecycleDiag.elapsed(started))
+        try { hilog.warn(DOMAIN, 'VERA', 'Background state grant unavailable') } catch {}
+      }
+    } catch {
+      StateLifecycleDiag.emit('MAIN', 'BG_GRANT', operation, grantUnavailable ? 'UNAVAILABLE' : 'REFUSED',
+        StateLifecycleDiag.elapsed(started))
+      try { hilog.warn(DOMAIN, 'VERA', 'Background state grant refused') } catch {}
+    }
+    let hostResolved = false
+    try {
+      await InProcessHost.get().checkpointBackground()
+      hostResolved = true
+    }
+    catch {
+      try { hilog.error(DOMAIN, 'VERA', 'Background state checkpoint failed') } catch {}
+    }
+    finally {
+      cancelGrant()
+      StateLifecycleDiag.emit('MAIN', 'BG_SETTLED', operation, hostResolved ? 'HOST_RESOLVED' : 'HOST_REJECTED',
+        StateLifecycleDiag.elapsed(started), this.diagnosticForegroundCount !== foregroundCount, undefined, expired)
+    }
+  }
+
   onBackground(): void {
+    if (this.vmSafetyLaunchMode !== 'normal') { return }
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onBackground')
     AppStorage.setOrCreate('veraForeground', false)
+    this.checkpointBackground()
   }
 }

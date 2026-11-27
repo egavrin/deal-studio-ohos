@@ -9,25 +9,61 @@
  *   - JSON.parse for VBC2 deserialization
  */
 
-export abstract class RuntimeValue {}
+let allocationSerial: number = 0
+const valueBirths: WeakMap<RuntimeValue, number> = new WeakMap<RuntimeValue, number>()
+const cellBirths: WeakMap<Cell, number> = new WeakMap<Cell, number>()
+const arrayBirths: WeakMap<RuntimeValue[], number> = new WeakMap<RuntimeValue[], number>()
+const objectBirths: WeakMap<Map<string, RuntimeValue>, number> = new WeakMap<Map<string, RuntimeValue>, number>()
+
+function nextAllocationSerial(): number {
+  if (!Number.isSafeInteger(allocationSerial) || allocationSerial >= Number.MAX_SAFE_INTEGER) {
+    throw new RuntimeTrap('R-JOURNAL', 'allocation serial exhausted')
+  }
+  allocationSerial += 1
+  return allocationSerial
+}
+
+export abstract class RuntimeValue {
+  constructor() { valueBirths.set(this, nextAllocationSerial()) }
+}
 export class VeraNumberValue extends RuntimeValue { value: number; constructor(v: number) { super(); this.value = v; } }
 export class VeraStringValue extends RuntimeValue { value: string; constructor(v: string) { super(); this.value = v; } }
 export class VeraBooleanValue extends RuntimeValue { value: boolean; constructor(v: boolean) { super(); this.value = v; } }
 export class VeraNullValue extends RuntimeValue {}
-export class VeraArrayValue extends RuntimeValue { elements: RuntimeValue[]; constructor(e: RuntimeValue[]) { super(); this.elements = e; } }
+export class VeraArrayValue extends RuntimeValue {
+  elements: RuntimeValue[]
+  constructor(e: RuntimeValue[]) {
+    super()
+    if (!arrayBirths.has(e)) { arrayBirths.set(e, 0) }
+    this.elements = e
+  }
+}
 export class VeraObjectValue extends RuntimeValue {
   classIdentity: string
   fields: Map<string, RuntimeValue> = new Map<string, RuntimeValue>()
   constructor(identity: string, fields: Map<string, RuntimeValue>) {
     super()
     this.classIdentity = identity
+    if (!objectBirths.has(fields)) { objectBirths.set(fields, 0) }
     this.fields = fields
   }
 }
 
+export function freshArrayValue(elements: RuntimeValue[]): VeraArrayValue {
+  let backing = elements.slice()
+  arrayBirths.set(backing, nextAllocationSerial())
+  return new VeraArrayValue(backing)
+}
+
+export function freshObjectValue(identity: string, fields: Map<string, RuntimeValue>): VeraObjectValue {
+  let backing = new Map<string, RuntimeValue>(fields)
+  objectBirths.set(backing, nextAllocationSerial())
+  return new VeraObjectValue(identity, backing)
+}
+
 export class Cell {
   value: RuntimeValue
-  constructor(v: RuntimeValue) { this.value = v; }
+  constructor(v: RuntimeValue) { cellBirths.set(this, nextAllocationSerial()); this.value = v; }
 }
 
 export class FunctionValue extends RuntimeValue {
@@ -53,11 +89,104 @@ export class RuntimeTrap extends Error {
   constructor(code: string, message: string) { super(message); this.trapCode = code; }
 }
 
+export interface VmHostSafetyScope {
+  accept(): void
+  rollback(): void
+  discard(): void
+}
+
+export interface VmSafetyOptions {
+  journalMode?: 'JOURNAL'
+  journalMaxEntries?: number
+}
+
+export interface VmDiagnostic {
+  entryCategory?: string
+  operation?: string
+  outcome?: string
+  durationMs?: number
+  steps?: number
+  records?: number
+  reservations?: number
+  rollbacks?: number
+  safety?: boolean
+}
+
+export interface VmSafetyDiagnostics {
+  readonly journalReservations: number
+  readonly journalUndoRecords: number
+  readonly runtimeBirthSerial: number
+}
+
+export interface VmSafetyTurnScope {
+  accept(): void
+  rollback(): void
+  discard(): void
+}
+
+class VmTurnToken {}
+
+class EmptyVmHostSafetyScope implements VmHostSafetyScope {
+  accept(): void {}
+  rollback(): void {}
+  discard(): void {}
+}
+
+class VmSafetyTurnScopeRecord implements VmSafetyTurnScope {
+  accept: () => void
+  rollback: () => void
+  discard: () => void
+
+  constructor(settle: (receiver: VmSafetyTurnScope, action: string) => void) {
+    class VmSafetyTurnCallbacks implements VmSafetyTurnScope {
+      accept(): void { settle(this, 'accept') }
+      rollback(): void { settle(this, 'rollback') }
+      discard(): void { settle(this, 'discard') }
+    }
+    let callbacks: VmSafetyTurnCallbacks = new VmSafetyTurnCallbacks()
+    this.accept = callbacks.accept
+    this.rollback = callbacks.rollback
+    this.discard = callbacks.discard
+  }
+}
+
+class VmUndoRecord {
+  array: RuntimeValue[] | null = null
+  fields: Map<string, RuntimeValue> | null = null
+  cell: Cell | null = null
+  index: number = 0
+  key: string = ''
+  length: number = 0
+  value: RuntimeValue = NULL_VALUE
+  kind: string
+  constructor(kind: string) { this.kind = kind }
+
+  undo(): void {
+    if (this.cell !== null) { this.cell.value = this.value }
+    else if (this.fields !== null) { this.fields.set(this.key, this.value) }
+    else if (this.array !== null) {
+      if (this.kind === 'push') { this.array.length = this.length }
+      else { this.array[this.index] = this.value }
+    }
+  }
+}
+
 export abstract class HostEnvironment {
   abstract invoke(module: string, name: string, args: RuntimeValue[], awaited: boolean): RuntimeValue
+  observeDiagnostics(observer: () => void): void { observer() }
+  beginSafetyTurn(_reserve: () => void): VmHostSafetyScope {
+    throw new RuntimeTrap('R-JOURNAL', 'host does not support safety turns')
+  }
+  setSafetyPure(pure: boolean): void {
+    if (pure) { throw new RuntimeTrap('R-PURE', 'host does not support pure calls') }
+  }
 }
 
 export class EmptyHostEnvironment extends HostEnvironment {
+  beginSafetyTurn(_reserve: () => void): VmHostSafetyScope {
+    return new EmptyVmHostSafetyScope()
+  }
+  setSafetyPure(_pure: boolean): void {}
   invoke(module: string, name: string, _args: RuntimeValue[], _awaited: boolean): RuntimeValue {
     throw new RuntimeTrap('R0015', `external function unavailable: ${module}.${name}`)
   }
@@ -130,6 +259,11 @@ class Frame {
   }
 }
 
+export interface VmExecutionBudget {
+  now: () => number
+  deadlineMs?: number
+}
+
 export class VirtualMachine {
   private functions: Map<string, BytecodeFunction> = new Map<string, BytecodeFunction>()
   private functionValues: Map<string, FunctionValue> = new Map<string, FunctionValue>()
@@ -137,17 +271,324 @@ export class VirtualMachine {
   private host: HostEnvironment
   private maxSteps: number
   private steps: number = 0
+  private budgetNow: (() => number) | null = null
+  private budgetDeadlineMs: number = 1000
+  private budgetStartedAt: number = -1
+  private budgetLastNow: number = -1
+  private budgetActive: boolean = false
+  private budgetFailure: RuntimeTrap | null = null
+  private budgetFrame: Frame | null = null
+  readonly coverage: 'GRAPH_SLOTS_DEFERRED_INTENTS' = 'GRAPH_SLOTS_DEFERRED_INTENTS'
+  private safetyEnabled: boolean = false
+  private journalLimit: number = 65536
+  private journalCount: number = 0
+  private journal: VmUndoRecord[] = []
+  private turnBoundary: number = -1
+  private pureBoundary: number = -1
+  private safetyExecuting: boolean = false
+  private safetySettling: boolean = false
+  private safetyInvalid: boolean = false
+  private safetyViolations: number = 0
+  private safetyFailed: boolean = false
+  private safetyFailure: RuntimeTrap | null = null
+  private turnToken: VmTurnToken | null = null
+  private usedTransactions: WeakSet<Object> = new WeakSet<Object>()
+  private diagnostic: ((event: string, attributes: VmDiagnostic) => void) | null = null
+  private diagnosticEntry: string = 'HANDLER'
+  private diagnosticCall: number = 0
+  private diagnosticEmitting: boolean = false
+  private diagnosticEnabled: (() => boolean) | null = null
+  private diagnosticDurationMs: number = 0
 
-  constructor(module: BytecodeModule, host: HostEnvironment = new EmptyHostEnvironment(), maxSteps: number = 5000000) {
+  constructor(module: BytecodeModule, host: HostEnvironment = new EmptyHostEnvironment(), maxSteps: number = 5000000,
+      budget: VmExecutionBudget | null = null, safety: VmSafetyOptions | null = null) {
     this.host = host
     this.maxSteps = maxSteps
+    if (budget !== null) {
+      let now = budget.now
+      let deadlineMs = budget.deadlineMs
+      if (deadlineMs === undefined) { deadlineMs = 1000 }
+      if (typeof now !== 'function') { throw new RuntimeTrap('R-BUDGET', 'budget clock must be a function') }
+      if (!Number.isFinite(deadlineMs) || deadlineMs < 0) {
+        throw new RuntimeTrap('R-BUDGET', 'budget deadlineMs must be finite and nonnegative')
+      }
+      if (!Number.isSafeInteger(maxSteps) || maxSteps < 0) {
+        throw new RuntimeTrap('R-BUDGET', 'budget maxSteps must be a nonnegative safe integer')
+      }
+      this.budgetNow = now
+      this.budgetDeadlineMs = deadlineMs
+    }
+    if (safety !== null) {
+      if (budget === null) { throw new RuntimeTrap('R-JOURNAL', 'safety requires an injected budget') }
+      if (safety.journalMode !== undefined && safety.journalMode !== 'JOURNAL') {
+        throw new RuntimeTrap('R-JOURNAL', 'only JOURNAL safety is supported')
+      }
+      let limit = safety.journalMaxEntries === undefined ? 65536 : safety.journalMaxEntries
+      if (!Number.isSafeInteger(limit) || limit < 0) {
+        throw new RuntimeTrap('R-JOURNAL', 'journal capacity must be a nonnegative safe integer')
+      }
+      this.journalLimit = limit
+      this.safetyEnabled = true
+    }
     for (let fn of module.functions) {
       this.functions.set(fn.name, fn)
     }
   }
 
+  setDiagnostic(sink: (event: string, attributes: VmDiagnostic) => void, enabled?: () => boolean): void {
+    this.assertOutsideDiagnostic()
+    this.diagnostic = sink
+    this.diagnosticEnabled = enabled === undefined ? null : enabled
+    this.emitDiagnostic('VM_SAFETY_SWITCH', { safety: this.safetyEnabled })
+  }
+
+  observeDiagnostics(observer: () => void): void {
+    let previous = this.diagnosticEmitting
+    this.diagnosticEmitting = true
+    try { this.host.observeDiagnostics(observer) } catch (_error) {}
+    finally { this.diagnosticEmitting = previous }
+  }
+
+  private assertOutsideDiagnostic(): void {
+    if (this.diagnosticEmitting) { throw new RuntimeTrap('R-JOURNAL', 'VM operation during diagnostics') }
+  }
+
+  private diagnosticsActive(): boolean {
+    if (this.diagnostic === null || this.diagnosticEmitting) { return false }
+    if (this.diagnosticEnabled === null) { return true }
+    let enabled = false
+    this.observeDiagnostics((): void => { enabled = this.diagnosticEnabled!() === true })
+    return enabled
+  }
+
+  private emitDiagnostic(event: string, attributes: VmDiagnostic): void {
+    if (!this.diagnosticsActive()) { return }
+    this.observeDiagnostics((): void => { this.diagnostic?.(event, attributes) })
+  }
+
+  private entryCategory(entry: string): string {
+    if (entry === 'init') { return 'INIT' }
+    if (entry === 'view') { return 'VIEW' }
+    if (entry === 'widget') { return 'WIDGET' }
+    if (entry === 'draw') { return 'DRAW' }
+    if (entry === 'buildScene') { return 'BUILD_SCENE' }
+    return 'HANDLER'
+  }
+
+  private observedExecute(entry: string, args: RuntimeValue[], pure: boolean): RuntimeValue {
+    this.assertOutsideDiagnostic()
+    if (!this.diagnosticsActive()) {
+      return pure ? this.executeSafety(entry, args, true) : this.executeUnobserved(entry, args)
+    }
+    let started = this.budgetNow === null ? Date.now() : 0
+    let outcome = 'OK'
+    let previous = this.diagnosticEntry
+    let call = this.diagnosticCall
+    this.diagnosticEntry = this.entryCategory(entry)
+    try { return pure ? this.executeSafety(entry, args, true) : this.executeUnobserved(entry, args) }
+    catch (error) {
+      outcome = error instanceof RuntimeTrap ? error.trapCode === 'R-PURE' ? 'PURE' :
+        error.trapCode === 'R-JOURNAL' ? 'JOURNAL' :
+        error.trapCode === 'R-BUDGET' || error.trapCode === 'R0017' ? 'BUDGET' : 'TRAP' : 'TRAP'
+      throw error as Error
+    } finally {
+      this.emitDiagnostic('VM_EXECUTE', { entryCategory: this.diagnosticEntry,
+        steps: call === this.diagnosticCall ? 0 : this.steps,
+        durationMs: this.budgetNow === null ? Math.max(0, Date.now() - started) :
+          call === this.diagnosticCall ? 0 : this.diagnosticDurationMs, outcome: outcome })
+      this.diagnosticEntry = previous
+    }
+  }
+
+  private pureViolation(operation: string): void {
+    this.emitDiagnostic('VM_PURE_VIOLATION', { entryCategory: this.diagnosticEntry, operation: operation,
+      outcome: 'PURE' })
+  }
+
+  private failSafety(code: string, message: string): RuntimeTrap {
+    this.safetyViolations += 1
+    this.safetyFailed = true
+    if (this.safetyFailure === null) { this.safetyFailure = new RuntimeTrap(code, message) }
+    return this.safetyFailure
+  }
+
+  private checkSafety(): void {
+    if (this.safetyFailure !== null) { throw this.safetyFailure }
+    if (this.safetyInvalid) { throw this.failSafety('R-JOURNAL', 'VM safety instance is invalid') }
+  }
+
+  beginTurn(tx: Object, _root: RuntimeValue): VmSafetyTurnScope {
+    this.assertOutsideDiagnostic()
+    if (!this.safetyEnabled) { throw new RuntimeTrap('R-JOURNAL', 'VM safety is disabled') }
+    if (this.safetyExecuting || this.safetySettling) {
+      throw this.failSafety('R-JOURNAL', 'reentrant turn begin')
+    }
+    this.checkSafety()
+    if (tx === null || typeof tx !== 'object' || this.safetyExecuting || this.safetySettling ||
+        this.turnToken !== null || this.usedTransactions.has(tx)) {
+      throw this.failSafety('R-JOURNAL', 'invalid or reentrant turn begin')
+    }
+    this.usedTransactions.add(tx)
+    let token: VmTurnToken = new VmTurnToken()
+    this.turnToken = token
+    this.turnBoundary = allocationSerial
+    this.journal = []
+    this.journalCount = 0
+    this.safetyFailed = false
+    this.safetySettling = true
+    let hostScope: VmHostSafetyScope
+    try {
+      hostScope = this.host.beginSafetyTurn(() => this.reserveHost(token))
+      this.checkSafety()
+      if (hostScope === null || typeof hostScope !== 'object' || typeof hostScope.accept !== 'function' ||
+          typeof hostScope.rollback !== 'function' || typeof hostScope.discard !== 'function') {
+        throw this.failSafety('R-JOURNAL', 'invalid host safety scope')
+      }
+    } catch (e) {
+      this.safetyInvalid = true
+      throw this.failSafety('R-JOURNAL', 'host safety turn failed')
+    } finally {
+      this.safetySettling = false
+    }
+    let settle = (receiver: VmSafetyTurnScope, action: string): void => {
+      this.assertOutsideDiagnostic()
+      if (receiver !== scope) { throw this.failSafety('R-JOURNAL', 'foreign safety scope receiver') }
+      this.settleTurn(token, hostScope, action)
+    }
+    let scope: VmSafetyTurnScope = new VmSafetyTurnScopeRecord(settle)
+    return scope
+  }
+
+  private settleTurn(token: VmTurnToken, hostScope: VmHostSafetyScope, action: string): void {
+    this.assertOutsideDiagnostic()
+    if (this.safetyInvalid || this.safetyExecuting || this.safetySettling || this.turnToken !== token) {
+      throw this.failSafety('R-JOURNAL', 'invalid or reentrant turn settlement')
+    }
+    if (action === 'accept' && this.safetyFailed) {
+      throw this.failSafety('R-JOURNAL', 'failed turn cannot be accepted')
+    }
+    this.safetySettling = true
+    let violations = this.safetyViolations
+    let settled = false
+    try {
+      if (action === 'rollback') {
+        for (let i = this.journal.length - 1; i >= 0; i--) { this.journal[i].undo() }
+        hostScope.rollback()
+      } else if (action === 'accept') { hostScope.accept() }
+      else { this.safetyInvalid = true; hostScope.discard() }
+      if (this.safetyViolations !== violations) { throw this.failSafety('R-JOURNAL', 'reentrant safety settlement') }
+      settled = true
+    } catch (e) {
+      this.safetyInvalid = true
+      throw this.failSafety('R-JOURNAL', 'host safety settlement failed')
+    } finally {
+      this.emitDiagnostic('VM_JOURNAL', { records: this.journal.length, reservations: this.journalCount,
+        rollbacks: action === 'rollback' && settled ? 1 : 0,
+        outcome: !settled ? 'FAILED' :
+          action === 'rollback' ? 'ROLLBACK' : action === 'accept' ? 'ACCEPT' : 'DISCARD' })
+      this.turnToken = null
+      this.turnBoundary = -1
+      this.journal = []
+      this.journalCount = 0
+      this.safetySettling = false
+    }
+    if (!this.safetyInvalid) { this.safetyFailure = null; this.safetyFailed = false }
+  }
+
+  private reserveHost(token: VmTurnToken): void {
+    this.assertOutsideDiagnostic()
+    if (this.turnToken !== token || !this.safetyExecuting || this.safetySettling) {
+      throw this.failSafety('R-JOURNAL', 'host reservation outside execution')
+    }
+    this.checkSafety()
+    if (this.pureBoundary >= 0) {
+      this.pureViolation('HOST')
+      throw this.failSafety('R-PURE', 'host mutation in pure call')
+    }
+    this.reserveJournal()
+  }
+
+  private reserveJournal(): void {
+    this.checkSafety()
+    if (this.journalCount >= this.journalLimit) {
+      this.emitDiagnostic('VM_JOURNAL', { outcome: 'OVERFLOW', records: this.journal.length,
+        reservations: this.journalCount })
+      throw this.failSafety('R-JOURNAL', 'journal capacity exceeded')
+    }
+    this.journalCount += 1
+  }
+
+  private reserveWrite(born: number, operation: string): boolean {
+    if (!this.safetyEnabled) { return false }
+    this.checkSafety()
+    if (this.pureBoundary >= 0 && born <= this.pureBoundary) {
+      this.pureViolation(operation)
+      throw this.failSafety('R-PURE', 'write to pre-existing storage in pure call')
+    }
+    if (born > this.turnBoundary) { return false }
+    this.reserveJournal()
+    return true
+  }
+
+  private storeCell(cell: Cell, value: RuntimeValue): void {
+    if (this.reserveWrite(cellBirths.get(cell) || 0, 'CELL')) {
+      let record = new VmUndoRecord('cell')
+      record.cell = cell
+      record.value = cell.value
+      this.journal.push(record)
+    }
+    cell.value = value
+  }
+
+  executePure(entry: string, args: RuntimeValue[] = []): RuntimeValue {
+    if (!this.safetyEnabled) { return this.execute(entry, args) }
+    return this.observedExecute(entry, args, true)
+  }
+
+  private executeSafety(entry: string, args: RuntimeValue[], pure: boolean): RuntimeValue {
+    if (this.safetyExecuting || this.safetySettling) {
+      throw this.failSafety('R-JOURNAL', 'reentrant safety execution')
+    }
+    this.checkSafety()
+    if (this.safetyExecuting || this.safetySettling || this.turnToken === null || this.safetyFailed) {
+      throw this.failSafety('R-JOURNAL', 'execution requires an idle active safety turn')
+    }
+    this.safetyExecuting = true
+    this.pureBoundary = pure ? allocationSerial : -1
+    try {
+      if (pure) { this.host.setSafetyPure(true); this.checkSafety() }
+      let result = this.executeBudgeted(entry, args)
+      this.checkSafety()
+      return result
+    } catch (e) {
+      this.safetyFailed = true
+      if (this.safetyFailure !== null) { throw this.safetyFailure }
+      throw e as Error
+    } finally {
+      try {
+        if (pure) { this.host.setSafetyPure(false); this.checkSafety() }
+      } catch (e) {
+        this.safetyFailed = true
+        if (this.safetyFailure === null) { this.pureViolation('CLEANUP') }
+        throw this.failSafety('R-PURE', 'pure host cleanup failed')
+      } finally {
+        this.pureBoundary = -1
+        this.safetyExecuting = false
+      }
+    }
+  }
+
   // Steps executed by the most recent execute() call (reset per call).
   stepsExecuted(): number { return this.steps }
+
+  safetyDiagnostics(): VmSafetyDiagnostics {
+    const diagnostics: VmSafetyDiagnostics = {
+      journalReservations: this.journalCount,
+      journalUndoRecords: this.journal.length,
+      runtimeBirthSerial: allocationSerial
+    }
+    return diagnostics
+  }
 
   /** Every class the program builds objects of, with its fields: what an object of an older program must match to be kept. */
   classShapes(): Map<string, string[]> {
@@ -161,31 +602,119 @@ export class VirtualMachine {
   }
 
   execute(entry: string, args: RuntimeValue[] = []): RuntimeValue {
+    return this.observedExecute(entry, args, false)
+  }
+
+  private executeUnobserved(entry: string, args: RuntimeValue[]): RuntimeValue {
+    if (this.safetyEnabled) { return this.executeSafety(entry, args, false) }
+    if (this.budgetNow !== null) { return this.executeBudgeted(entry, args) }
     let fn = this.functions.get(entry)
     if (fn == undefined) {
       throw new RuntimeTrap('R0001', `entry function not found: ${entry}`)
     }
     this.steps = 0
+    this.diagnosticCall++
     return this.run(new Frame(fn, [], args))
   }
 
+  private executeBudgeted(entry: string, args: RuntimeValue[]): RuntimeValue {
+    if (this.budgetActive) { throw this.failBudget('reentrant execution is not allowed') }
+    this.budgetActive = true
+    this.budgetFailure = null
+    this.budgetStartedAt = -1
+    this.diagnosticDurationMs = 0
+    this.steps = 0
+    this.diagnosticCall++
+    let fn = this.functions.get(entry)
+    try {
+      this.checkBudget()
+      if (fn === undefined) { throw new RuntimeTrap('R0001', `entry function not found: ${entry}`) }
+      this.budgetFrame = new Frame(fn, [], args)
+      let result = this.run(this.budgetFrame)
+      this.checkBudget()
+      return result
+    } catch (e) {
+      let error = this.checkBudgetOnError(e as Error)
+      if (error instanceof RuntimeTrap && error.line === 0 && fn !== undefined) { locateTrap(error, fn, 0) }
+      throw error
+    } finally {
+      this.diagnosticDurationMs = this.budgetStartedAt < 0 ? 0 :
+        Math.max(0, this.budgetLastNow - this.budgetStartedAt)
+      this.budgetFrame = null
+      this.budgetStartedAt = -1
+      this.budgetFailure = null
+      this.budgetActive = false
+    }
+  }
+
+  private failBudget(message: string): RuntimeTrap {
+    if (this.budgetFailure === null) {
+      this.budgetFailure = new RuntimeTrap('R-BUDGET', message)
+      if (this.budgetFrame !== null) {
+        locateTrap(this.budgetFailure, this.budgetFrame.fn, Math.max(0, this.budgetFrame.pc - 1))
+      }
+    }
+    return this.budgetFailure
+  }
+
+  private checkBudget(): void {
+    if (this.safetyEnabled) { this.checkSafety() }
+    if (this.budgetFailure !== null) { throw this.budgetFailure }
+    let now = this.budgetNow
+    if (now === null) { return }
+    let current: number
+    try {
+      current = now()
+    } catch (e) {
+      throw this.failBudget('budget clock failed')
+    }
+    if (this.safetyEnabled) { this.checkSafety() }
+    if (this.budgetFailure !== null) { throw this.budgetFailure as RuntimeTrap }
+    if (!Number.isFinite(current) || current < 0 || current < this.budgetLastNow) {
+      throw this.failBudget('budget clock must be finite, nonnegative and monotonic')
+    }
+    this.budgetLastNow = current
+    if (this.budgetStartedAt < 0) { this.budgetStartedAt = current }
+    if (current - this.budgetStartedAt >= this.budgetDeadlineMs) {
+      throw this.failBudget(`execution exceeded ${this.budgetDeadlineMs} ms deadline`)
+    }
+  }
+
+  private checkBudgetOnError(error: Error): Error {
+    try {
+      this.checkBudget()
+    } catch (e) {
+      if (this.budgetFailure !== null) { return this.budgetFailure }
+    }
+    return error
+  }
+
   private run(frame: Frame): RuntimeValue {
+    let previousFrame = this.budgetFrame
+    if (this.budgetNow !== null) { this.budgetFrame = frame }
     try {
       return this.runFrame(frame)
     } catch (e) {
-      if (e instanceof RuntimeTrap && e.line === 0) { locateTrap(e, frame.fn, frame.pc - 1) }
-      throw e as Error
+      let error = this.budgetNow === null ? e as Error : this.checkBudgetOnError(e as Error)
+      if (error instanceof RuntimeTrap && error.line === 0) { locateTrap(error, frame.fn, frame.pc - 1) }
+      throw error
+    } finally {
+      this.budgetFrame = previousFrame
     }
   }
 
   private runFrame(frame: Frame): RuntimeValue {
     while (frame.pc < frame.fn.instructions.length) {
       this.steps += 1
-      if (this.steps > this.maxSteps) {
+      if (this.budgetNow === null && this.steps > this.maxSteps) {
         throw new RuntimeTrap('R0017', `execution exceeded ${this.maxSteps} steps`)
       }
       let inst = frame.fn.instructions[frame.pc]
       frame.pc += 1
+      if (this.budgetNow !== null) {
+        if (this.steps > this.maxSteps) { throw this.failBudget(`execution exceeded ${this.maxSteps} steps`) }
+        if (this.steps % 1024 === 0) { this.checkBudget() }
+      }
       switch (inst.op) {
         case 'push-number':
           frame.stack.push(new VeraNumberValue(inst.numValue))
@@ -203,13 +732,13 @@ export class VirtualMachine {
           frame.stack.push(this.cell(frame.locals, inst.slot).value)
           break
         case 'store-local':
-          this.cell(frame.locals, inst.slot).value = this.pop(frame)
+          this.storeCell(this.cell(frame.locals, inst.slot), this.pop(frame))
           break
         case 'load-capture':
           frame.stack.push(this.cell(frame.captures, inst.slot).value)
           break
         case 'store-capture':
-          this.cell(frame.captures, inst.slot).value = this.pop(frame)
+          this.storeCell(this.cell(frame.captures, inst.slot), this.pop(frame))
           break
         case 'load-function': {
           let val = this.functionValues.get(inst.name)
@@ -257,13 +786,19 @@ export class VirtualMachine {
         case 'return':
           return this.pop(frame)
         case 'make-array':
-          frame.stack.push(new VeraArrayValue(this.take(frame, inst.count)))
+          frame.stack.push(freshArrayValue(this.take(frame, inst.count)))
           break
         case 'array-push': {
           let v = this.pop(frame)
           let arr = this.asArray(this.pop(frame))
           if (arr.elements.length >= 4096) {
             throw new RuntimeTrap('R0022', 'array length limit reached (4096)')
+          }
+          if (this.reserveWrite(arrayBirths.get(arr.elements) || 0, 'ARRAY')) {
+            let record = new VmUndoRecord('push')
+            record.array = arr.elements
+            record.length = arr.elements.length
+            this.journal.push(record)
           }
           arr.elements.push(v)
           frame.stack.push(new VeraNumberValue(arr.elements.length))
@@ -273,6 +808,13 @@ export class VirtualMachine {
           let arr = this.asArray(this.pop(frame))
           if (arr.elements.length === 0) {
             throw new RuntimeTrap('R0023', 'pop from an empty array')
+          }
+          if (this.reserveWrite(arrayBirths.get(arr.elements) || 0, 'ARRAY')) {
+            let record = new VmUndoRecord('pop')
+            record.array = arr.elements
+            record.index = arr.elements.length - 1
+            record.value = arr.elements[record.index]
+            this.journal.push(record)
           }
           frame.stack.push(arr.elements.pop() as RuntimeValue)
           break
@@ -293,7 +835,7 @@ export class VirtualMachine {
           if (!(v instanceof VeraStringValue)) { throw new RuntimeTrap('R0008', 'expected string') }
           let chars: RuntimeValue[] = []
           for (let ch of Array.from(v.value)) { chars.push(new VeraStringValue(ch)) }
-          frame.stack.push(new VeraArrayValue(chars))
+          frame.stack.push(freshArrayValue(chars))
           break
         }
         case 'ensure-not-null': {
@@ -313,6 +855,13 @@ export class VirtualMachine {
           let idx = this.index(this.pop(frame))
           let arr = this.asArray(this.pop(frame))
           this.indexValue(arr, idx)
+          if (this.reserveWrite(arrayBirths.get(arr.elements) || 0, 'ARRAY')) {
+            let record = new VmUndoRecord('index')
+            record.array = arr.elements
+            record.index = idx
+            record.value = arr.elements[idx]
+            this.journal.push(record)
+          }
           arr.elements[idx] = v
           break
         }
@@ -322,7 +871,7 @@ export class VirtualMachine {
           for (let i: number = 0; i < inst.fields.length; i++) {
             fields.set(inst.fields[i], vals[i])
           }
-          frame.stack.push(new VeraObjectValue(inst.classIdentity, fields))
+          frame.stack.push(freshObjectValue(inst.classIdentity, fields))
           break
         }
         case 'load-field': {
@@ -336,6 +885,13 @@ export class VirtualMachine {
           let v = this.pop(frame)
           let obj = this.asObject(this.pop(frame))
           if (!obj.fields.has(inst.name)) { throw new RuntimeTrap('R0010', `missing field ${inst.name}`) }
+          if (this.reserveWrite(objectBirths.get(obj.fields) || 0, 'OBJECT')) {
+            let record = new VmUndoRecord('field')
+            record.fields = obj.fields
+            record.key = inst.name
+            record.value = obj.fields.get(inst.name) as RuntimeValue
+            this.journal.push(record)
+          }
           obj.fields.set(inst.name, v)
           break
         }
@@ -362,7 +918,22 @@ export class VirtualMachine {
       if (fn.isAsync !== inst.awaited) { throw new RuntimeTrap('R0013', 'async call invariant') }
       frame.stack.push(this.run(new Frame(fn, callee.captures, args)))
     } else if (callee instanceof ExternalFunctionValue) {
-      frame.stack.push(this.host.invoke(callee.module, callee.funcName, args, inst.awaited))
+      if (this.budgetNow === null) {
+        frame.stack.push(this.host.invoke(callee.module, callee.funcName, args, inst.awaited))
+      } else {
+        this.checkBudget()
+        try {
+          let result = this.host.invoke(callee.module, callee.funcName, args, inst.awaited)
+          if (this.safetyEnabled) { this.checkSafety() }
+          this.checkBudget()
+          frame.stack.push(result)
+        } catch (e) {
+          if (e instanceof RuntimeTrap && e.trapCode === 'R-PURE' && this.safetyFailure === null) {
+            this.pureViolation('HOST')
+          }
+          throw this.checkBudgetOnError(e as Error)
+        }
+      }
     } else {
       throw new RuntimeTrap('R0014', 'value is not callable')
     }
@@ -511,7 +1082,7 @@ export function decodeRuntimeValue(raw: Object): RuntimeValue {
   if (tag === 'a') {
     let items: RuntimeValue[] = []
     for (let e of parts[1] as Object[]) { items.push(decodeRuntimeValue(e)) }
-    return new VeraArrayValue(items)
+    return freshArrayValue(items)
   }
   if (tag === 'o') {
     let fields = new Map<string, RuntimeValue>()
@@ -519,7 +1090,7 @@ export function decodeRuntimeValue(raw: Object): RuntimeValue {
       let pair = entry as Object[]
       fields.set(pair[0] as string, decodeRuntimeValue(pair[1]))
     }
-    return new VeraObjectValue(parts[1] as string, fields)
+    return freshObjectValue(parts[1] as string, fields)
   }
   throw new RuntimeTrap('R0025', 'unknown saved value tag: ' + tag)
 }
@@ -532,7 +1103,7 @@ function locateTrap(trap: RuntimeTrap, fn: BytecodeFunction, at: number): void {
   if (at < 0 || at >= fn.lines.length || fn.lines[at] <= 0) { trap.line = -1; return }
   trap.line = fn.lines[at]
   let where = ' (in ' + fn.name + ', line ' + trap.line.toString()
-  if (trap.trapCode === 'R0017' || trap.trapCode === 'R0022') {
+  if (trap.trapCode === 'R0017' || trap.trapCode === 'R0022' || trap.trapCode === 'R-BUDGET') {
     // The innermost loop around it: the backward jump over it whose target is nearest.
     let start = -1
     for (let i = at; i < fn.instructions.length; i++) {

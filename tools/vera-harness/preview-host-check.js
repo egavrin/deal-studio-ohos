@@ -7,7 +7,6 @@ const root = path.resolve(process.env.VERA_SOURCE_ROOT || path.join(__dirname, '
 const previewFile = path.join(root, 'components/VeraPreview.ets')
 const previewSource = fs.readFileSync(previewFile, 'utf8')
 const cache = new Map()
-const disk = new Map()
 const timers = new Map()
 const hosts = []
 const previews = []
@@ -26,29 +25,30 @@ const schedule = (callback, delay, interval = false) => {
   return id
 }
 const forbidden = name => new Proxy({}, { get(_target, key) { throw Error('Forbidden platform access: ' + name + '.' + String(key)) } })
-const filesystem = {
-  OpenMode: { CREATE: 1, WRITE_ONLY: 2, TRUNC: 4 },
-  mkdirSync() {},
-  openSync(file) { return { fd: file } },
-  writeSync(file, value) { disk.set(file, value) },
-  closeSync() {},
-  statSync(file) {
-    if (!disk.has(file)) throw Error('absent')
-    return { size: disk.get(file).length }
-  },
-  readTextSync(file) {
-    if (!disk.has(file)) throw Error('absent')
+const worker = require('./state-io-check').createWorkerFixture('/preview-host-fixture/vera', event => {
+  if (saveFailure && event.op === 'rename') throw Error('fixture save failed')
+})
+const disk = worker.disk
+const filesystem = new Proxy(worker.filesystem, { get(target, key) {
+  if (key === 'readTextSync') return file => {
+    assert(!worker.workerActive(), 'worker must use bounded byte reads')
+    if (!disk.has(file)) throw Object.assign(Error('absent'), { code: 13900002 })
     return disk.get(file)
-  },
-  renameSync(from, to) {
-    if (saveFailure) throw Error('fixture save failed')
-    assert(disk.has(from))
-    disk.set(to, disk.get(from))
-    disk.delete(from)
-  },
-  unlinkSync(file) { disk.delete(file) },
-  listFileSync(dir) { return [...disk.keys()].filter(file => path.dirname(file) === dir).map(file => path.basename(file)) }
-}
+  }
+  if (key === 'mkdirSync') return file => {
+    if (worker.workerActive()) return target.mkdirSync(file)
+    if (!worker.memory.nodes.has(file)) worker.memory.put(file, '', 'dir')
+  }
+  if (['openSync', 'closeSync', 'statSync', 'renameSync', 'unlinkSync', 'listFileSync'].includes(key)) {
+    return (...args) => worker.workerActive() ? target[key](...args) : worker.memory[key](...args)
+  }
+  if (key === 'writeSync') return (fd, value, options) => {
+    if (worker.workerActive()) return target.writeSync(fd, value, options)
+    const bytes = new TextEncoder().encode(value)
+    return worker.memory.writeSync(fd, bytes.buffer, { offset: 0, length: bytes.byteLength })
+  }
+  return target[key]
+} })
 class WorldBox {
   constructor() {
     this.key = ''
@@ -122,7 +122,7 @@ function load(file) {
   file = path.resolve(file)
   if (cache.has(file)) return cache.get(file).exports
   const source = file === previewFile ? extractPreview() : fs.readFileSync(file, 'utf8')
-  const compiled = ts.transpileModule(source, {
+  const compiled = ts.transpileModule(source.replace(/^@Concurrent\s*$/gm, ''), {
     fileName: file.replace(/\.ets$/, '.ts'),
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, experimentalDecorators: true },
     reportDiagnostics: true
@@ -138,6 +138,12 @@ function load(file) {
     if (name.endsWith('/VeraSdkBackend')) return { runSdkAdapter: async (...args) => { adapterCalls.push(args); return 'ok' } }
     if (name.endsWith('/VeraConsentStore')) return { consent: { has: () => true, remember() {} } }
     if (name === '@kit.CoreFileKit') return { fileIo: filesystem }
+    if (name === '@ohos.fileio') return { default: worker.legacyFilesystem }
+    if (name === '@kit.ArkTS') return { taskpool: worker.taskpool, util: worker.util }
+    if (name === '@kit.CryptoArchitectureKit') return { cryptoFramework: worker.cryptoFramework }
+    if (name === '@kit.BasicServicesKit') return { systemDateTime: {
+      TimeType: { STARTUP: 0 }, getUptime: () => now
+    } }
     if (name === '@kit.PerformanceAnalysisKit') return { hilog: forbidden('hilog') }
     if (name === '@kit.ArkUI') return { LengthMetrics: {}, mediaquery: {}, matrix4: forbidden('matrix4') }
     if (name === '@kit.ArkGraphics2D') return { displaySync: { create() { throw Error('fixture interval fallback') } } }
@@ -214,12 +220,15 @@ const walk = node => node ? [node, ...node.children.flatMap(walk)] : []
 const field = p => walk(p.liveRoot).find(node => node.kind === 'field')
 const text = p => walk(p.liveRoot).find(node => node.kind === 'text').text
 const number = value => ({ kind: 'NUMBER', num: value, str: '', bool: false, phase: '', id: 0, x: 0, y: 0 })
-const microtasks = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
+const microtasks = async () => { for (let i = 0; i < 1000; i++) await Promise.resolve() }
 async function pump() {
   for (let turns = 0; turns < 1000; turns++) {
     await microtasks()
     const ready = [...timers].find(([, timer]) => !timer.interval && timer.at <= now)
-    if (!ready) return
+    if (!ready) {
+      if (hosts.some(host => !host.draining && (host.pending > 0 || host.ready.length > 0))) continue
+      return
+    }
     timers.delete(ready[0])
     ready[1].callback()
   }
@@ -230,7 +239,7 @@ async function finish(promise) {
   let result
   let failure
   Promise.resolve(promise).then(value => { done = true; result = value }, error => { done = true; failure = error })
-  await pump()
+  for (let turns = 0; !done && turns < 100; turns++) await pump()
   assert(done, 'operation stalled with no runnable host turn')
   if (failure) throw failure
   return result
@@ -257,7 +266,7 @@ function fixture(program = programs.basic, config = {}) {
   const createSubscriber = p.createSubscriber
   p.createSubscriber = function(...args) {
     const subscriber = createSubscriber.apply(this, args)
-    for (const name of ['onViewFrame', 'onError', 'onStateSnapshot', 'onStateSaved', 'onEffectRequest', 'onMailboxWritable']) {
+    for (const name of ['onViewFrame', 'onError', 'onStateSnapshot', 'onStateSaved', 'onEffectRequest', 'onMailboxWritable', 'onActorHandle']) {
       const callback = subscriber[name]
       subscriber[name] = (...values) => {
         events.push({ type: name, handle: p.handle, transitioning: p.transitioning, values })
@@ -404,12 +413,12 @@ test('rapid program changes and promotion serialize lifecycle operations', async
     assert.equal(promoted.h.registry.get(promoted.p.handle.appId), record)
     assert.equal(record.actor, actor)
     assert.equal(actor.vm, vm)
-    assert.equal(promoted.p.handle.vmGeneration, handle.vmGeneration)
+    assert.equal(promoted.p.handle.vmGeneration, persistKey ? 1 : handle.vmGeneration + 1)
     assert.equal(promoted.p.handle.leaseId, handle.leaseId)
     assert.equal(promoted.h.leases.get(handle.leaseId), lease)
     assert.equal(promoted.h.leases.size, 1)
     assert.equal(promoted.p.frameAppId, promoted.p.handle.appId)
-    assert.equal(promoted.p.frameVmGeneration, handle.vmGeneration)
+    assert.equal(promoted.p.frameVmGeneration, promoted.p.handle.vmGeneration)
     assert.deepEqual(await promoted.state(), { n: 10, text: 'initial', order: ['refresh', 'answer'], seen: [] })
     assert.equal(text(promoted.p), '10')
     assert.equal(adapterCalls.length, before + 1)
@@ -426,6 +435,12 @@ test('rapid program changes and promotion serialize lifecycle operations', async
     const seededState = decode(seed)
     assert.deepEqual(seededState, { n: 17, text: 'promotion seed', order: ['refresh', 'answer', 'field', 'add'], seen: ['promotion seed'] })
     for (const key of ['preview-promote-live/version', 'preview-promote-live/next', '']) {
+      const previousGeneration = promoted.p.handle.vmGeneration
+      const storage = key ? store.createStateStorage() : null
+      const target = storage ? await finish(storage.load(key, program.stamp)) : null
+      if (storage) await finish(storage.close())
+      if (target) assert(['ABSENT', 'READY'].includes(target.kind))
+      const nextGeneration = target ? target.kind === 'ABSENT' ? 1 : target.header.vmGeneration + 1 : previousGeneration + 1
       promoted.p.persistKey = key
       promoted.p.load()
       await finish(promoted.p.operations)
@@ -436,7 +451,8 @@ test('rapid program changes and promotion serialize lifecycle operations', async
       assert.equal(promoted.h.registry.get(promoted.p.handle.appId), record)
       assert.equal(record.actor, actor)
       assert.equal(actor.vm, vm)
-      assert.equal(promoted.p.handle.vmGeneration, handle.vmGeneration)
+      assert.equal(promoted.p.handle.vmGeneration, nextGeneration)
+      assert.equal(promoted.p.frameVmGeneration, nextGeneration)
       assert.equal(promoted.p.handle.leaseId, handle.leaseId)
       assert.equal(promoted.h.leases.get(handle.leaseId), lease)
       assert.equal(promoted.h.leases.size, 1)
@@ -452,8 +468,8 @@ test('rapid program changes and promotion serialize lifecycle operations', async
   }
 })
 
-test('disappear during pending acquire releases the late real lease', async () => {
-  const f = fixture()
+test('disappear during pending acquire releases the late real lease before replacement', async () => {
+  const f = fixture(programs.basic, { persistKey: 'pending-reopen/version' })
   const acquire = f.h.acquire
   let unblock
   let acquired
@@ -467,12 +483,97 @@ test('disappear during pending acquire releases the late real lease', async () =
   assert(acquired)
   assert.equal(f.h.leases.size, 1)
   f.p.aboutToDisappear()
+  f.h.acquire = acquire
+  const reopened = fixture(programs.basic, { host: f.h, persistKey: f.p.persistKey })
+  reopened.p.aboutToAppear()
+  await microtasks()
+  assert.equal(f.calls.filter(call => call.name === 'acquire').length, 1)
+  assert.equal(reopened.p.handle, null)
   unblock()
   await finish(f.p.operations)
-  assert.equal(f.h.leases.size, 0)
+  await finish(reopened.p.operations)
+  assert.equal(f.h.leases.size, 1)
   assert.equal(f.p.handle, null)
   assert.equal(f.p.draining, false)
   assert(f.calls.some(call => call.name === 'release' && call.args[0] === acquired))
+  assert.equal(reopened.p.error, '')
+  assert(reopened.p.handle)
+})
+
+test('reopening the original identity waits for an outgoing persistent transition', async () => {
+  const persistKey = 'handoff-original/version'
+  const f = fixture(programs.basic, { persistKey })
+  await f.mount()
+  const promote = f.h.promote
+  let unblock
+  f.h.promote = async function(...args) {
+    await new Promise(resolve => { unblock = resolve })
+    return promote.apply(this, args)
+  }
+  f.p.persistKey = 'handoff-target/version'
+  f.p.load()
+  await microtasks()
+  assert(unblock)
+  f.p.aboutToDisappear()
+  const reopened = fixture(programs.basic, { host: f.h, persistKey })
+  reopened.p.aboutToAppear()
+  await microtasks()
+  assert.equal(f.calls.filter(call => call.name === 'acquire').length, 1)
+  unblock()
+  await finish(f.p.operations)
+  await finish(reopened.p.operations)
+  assert.equal(reopened.p.error, '')
+  assert.equal(reopened.p.handle.appId, persistKey)
+  assert.equal(f.h.leases.size, 1)
+})
+
+for (const cancel of [false, true]) test('replacement waits for outgoing input and release cleanup' + (cancel ? ' and cancels while waiting' : ''), async () => {
+  const persistKey = 'handoff-' + cancel + '/version'
+  const f = fixture(programs.surface, { persistKey })
+  await f.mount()
+  const stale = f.p.subscriber
+  const node = draft(f.p, 'unfinished', true)
+  f.p.fieldController(node, node.fieldGeneration).text = 'final input'
+  let unblock
+  f.p.operations = f.p.operations.then(() => new Promise(resolve => { unblock = resolve }))
+  const release = f.h.release
+  let finishRelease
+  f.h.release = async function(...args) {
+    await release.apply(this, args)
+    await new Promise(resolve => { finishRelease = resolve })
+  }
+  f.p.aboutToDisappear()
+  const reopened = fixture(programs.surface, { host: f.h, persistKey })
+  reopened.p.aboutToAppear()
+  await microtasks()
+  assert(unblock)
+  assert.equal(f.calls.filter(call => call.name === 'acquire').length, 1)
+  if (cancel) reopened.p.aboutToDisappear()
+  unblock()
+  await pump()
+  assert(finishRelease)
+  assert.equal(reopened.p.handle, null)
+  assert.equal(f.calls.filter(call => call.name === 'acquire').length, 1)
+  f.h.release = release
+  finishRelease()
+  await finish(f.p.operations)
+  await finish(reopened.p.operations)
+  assert.equal(f.p.handle, null)
+  assert.equal(f.h.leases.size, cancel ? 0 : 1)
+  if (cancel) {
+    assert.equal(reopened.p.error, '')
+    return
+  }
+  assert.equal(reopened.p.error, '')
+  assert.equal((await reopened.state()).text, 'final input')
+  const before = reopened.p.revision
+  stale.onViewFrame({ ...f.frames.at(-1), frameSeq: 999 })
+  assert.equal(reopened.p.revision, before)
+  const competing = fixture(programs.surface, { host: f.h, persistKey })
+  competing.p.aboutToAppear()
+  await finish(competing.p.operations)
+  assert.equal(competing.p.error, 'SUBSCRIBER_CONFLICT')
+  assert.equal(f.h.leases.size, 1)
 })
 
 for (const refreshDelta of [0, 10]) test('idle cached persistent actor reloads same-stamp external widget state before first delivery' + (refreshDelta ? ' and refreshes exactly once on reopen' : ''), async () => {
@@ -487,7 +588,7 @@ for (const refreshDelta of [0, 10]) test('idle cached persistent actor reloads s
   await finish(f.p.operations)
   assert.equal(decode(encoded).n, 2)
   assert.equal(text(f.p), '2')
-  assert.equal(decode(store.loadState(projectId, 'version', program.stamp)).n, 2)
+  assert.equal(decode(await finish(store.loadState(projectId, 'version', program.stamp))).n, 2)
   const handle = f.p.handle
   const record = f.h.registry.get(handle.appId)
   const actor = record.actor
@@ -499,7 +600,7 @@ for (const refreshDelta of [0, 10]) test('idle cached persistent actor reloads s
   assert.equal(record.leases.size, 0)
   assert.equal(record.subscriber, null)
   assert.equal(f.h.registry.get(persistKey), record)
-  assert.equal(decode(actor.snapshot()).n, 2)
+  assert.equal(decode(await finish(actor.snapshot())).n, 2)
   const idleTimer = record.idleTimer
   assert(timers.has(idleTimer))
   assert(timers.get(idleTimer).at > now)
@@ -511,9 +612,16 @@ for (const refreshDelta of [0, 10]) test('idle cached persistent actor reloads s
   const externalEncoded = JSON.stringify(external)
   const externalState = decode(externalEncoded)
   assert.equal(externalState.n, 99)
-  store.saveState(projectId, 'version', program.stamp, externalEncoded)
-  assert.equal(store.loadState(projectId, 'version', program.stamp), externalEncoded)
-  assert.equal(decode(actor.snapshot()).n, 2)
+  const storage = store.createStateStorage()
+  const loaded = await finish(storage.load(persistKey, program.stamp))
+  assert.equal(loaded.kind, 'READY')
+  const committed = await finish(storage.commit({ operationId: 'external-widget', pre: {
+    appId: persistKey, vmGeneration: loaded.header.vmGeneration, baseRevision: loaded.header.revision
+  }, schemaVersion: 1, stamp: program.stamp, payload: new TextEncoder().encode(externalEncoded).buffer, backupDue: false }))
+  assert.equal(committed.result.status, 'COMMITTED')
+  await finish(storage.close())
+  assert.equal(await finish(store.loadState(projectId, 'version', program.stamp)), externalEncoded)
+  assert.equal(decode(await finish(actor.snapshot())).n, 2)
   const reopened = fixture(program, { host: f.h, persistKey })
   const rendered = []
   const render = reopened.p.renderView
@@ -528,7 +636,11 @@ for (const refreshDelta of [0, 10]) test('idle cached persistent actor reloads s
   assert.equal(f.h.registry.get(persistKey), record)
   assert.equal(record.actor, actor)
   assert.equal(reopened.p.handle.appId, handle.appId)
-  assert.equal(reopened.p.handle.vmGeneration, handle.vmGeneration)
+  assert.equal(reopened.p.handle.vmGeneration, loaded.header.vmGeneration + 1)
+  assert.equal(reopened.p.frameVmGeneration, reopened.p.handle.vmGeneration)
+  assert.deepEqual(f.h.postInput(handle, { appId: handle.appId, vmGeneration: handle.vmGeneration,
+    kind: 'HANDLER', action: 'add', payload: number(1000), persist: true, draws: [] }),
+    { status: 'REJECTED', reason: 'INVALID_HANDLE' })
   assert.notEqual(reopened.p.handle.leaseId, handle.leaseId)
   assert.equal(timers.has(idleTimer), false)
   assert.equal(record.idleTimer, -1)
@@ -544,14 +656,14 @@ for (const refreshDelta of [0, 10]) test('idle cached persistent actor reloads s
   assert.deepEqual(await reopened.state(), refreshedState)
   assert.equal(text(reopened.p), String(refreshedState.n))
   assert.equal(reopened.events.filter(event => event.type === 'onStateSaved').length, refreshDelta ? 1 : 0)
-  assert.deepEqual(decode(store.loadState(projectId, 'version', program.stamp)), refreshedState)
+  assert.deepEqual(decode(await finish(store.loadState(projectId, 'version', program.stamp))), refreshedState)
   reopened.p.handleAction('add', 1)
   await pump()
   const addedState = { ...refreshedState, n: 100 + refreshDelta,
     order: [...refreshedState.order, 'add'], seen: [...refreshedState.seen, refreshedState.text] }
   assert.deepEqual(await reopened.state(), addedState)
   assert.equal(text(reopened.p), String(addedState.n))
-  assert.deepEqual(decode(store.loadState(projectId, 'version', program.stamp)), addedState)
+  assert.deepEqual(decode(await finish(store.loadState(projectId, 'version', program.stamp))), addedState)
   assert.equal(reopened.events.filter(event => event.type === 'onStateSaved').length, refreshDelta ? 2 : 1)
   reopened.p.aboutToDisappear()
   await finish(reopened.p.operations)
@@ -579,6 +691,26 @@ test('failed replacement retains the old VM, identity and usable input', async (
   await pump()
   assert.equal((await f.state()).n, 9)
   assert.equal(text(f.p), '9')
+  f.p.vbc2 = programs.basic.vbc2
+  f.p.persistKey = 'failed-replacement/version'
+  f.p.load()
+  await finish(f.p.operations)
+  const persistent = f.p.handle
+  assert(persistent)
+  assert.equal(f.p.activeOptions.mode, 'LIVE_PERSISTENT')
+  const acquires = f.calls.filter(call => call.name === 'acquire').length
+  f.p.vbc2 = programs.bad.vbc2
+  f.p.onProgramChanged()
+  await finish(f.p.operations)
+  assert.equal(f.p.handle, null)
+  assert.equal(f.p.subscriber, null)
+  assert.equal(f.p.flushFailure.handleInvalidated, true)
+  assert.equal(f.p.flushFailure.message, f.p.flushFailure.cause.message)
+  assert.equal(f.p.frameAppId, '')
+  assert.equal(f.p.publicationVersion, null)
+  assert.equal(f.h.leases.size, 0)
+  assert.equal(f.calls.filter(call => call.name === 'acquire').length, acquires)
+  await assert.rejects(finish(f.h.requestSnapshot(persistent)), { code: 'INVALID_HANDLE' })
 })
 
 test('failed world replacement retains boxes, camera and runnable world events', async () => {
@@ -975,6 +1107,468 @@ test('snapshot flush waits asynchronously through actual mailbox backpressure', 
   assert.equal(f.p.inFlight, null)
 })
 
+for (const retained of [false, true]) test('committed state recovery before acquire settlement preserves timers, effects and capture' + (retained ? ' with retained lineage' : ''), async () => {
+  const persistKey = 'recovered-preview/version'
+  const file = '/preview-host-fixture/vera/' + persistKey + '.state.json'
+  disk.set(file, '{broken-main')
+  disk.set(file + '.bak', '{broken-backup')
+  const program = compile({ initial: 42, ticker: 1000, surface: true, animated: true, effect: true })
+  const f = fixture(program, { persistKey })
+  f.p.aboutToAppear()
+  if (retained) {
+    f.p.publicationVersion = { appId: persistKey, runtimeMode: 'LIVE_PERSISTENT', vmGeneration: 9, stateRevision: 90 }
+    f.p.publicationAppId = persistKey
+    f.p.frameAppId = persistKey
+    f.p.frameVmGeneration = 9
+    f.p.lastFrameSeq = 90
+  }
+  await finish(f.p.operations)
+  await pump()
+  const recovery = f.events.filter(event => event.type === 'onError' && event.values[0] === 'state' && event.values[1] === 'STATE_RECOVERY')
+  assert.equal(recovery.length, 1)
+  assert.deepEqual(recovery[0].values.slice(0, 2), ['state', 'STATE_RECOVERY'])
+  assert.equal(recovery[0].values[2], undefined)
+  assert.equal(recovery[0].handle, null)
+  assert.equal(recovery[0].transitioning, true)
+  const recoveryIndex = f.events.indexOf(recovery[0])
+  assert(f.events.slice(0, recoveryIndex).some(event => event.type === 'onStateSnapshot'))
+  assert(f.events.slice(0, recoveryIndex).some(event => event.type === 'onViewFrame'))
+  assert.equal(f.p.handle.vmGeneration, 1)
+  assert(f.snapshots.length > 0)
+  assert.equal(decode(f.snapshots[0]).n, 42)
+  assert.equal(f.p.publicationVersion.vmGeneration, 1)
+  assert.equal(f.p.frameVmGeneration, 1)
+  assert.equal(f.p.error, '')
+  assert.equal(f.p.viewError, '')
+  assert.equal(f.p.flushFailure, null)
+  assert.equal(text(f.p), '42')
+  assert.equal(adapterCalls.length, 1)
+  assert.deepEqual((await f.state()).order, ['answer'])
+  const ticker = f.p.timers.get('clock')
+  const surface = f.p.surfaceTimer
+  assert(timers.has(ticker))
+  assert(timers.has(surface))
+  draft(f.p, 'after recovery')
+  f.p.handleAction('add', 1)
+  await pump()
+  const captured = await finish(f.p.controller.flushAndSnapshot())
+  await finish(f.p.operations)
+  assert.deepEqual(decode(captured), { n: 43, text: 'after recovery', order: ['answer', 'field', 'add'], seen: ['after recovery'] })
+  assert.equal(await finish(store.loadState('recovered-preview', 'version', program.stamp)), captured)
+  now += 1000
+  timers.get(ticker).callback()
+  await pump()
+  assert.equal((await f.state()).n, 44)
+  assert.equal(f.p.timers.get('clock'), ticker)
+  assert.equal(f.p.surfaceTimer, surface)
+  assert(timers.has(ticker))
+  assert(timers.has(surface))
+  assert.equal(f.p.error, '')
+  assert.equal(f.p.flushFailure, null)
+})
+
+test('same-key replacement recovery rebinds lower versions and fences old incarnation deliveries', async () => {
+  const persistKey = 'replacement-recovery/version'
+  const f = fixture(programs.effect, { persistKey })
+  await f.mount()
+  await pump()
+  const record = f.h.registry.get(persistKey)
+  const subscriber = f.p.subscriber
+  const firstOwner = f.h.deliveryOwner(record)
+  const firstFrame = f.frames.at(-1)
+  const firstSnapshot = f.events.filter(event => event.type === 'onStateSnapshot').at(-1).values
+  const firstEffect = f.events.filter(event => event.type === 'onEffectRequest').at(-1).values[0]
+  record.deliveries = []
+  for (const callback of [
+    () => subscriber.onViewFrame({ ...firstFrame, frameSeq: 9998, appliedSeq: 9998 }),
+    () => subscriber.onStateSnapshot(...firstSnapshot),
+    () => subscriber.onEffectRequest({ ...firstEffect, effectId: 9998 }),
+    () => subscriber.onError('handler', 'first incarnation trap', 9998)
+  ]) f.h.deliver(record, callback, firstOwner)
+  const firstDeliveries = record.deliveries
+  record.deliveries = null
+  const previous = compile({ initial: 10, effect: true })
+  f.p.vbc2 = previous.vbc2
+  f.p.onProgramChanged()
+  await finish(f.p.operations)
+  await pump()
+  f.p.handleAction('add', 7)
+  await pump()
+  const oldHandle = f.p.handle
+  const oldVersion = { ...f.p.publicationVersion }
+  const oldFrame = f.frames.at(-1)
+  const oldSnapshot = f.events.filter(event => event.type === 'onStateSnapshot').at(-1).values
+  const oldEffect = f.events.filter(event => event.type === 'onEffectRequest').at(-1).values[0]
+  const oldActor = record.actor
+  assert(oldVersion.vmGeneration > 1)
+  assert(oldVersion.stateRevision > 1)
+  record.deliveries = []
+  const staleCallbacks = [
+    () => subscriber.onViewFrame({ ...oldFrame, frameSeq: 9999, appliedSeq: 9999 }),
+    () => subscriber.onStateSnapshot(...oldSnapshot),
+    () => subscriber.onEffectRequest({ ...oldEffect, effectId: 9999 }),
+    () => subscriber.onError('handler', 'old incarnation trap', 9999),
+    () => subscriber.onError('state', 'STATE_RECOVERY')
+  ]
+  for (const callback of staleCallbacks) f.h.deliver(record, callback)
+  const staleDeliveries = record.deliveries
+  record.deliveries = null
+  const file = '/preview-host-fixture/vera/' + persistKey + '.state.json'
+  disk.set(file, '{broken-main')
+  disk.set(file + '.bak', '{broken-backup')
+  const program = compile({ initial: 42, ticker: 1000, surface: true, animated: true, effect: true })
+  const events = f.events.length
+  const snapshots = f.snapshots.length
+  const adapters = adapterCalls.length
+  f.p.vbc2 = program.vbc2
+  f.p.onProgramChanged()
+  await finish(f.p.operations)
+  await pump()
+  assert.notEqual(record.actor, oldActor)
+  assert.notEqual(f.p.handle, oldHandle)
+  assert.equal(f.p.handle.leaseId, oldHandle.leaseId)
+  assert.equal(f.p.handle.appId, oldHandle.appId)
+  assert.equal(f.p.handle.vmGeneration, 1)
+  assert.equal(f.p.frameVmGeneration, 1)
+  assert.equal(f.p.publicationVersion.vmGeneration, 1)
+  assert(f.p.publicationVersion.stateRevision < oldVersion.stateRevision)
+  assert.equal(f.p.activeProgram, program.vbc2)
+  assert.equal(f.p.subscriber, subscriber)
+  const deliveries = f.events.slice(events)
+  const recovery = deliveries.findIndex(event => event.type === 'onError' && event.values[0] === 'state' && event.values[1] === 'STATE_RECOVERY')
+  assert(recovery >= 0)
+  assert.equal(deliveries[recovery].values[2], undefined)
+  assert.equal(deliveries[recovery].handle, oldHandle)
+  assert.equal(deliveries[recovery].transitioning, true)
+  for (const type of ['onStateSnapshot', 'onViewFrame', 'onEffectRequest']) {
+    assert(deliveries.findIndex(event => event.type === type) > recovery, type + ' must follow recovery notification')
+  }
+  assert.equal(decode(f.snapshots[snapshots]).n, 42)
+  assert.equal(text(f.p), '42')
+  assert.deepEqual((await f.state()).order, ['answer'])
+  assert.equal(adapterCalls.length, adapters + 1)
+  assert.equal(f.p.error, '')
+  assert.equal(f.p.flushFailure, null)
+  const before = { events: f.events.length, snapshots: f.snapshots.length, revision: f.p.revision,
+    publication: f.p.publicationVersion, binding: f.p.effectsBinding }
+  assert.equal(firstOwner.fence.vmGeneration, f.p.handle.vmGeneration)
+  assert.notEqual(firstOwner.fence.incarnation, record.actor)
+  for (const delivery of [...firstDeliveries, ...staleDeliveries]) delivery()
+  assert.deepEqual({ events: f.events.length, snapshots: f.snapshots.length, revision: f.p.revision,
+    publication: f.p.publicationVersion, binding: f.p.effectsBinding }, before)
+  assert.equal(f.p.error, '')
+  subscriber.onViewFrame({ ...oldFrame, frameSeq: 9999 })
+  subscriber.onStateSnapshot(...oldSnapshot)
+  subscriber.onEffectRequest({ ...oldEffect, effectId: 9999 })
+  assert.equal(f.p.revision, before.revision)
+  assert.equal(f.snapshots.length, before.snapshots)
+  assert.equal(f.p.publicationVersion, before.publication)
+  await assert.rejects(f.h.requestSnapshot(oldHandle), /INVALID_HANDLE/)
+  draft(f.p, 'recovered replacement')
+  f.p.handleAction('add', 1)
+  await pump()
+  const captured = await finish(f.p.controller.flushAndSnapshot())
+  await finish(f.p.operations)
+  assert.deepEqual(decode(captured), { n: 43, text: 'recovered replacement', order: ['answer', 'field', 'add'], seen: ['recovered replacement'] })
+  assert.equal(await finish(store.loadState('replacement-recovery', 'version', program.stamp)), captured)
+  assert.equal(text(f.p), '43')
+  assert.equal(f.p.inFlight, null)
+  assert.equal(f.p.fieldActions.length, 0)
+  const ticker = f.p.timers.get('clock')
+  const surface = f.p.surfaceTimer
+  assert(timers.has(ticker))
+  assert(timers.has(surface))
+  now += 1000
+  timers.get(ticker).callback()
+  await pump()
+  assert.equal(text(f.p), '44')
+  assert.equal(f.p.inFlight, null)
+  assert.equal(f.p.timers.get('clock'), ticker)
+  assert.equal(f.p.surfaceTimer, surface)
+  assert.equal(adapterCalls.length, adapters + 1)
+})
+
+for (const reuse of [false, true]) test('paused old VIEW cannot seed replacement recovery lineage; counter reuse=' + reuse, async () => {
+  const persistKey = 'paused-recovery/version'
+  const f = fixture(programs.basic, { persistKey })
+  await f.mount()
+  if (!reuse) {
+    f.p.vbc2 = programs.newer.vbc2
+    f.p.onProgramChanged()
+    await finish(f.p.operations)
+    f.p.handleAction('add', 7)
+    await pump()
+  }
+  const oldHandle = f.p.handle
+  const oldVersion = f.p.publicationVersion
+  const record = f.h.registry.get(persistKey)
+  const oldActor = record.actor
+  const owner = f.h.deliveryOwner(record)
+  const subscriber = f.p.subscriber
+  const staleFrame = { ...f.frames.at(-1), frameSeq: 9999, appliedSeq: 9999 }
+  record.deliveries = []
+  f.h.deliver(record, () => subscriber.onViewFrame(staleFrame), owner)
+  const late = record.deliveries
+  record.deliveries = null
+  const program = compile({ initial: 42, ticker: 1000, surface: true, animated: true, effect: true })
+  const file = '/preview-host-fixture/vera/' + persistKey + '.state.json'
+  disk.set(file, '{broken-main')
+  disk.set(file + '.bak', '{broken-backup')
+  const resume = pause(f.h)
+  let oldSnapshot
+  let boundaries = 0
+  const snapshotCount = f.snapshots.length
+  const revision = f.p.revision
+  const adapters = adapterCalls.length
+  const onHandle = subscriber.onActorHandle
+  subscriber.onActorHandle = (handle, reason) => {
+    assert.equal(reason, 'REPLACE')
+    assert.notEqual(handle, oldHandle)
+    assert.equal(record.leases.get(handle.leaseId).handle, handle)
+    assert.equal(f.p.publicationVersion, oldVersion)
+    assert.equal(f.p.revision, revision, 'preceding VIEW must not render under the candidate program')
+    assert.equal(f.snapshots.length, snapshotCount)
+    assert.equal(f.p.awaitingReplacement, true)
+    onHandle(handle, reason)
+    assert.equal(f.p.publicationVersion, null)
+    assert.equal(f.p.frameAppId, '')
+    assert.equal(f.p.lastFrameSeq, 0)
+    boundaries++
+  }
+  try {
+    assert.equal(f.h.requestView(oldHandle).status, 'ACCEPTED')
+    oldSnapshot = f.h.requestSnapshot(oldHandle)
+    f.p.vbc2 = program.vbc2
+    f.p.onProgramChanged()
+    await microtasks()
+    assert.equal(f.p.transitioning, true)
+    assert.equal(f.p.awaitingReplacement, true)
+    assert.equal(record.current, null)
+    assert.deepEqual(record.mailbox.map(entry => entry.kind), ['VIEW', 'SNAPSHOT', 'REPLACE'])
+    assert.equal(f.p.publicationVersion, oldVersion)
+  } finally { resume() }
+  assert.equal(decode(await finish(oldSnapshot)).n, reuse ? 0 : 17)
+  await finish(f.p.operations)
+  await pump()
+  assert.equal(boundaries, 1)
+  assert.notEqual(record.actor, oldActor)
+  assert.equal(f.p.handle.vmGeneration, 1)
+  const deliveries = f.events.filter(event => event.type === 'onViewFrame' && event.transitioning)
+  assert(deliveries.some(event => event.values[0].vmGeneration === oldHandle.vmGeneration &&
+    event.values[0].stateRevision === oldVersion.stateRevision && event.values[0].frameSeq > 1))
+  const boundary = f.events.findLastIndex(event => event.type === 'onActorHandle')
+  const candidate = f.events.slice(boundary + 1).find(event => event.type === 'onStateSnapshot').values[1]
+  assert.equal(candidate.vmGeneration, 1)
+  assert.equal(candidate.stateRevision, 1)
+  if (reuse) {
+    assert.equal(oldVersion.vmGeneration, candidate.vmGeneration)
+    assert.equal(oldVersion.stateRevision, candidate.stateRevision)
+  } else {
+    assert(oldVersion.vmGeneration > candidate.vmGeneration)
+    assert(oldVersion.stateRevision > candidate.stateRevision)
+  }
+  assert.equal(decode(f.snapshots[snapshotCount]).n, 42)
+  assert.equal(text(f.p), '42')
+  assert.equal(adapterCalls.length, adapters + 1)
+  const current = { publication: f.p.publicationVersion, revision: f.p.revision, snapshots: f.snapshots.length }
+  for (const delivery of late) delivery()
+  assert.deepEqual({ publication: f.p.publicationVersion, revision: f.p.revision, snapshots: f.snapshots.length }, current)
+  await assert.rejects(f.h.requestSnapshot(oldHandle), /INVALID_HANDLE/)
+  assert.equal(f.h.requestView(oldHandle).status, 'REJECTED')
+  draft(f.p, 'after paused recovery')
+  f.p.handleAction('add', 1)
+  await pump()
+  const captured = await finish(f.p.controller.flushAndSnapshot())
+  await finish(f.p.operations)
+  assert.deepEqual(decode(captured), { n: 43, text: 'after paused recovery', order: ['answer', 'field', 'add'], seen: ['after paused recovery'] })
+  assert.equal(await finish(store.loadState('paused-recovery', 'version', program.stamp)), captured)
+  assert.equal(f.p.inFlight, null)
+  assert.equal(f.p.fieldActions.length, 0)
+  assert.equal(f.p.error, '')
+  assert.equal(f.p.flushFailure, null)
+  assert(timers.has(f.p.timers.get('clock')))
+  assert(timers.has(f.p.surfaceTimer))
+})
+
+test('paused old VIEW does not cross a failed replacement and rollback restores lineage', async () => {
+  const f = fixture()
+  await f.mount()
+  const original = f.p.handle
+  const version = f.p.publicationVersion
+  const frame = f.p.lastFrameSeq
+  const applied = f.p.lastAppliedSeq
+  const resume = pause(f.h)
+  const events = f.events.length
+  const requestView = f.h.requestView
+  let restored = false
+  try {
+    assert.equal(f.h.requestView(original).status, 'ACCEPTED')
+    f.h.requestView = function(handle) {
+      assert.equal(f.p.handle, original)
+      assert.equal(f.p.publicationVersion, version)
+      assert.equal(f.p.lastFrameSeq, frame)
+      assert.equal(f.p.lastAppliedSeq, applied)
+      assert.equal(f.p.awaitingReplacement, false)
+      restored = true
+      return requestView.call(this, handle)
+    }
+    f.p.vbc2 = programs.bad.vbc2
+    f.p.onProgramChanged()
+    await microtasks()
+    assert.equal(f.p.awaitingReplacement, true)
+    assert.equal(f.p.publicationVersion, version)
+  } finally { resume() }
+  await finish(f.p.operations)
+  f.h.requestView = requestView
+  assert.equal(restored, true)
+  assert.equal(f.p.handle, original)
+  assert.deepEqual(f.p.publicationVersion, version)
+  assert.equal(f.p.frameAppId, original.appId)
+  assert.equal(f.p.frameVmGeneration, original.vmGeneration)
+  assert(f.p.lastFrameSeq >= frame)
+  assert.equal(f.p.lastAppliedSeq, applied)
+  assert.equal(f.p.awaitingReplacement, false)
+  assert.equal(f.events.slice(events).some(event => event.type === 'onActorHandle'), false)
+  f.p.handleAction('add', 1)
+  await pump()
+  assert.equal(text(f.p), '1')
+  assert.equal(f.p.flushFailure, null)
+})
+
+test('publication lineage stays monotonic through promotion and restores after reversible replacement failure', async () => {
+  const f = fixture()
+  await f.mount()
+  const original = f.p.handle
+  const version = { ...f.p.publicationVersion, vmGeneration: original.vmGeneration + 10 }
+  f.p.publicationVersion = version
+  f.p.vbc2 = programs.bad.vbc2
+  f.p.onProgramChanged()
+  await finish(f.p.operations)
+  assert.equal(f.p.handle, original)
+  assert.equal(f.p.publicationVersion, version)
+  assert.equal(f.p.frameAppId, original.appId)
+  assert.equal(f.p.frameVmGeneration, original.vmGeneration)
+  f.p.vbc2 = programs.basic.vbc2
+  f.p.load()
+  await finish(f.p.operations)
+  assert.equal(f.p.publicationVersion, version)
+  const snapshots = f.snapshots.length
+  const frame = f.frames.at(-1)
+  f.p.transitioning = true
+  try {
+    const snapshot = { ...version, vmGeneration: version.vmGeneration - 1, encoded: f.snapshots.at(-1) }
+    f.p.subscriber.onStateSnapshot(snapshot.encoded, snapshot)
+    f.p.subscriber.onViewFrame({ ...frame, ...snapshot, frameSeq: 9999 })
+    assert.equal(f.p.publicationVersion, version)
+    assert.equal(f.snapshots.length, snapshots)
+  } finally {
+    f.p.transitioning = false
+  }
+  const promote = f.h.promote
+  let promotions = 0
+  f.h.promote = function(...args) {
+    promotions++
+    assert.equal(f.p.publicationVersion, version)
+    assert.equal(f.p.frameAppId, original.appId)
+    assert.equal(f.p.frameVmGeneration, original.vmGeneration)
+    return promote.apply(this, args)
+  }
+  f.p.persistKey = 'lineage-promotion/version'
+  f.p.load()
+  await finish(f.p.operations)
+  assert.equal(promotions, 1)
+  assert.equal(f.p.handle.appId, f.p.persistKey)
+  f.p.handleAction('add', 1)
+  await pump()
+  assert.equal(text(f.p), '1')
+  const current = f.p.publicationVersion
+  assert(current.stateRevision > 0)
+  const snapshot = { ...current, stateRevision: current.stateRevision - 1, encoded: f.snapshots.at(-1) }
+  const revision = f.p.revision
+  const count = f.snapshots.length
+  const binding = f.p.effectsBinding
+  let effects = 0
+  const request = binding.onEffectRequest
+  binding.onEffectRequest = function(...args) { effects++; return request.apply(this, args) }
+  for (const transitioning of [false, true]) {
+    f.p.transitioning = transitioning
+    try {
+      f.p.subscriber.onStateSnapshot(snapshot.encoded, snapshot)
+      f.p.subscriber.onViewFrame({ ...f.frames.at(-1), ...snapshot, frameSeq: 9999 })
+      f.p.subscriber.onEffectRequest({ ...snapshot, effectId: 9999, kind: 'SDK', rawTarget: 'Fixture.device.read',
+        params: [], resultHandler: 'answered', mode: 'background' })
+      f.p.subscriber.onError('state', 'STATE_RECOVERY')
+      assert.equal(f.p.publicationVersion, current)
+      assert.equal(f.snapshots.length, count)
+      assert.equal(f.p.revision, revision)
+      assert.equal(effects, 0)
+    } finally {
+      f.p.transitioning = false
+    }
+  }
+})
+
+test('only the recovery success pair bypasses error bookkeeping and leaves admitted input alone', async () => {
+  const program = compile({ ticker: 1000, surface: true, animated: true })
+  const f = fixture(program)
+  await f.mount()
+  const ticker = f.p.timers.get('clock')
+  const surface = f.p.surfaceTimer
+  const resume = pause(f.h)
+  try {
+    f.p.handleAction('add', 1)
+    const input = f.p.inFlight
+    assert(input)
+    assert(input.inputSeq > 0)
+    const observed = [...f.p.observedErrors]
+    for (const kind of ['state', 'STATE']) {
+      f.p.subscriber.onError(kind, 'STATE_RECOVERY', input.inputSeq)
+      assert.equal(f.p.error, '')
+      assert.equal(f.p.flushFailure, null)
+      assert.deepEqual([...f.p.observedErrors], observed)
+      assert.equal(f.p.inFlight, input)
+      assert.equal(f.p.timers.get('clock'), ticker)
+      assert.equal(f.p.surfaceTimer, surface)
+      assert(timers.has(ticker))
+      assert(timers.has(surface))
+    }
+    const failure = new Error('existing failure')
+    f.p.error = failure.message
+    f.p.flushFailure = failure
+    f.p.viewError = 'existing view failure'
+    f.p.worldTransitionError = 'existing transition failure'
+    f.p.subscriber.onError('state', 'STATE_RECOVERY')
+    assert.equal(f.p.error, failure.message)
+    assert.equal(f.p.flushFailure, failure)
+    assert.equal(f.p.viewError, 'existing view failure')
+    assert.equal(f.p.worldTransitionError, 'existing transition failure')
+    f.p.error = ''
+    f.p.flushFailure = null
+    f.p.viewError = ''
+    f.p.worldTransitionError = ''
+  } finally {
+    resume()
+  }
+  await pump()
+  assert.equal(f.p.inFlight, null)
+  assert.equal((await f.state()).n, 1)
+  for (const [kind, message] of [['state', 'STATE_RECOVERY_FAILED'], ['recovery', 'STATE_RECOVERY'],
+    ['handler', 'fixture trap'], ['state', 'STATE_RECOVERY extra'], ['state ', 'STATE_RECOVERY']]) {
+    const g = fixture(program)
+    await g.mount()
+    const ticker = g.p.timers.get('clock')
+    const surface = g.p.surfaceTimer
+    g.p.subscriber.onError(kind, message, 123)
+    assert.equal(g.p.error, message)
+    assert.equal(g.p.flushFailure.message, message)
+    assert(g.p.observedErrors.has(123))
+    assert.equal(g.p.timers.size, 0)
+    assert.equal(g.p.surfaceTimer, -1)
+    assert(!timers.has(ticker))
+    assert(!timers.has(surface))
+  }
+})
+
 test('view trap preserves active UI timers, saved state and field-action completion', async () => {
   const f = fixture(compile({ ticker: 1000, surface: true, animated: true, viewTrapAfter: true }), { persistKey: 'view-trap/version' })
   await f.mount()
@@ -985,6 +1579,7 @@ test('view trap preserves active UI timers, saved state and field-action complet
   const saved = () => f.events.filter(event => event.type === 'onStateSaved').length
   const before = saved()
   f.p.handleAction('add', 1)
+  await pump()
   assert(f.events.some(event => event.type === 'onError' && event.values[0] === 'view' && typeof event.values[2] === 'number'))
   assert.equal(f.p.liveRoot, root)
   assert.equal(f.frames.length, frames)
@@ -1010,6 +1605,7 @@ test('view trap preserves active UI timers, saved state and field-action complet
   assert(f.p.surfaceTimer >= 0, 'VIEW error must not prevent restart')
   const restarted = f.p.surfaceTimer
   f.p.handleAction('add', -3)
+  await pump()
   assert.equal(f.p.error, '')
   assert.equal(text(f.p), '0')
   assert.equal(f.p.surfaceTimer, restarted, 'successful VIEW must not stop/restart the running loop')
@@ -1036,6 +1632,7 @@ test('refresh VIEW trap before acquire settlement preserves effects, capture and
   const surface = f.p.surfaceTimer
   assert(timers.has(surface))
   f.p.handleAction('add', -1)
+  await pump()
   assert.equal(f.p.error, '')
   assert.equal(f.p.surfaceTimer, surface)
   assert.equal(decode(await finish(f.p.controller.flushAndSnapshot())).n, 0)
@@ -1077,7 +1674,12 @@ test('synchronous host frame is deferred until admission returns and reconciles 
   const f = fixture()
   await f.mount()
   const accept = f.p.acceptFrame
+  const postInput = f.h.postInput
+  const render = f.p.renderView
+  const record = f.h.registry.get(f.p.handle.appId)
   let synchronous = false
+  let reconciled = 0
+  let injected
   f.p.acceptFrame = function(frame) {
     if (this.inFlight?.posting) {
       synchronous = true
@@ -1087,12 +1689,44 @@ test('synchronous host frame is deferred until admission returns and reconciles 
       assert(this.deferredFrames.includes(frame))
     } else accept.call(this, frame)
   }
-  f.p.handleAction('add', 4)
-  assert(synchronous)
-  assert.equal(f.p.inFlight, null)
-  assert.equal(f.p.deferredFrames.length, 0)
-  assert.equal(text(f.p), '4')
-  assert.equal((await f.state()).n, 4)
+  f.p.renderView = function(...args) {
+    const action = this.inFlight
+    render.apply(this, args)
+    if (action && this.lastAppliedSeq >= action.inputSeq && action.inputSeq >= 0) {
+      assert.equal(this.inFlight, action, 'reconciliation must precede completion')
+      reconciled++
+    }
+  }
+  f.h.postInput = function(...args) {
+    const result = postInput.apply(this, args)
+    assert.equal(result.status, 'ACCEPTED')
+    assert(f.p.inFlight.posting)
+    injected = { ...f.frames.at(-1), frameSeq: ++record.frameSeq, appliedSeq: record.appliedSeq }
+    record.subscriber.onViewFrame(injected)
+    return result
+  }
+  try {
+    const revision = f.p.revision
+    f.p.handleAction('add', 4)
+    assert(synchronous)
+    assert(injected)
+    assert.equal(f.p.revision, revision + 1)
+    assert.equal(f.p.lastFrameSeq, injected.frameSeq)
+    assert(f.p.inFlight)
+    assert.equal(f.p.inFlight.posting, false)
+    assert.equal(f.p.deferredFrames.length, 0)
+    await pump()
+    assert.equal(reconciled, 1)
+    assert.equal(f.p.inFlight, null)
+    assert.equal(f.p.deferredFrames.length, 0)
+    assert(f.p.lastFrameSeq > injected.frameSeq)
+    assert.equal(text(f.p), '4')
+    assert.equal((await f.state()).n, 4)
+  } finally {
+    f.h.postInput = postInput
+    f.p.acceptFrame = accept
+    f.p.renderView = render
+  }
 })
 
 for (const fail of [false, true]) test('teardown flushes final composition and releases lease' + (fail ? ' despite save failure' : ''), async () => {
@@ -1102,6 +1736,12 @@ for (const fail of [false, true]) test('teardown flushes final composition and r
   const controller = f.p.fieldController(node, node.fieldGeneration)
   controller.text = '你好'
   const visibleRoot = f.p.liveRoot
+  const handle = f.p.handle
+  const initial = await f.state()
+  const file = [...disk.keys()].find(file => file.endsWith('/teardown/version.state.json'))
+  assert(file)
+  const committed = disk.get(file)
+  const saved = f.events.filter(event => event.type === 'onStateSaved').length
   saveFailure = fail
   f.p.aboutToDisappear()
   await finish(f.p.operations)
@@ -1119,12 +1759,22 @@ for (const fail of [false, true]) test('teardown flushes final composition and r
   assert(f.calls.indexOf(edit) < f.calls.indexOf(release))
   assert.equal(walk(visibleRoot).find(item => item.kind === 'field').value, 'initial')
   const record = [...f.h.registry.values()][0]
-  assert.equal(decode(record.actor.snapshot()).text, '你好')
+  const state = decode(await finish(record.actor.snapshot()))
   if (!fail) {
-    const file = [...disk.keys()].find(file => file.endsWith('/teardown/version.state.json'))
-    assert(file)
+    assert.equal(state.text, '你好')
     assert.equal(unpack(JSON.parse(disk.get(file)).value).text, '你好')
-  } else assert(logs.some(entry => entry.some(value => String(value).includes('release failed: fixture save failed'))))
+    assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, saved + 1)
+  } else {
+    assert.equal(edit.result.status, 'ACCEPTED')
+    assert(f.events.some(event => event.type === 'onError' && event.values[0] === 'state' &&
+      event.values[1] === 'STATE_PUBLISH_FAILED' && event.values[2] === edit.result.inputSeq))
+    assert.deepEqual(state, initial)
+    assert.equal(disk.get(file), committed)
+    assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, saved)
+    await finish(assert.rejects(f.h.requestSnapshot(handle), error => error.code === 'INVALID_HANDLE'))
+  }
+  assert.equal(worker.memory.fds.size, 0)
+  assert([...worker.memory.nodes.values()].every(node => node.owner === null))
 })
 
 for (const surface of [false, true]) test('snapshot waiting on composition drains independently on disappear' + (surface ? ' with surface release save' : ''), async () => {
@@ -1132,6 +1782,7 @@ for (const surface of [false, true]) test('snapshot waiting on composition drain
   await f.mount()
   const handle = f.p.handle
   const record = f.h.registry.get(handle.appId)
+  const saved = f.events.filter(event => event.type === 'onStateSaved').length
   const stale = f.p.subscriber
   const node = draft(f.p, 'unfinished composition', true)
   const generation = node.fieldGeneration
@@ -1190,13 +1841,13 @@ for (const surface of [false, true]) test('snapshot waiting on composition drain
   assert.equal(releases[0].args[1].saveState, surface)
   assert(f.calls.indexOf(edits[0]) < f.calls.indexOf(releases[0]))
   assert.equal(f.calls.slice(before).some(call => call.name === 'requestSnapshot'), false)
-  const state = decode(record.actor.snapshot())
+  const state = decode(await finish(record.actor.snapshot()))
   assert.equal(state.text, '最终文本')
   assert.deepEqual(state.order, ['field'])
   const file = [...disk.keys()].find(file => file.endsWith('/capture-teardown/version.state.json'))
   assert(file)
   assert.deepEqual(unpack(JSON.parse(disk.get(file)).value), state)
-  assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, surface ? 2 : 1)
+  assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, saved + 1)
   assert.equal(walk(visibleRoot).find(item => item.kind === 'field').value, 'initial')
   const after = { calls: f.calls.length, revision: f.p.revision, snapshots: f.snapshots.length, error: f.p.error }
   f.p.admissionBlocked = true
@@ -1218,9 +1869,9 @@ for (const surface of [false, true]) test('snapshot waiting on composition drain
   assert.equal(f.p.fieldActions.length, 0)
   assert.equal(f.p.posts.length, 0)
   assert.deepEqual({ calls: f.calls.length, revision: f.p.revision, snapshots: f.snapshots.length, error: f.p.error }, after)
-  assert.deepEqual(decode(record.actor.snapshot()), state)
+  assert.deepEqual(decode(await finish(record.actor.snapshot())), state)
   assert.deepEqual(unpack(JSON.parse(disk.get(file)).value), state)
-  assert.equal(f.events.filter(event => event.type === 'onStateSaved' && event.values[0] !== 'stale').length, surface ? 2 : 1)
+  assert.equal(f.events.filter(event => event.type === 'onStateSaved' && event.values[0] !== 'stale').length, saved + 1)
 })
 
 test('load cancels a snapshot waiting on composition and releases the operations chain', async () => {
@@ -1352,13 +2003,15 @@ for (const slow of [true, false]) test((slow ? 'slow' : 'fast') + ' ticker ' + (
   assert.equal(f.p.timers.get('clock'), timerId)
 })
 
-test('animated surface start and destination restart reset the real actor save deadline', async () => {
+test('animated surface start and destination restart respect loop and commit-policy save deadlines', async () => {
   const started = now
   const f = fixture(compile({ surface: true, animated: true }), { persistKey: 'surface-clock/version' })
   await f.mount()
   assert.equal(f.p.surfaceLoopStartedAt, started)
   assert(f.p.surfaceTimer >= 0)
   const saves = () => f.events.filter(event => event.type === 'onStateSaved').length
+  const record = f.h.registry.get(f.p.handle.appId)
+  const manager = record.actor.manager
   const before = saves()
   f.p.surfaceFrame()
   await pump()
@@ -1392,7 +2045,19 @@ test('animated surface start and destination restart reset the real actor save d
   now++
   f.p.surfaceFrame()
   await pump()
+  assert.equal(saves(), before + 1)
+  assert.equal(manager.status().dirty, true)
+  const due = Math.max(restarted, manager.lastCommit, manager.dirtySince) + manager.policy.checkpointMs
+  assert(due > now)
+  now = due - 1
+  f.p.surfaceFrame()
+  await pump()
+  assert.equal(saves(), before + 1)
+  now++
+  f.p.surfaceFrame()
+  await pump()
   assert.equal(saves(), before + 2)
+  assert.equal(manager.status().dirty, false)
 
   for (const surfaceChange of ['replace', 'reorder']) {
     const g = fixture(compile({ surfaceChange, animated: true }))
@@ -1434,7 +2099,7 @@ test('animated surface start and destination restart reset the real actor save d
   }
 })
 
-test('composition delays first surface frame without postponing the loop-start deadline', async () => {
+test('composition preserves loop-start marker while FIELD commit resets the checkpoint deadline', async () => {
   const started = now
   const f = fixture(compile({ surface: true, animated: true }), { persistKey: 'surface-composition/version' })
   await f.mount()
@@ -1446,10 +2111,23 @@ test('composition delays first surface frame without postponing the loop-start d
   await finish(f.p.controller.flushAndSnapshot())
   await finish(f.p.operations)
   const before = f.events.filter(event => event.type === 'onStateSaved').length
+  const manager = f.h.registry.get(f.p.handle.appId).actor.manager
+  assert.equal(manager.lastCommit, now)
+  f.p.surfaceFrame()
+  await pump()
+  assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before)
+  assert.equal(f.p.surfaceLoopStartedAt, undefined)
+  const due = Math.max(started, manager.lastCommit, manager.dirtySince) + manager.policy.checkpointMs
+  assert(due > now)
+  now = due - 1
+  f.p.surfaceFrame()
+  await pump()
+  assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before)
+  now++
   f.p.surfaceFrame()
   await pump()
   assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before + 1)
-  assert.equal(f.p.surfaceLoopStartedAt, undefined)
+  assert.equal(manager.status().dirty, false)
 })
 
 for (const restart of [false, true]) test('backpressured preview coalescing preserves ' + (restart ? 'newest restart' : 'initial start') + ' marker', async () => {
@@ -1487,7 +2165,20 @@ for (const restart of [false, true]) test('backpressured preview coalescing pres
   now++
   f.p.surfaceFrame()
   await pump()
+  assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before)
+  const manager = f.h.registry.get(f.p.handle.appId).actor.manager
+  assert.equal(manager.status().dirty, true)
+  const due = Math.max(started, manager.lastCommit, manager.dirtySince) + manager.policy.checkpointMs
+  assert(due > now)
+  now = due - 1
+  f.p.surfaceFrame()
+  await pump()
+  assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before)
+  now++
+  f.p.surfaceFrame()
+  await pump()
   assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before + 1)
+  assert.equal(manager.status().dirty, false)
 
   if (!restart) {
     const g = fixture(compile({ surfaceChange: 'reorder' }))
@@ -1511,8 +2202,8 @@ for (const restart of [false, true]) test('backpressured preview coalescing pres
       assert.deepEqual(g.p.posts[0].draws.map(draw => draw.nodeId).sort(), [0, 1])
       assert(g.p.posts[0].draws.every(draw => draw.surfaceRevision === revision))
       g.p.surfaces.get(second).ready = false
-      record.actor.frameHandlers(['tick', 'tick'], 16)
-      g.h.render(record, false)
+      await record.actor.frameHandlers(['tick', 'tick'], 16)
+      await g.h.render(record, false)
       assert(g.p.surfaceRevision > revision)
       assert.equal(g.p.posts.length, 1)
       assert.deepEqual(g.p.posts[0].draws.map(draw => [draw.nodeId, draw.entry, draw.surfaceRevision]),
@@ -1558,7 +2249,20 @@ test('replacement drops pending loop markers and starts a fresh deadline', async
   now = started + 5000
   f.p.surfaceFrame()
   await pump()
+  assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before)
+  const manager = f.h.registry.get(f.p.handle.appId).actor.manager
+  assert.equal(manager.status().dirty, true)
+  const due = Math.max(started, manager.lastCommit, manager.dirtySince) + manager.policy.checkpointMs
+  assert(due > now)
+  now = due - 1
+  f.p.surfaceFrame()
+  await pump()
+  assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before)
+  now++
+  f.p.surfaceFrame()
+  await pump()
   assert.equal(f.events.filter(event => event.type === 'onStateSaved').length, before + 1)
+  assert.equal(manager.status().dirty, false)
   f.p.aboutToDisappear()
   await finish(f.p.operations)
   assert.equal(f.p.surfaceLoopStartedAt, undefined)
@@ -1611,8 +2315,8 @@ test('surface down and move flush fields without stopping ticker timers', async 
       assert.equal(move.args[1].draws[0].entry, 'drawOld')
       if (change === 'before-move') {
         const record = g.h.registry.get(g.p.handle.appId)
-        record.actor.frameHandlers(['tick', 'tick'], 16)
-        g.h.render(record, false)
+        await record.actor.frameHandlers(['tick', 'tick'], 16)
+        await g.h.render(record, false)
         assert(g.p.surfaceRevision > revision)
       } else now += 100
     } finally {
