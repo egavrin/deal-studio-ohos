@@ -8,6 +8,7 @@
   "dependencies": {
     "libllama.so": "file:./src/main/cpp/types/libllama",
     "liblocaljev.so": "file:./src/main/cpp/types/liblocaljev",
+    "libdealer.so": "file:./src/main/cpp/types/libdealer",
     "libphys.so": "file:./src/main/cpp/types/libphys",
     "libusbnet.so": "file:./src/main/cpp/types/libusbnet"
   }

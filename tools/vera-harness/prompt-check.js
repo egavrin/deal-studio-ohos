@@ -37,7 +37,7 @@ function load(file){
     if(name==='@ohos.net.http')return http;
     if(name==='@kit.ArkTS')return {util:{TextDecoder:{create:()=>({decodeToString:bytes=>new TextDecoder().decode(bytes)})}}};
     if(name==='liblocaljev.so')return {default:{status:async()=>JSON.stringify({ready:false,reason:'host-fixture'})}};
-    if(name.startsWith('@kit.')||name==='libllama.so')return {};
+    if(name.startsWith('@kit.')||name==='libllama.so'||name==='libdealer.so')return {};
     if(name.startsWith('.'))return load(path.join(path.dirname(file),name+'.ets'));
     throw Error('Unexpected dependency '+name);
   };

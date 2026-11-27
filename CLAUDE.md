@@ -43,6 +43,15 @@ stub and `physInit()` returns 0. Host test, no phone: `cmake -S tools/phys-world
 thread of its own (`phys_stepper.h`: `physStepBegin` in one frame, `physStepEnd` in the next; every other NAPI call
 waits for it first); its host test, with the ThreadSanitizer line at its top, is `tools/phys-stepper-test.cpp`.
 
+The agent harness is a third: **dealer** (github.com/arkts-dev/dealer, its C ABI `crates/dealer-ffi`, contract
+`include/dealer.h`). `tools/build-dealer.sh` cross-builds it from `../dealer` (or `DEALER_DIR`) with the OHOS SDK's clang
+into `entry/src/main/cpp/dealer` (git-ignored); delete `entry/.cxx` once after. Without it `libdealer.so` is a stub.
+`--ps dealer 1` sends every model request through it -- DeepSeekEngine's side calls and Generate with its tools, the chat
+(`VeraChat.chatReply`) and Jev (`DealerBridge.ets`, `napi_dealer.cpp`; HTTP and the tools themselves stay in ArkTS); `--ps dealer 0`
+goes back to the direct requests; off by default. Its database, `{filesDir}/vera/dealer.db`, holds only the turns
+going now: each run's session is deleted when it ends, and the file is emptied when the process opens it. `VERA-DEALER`
+in hilog.
+
 **If any of them prints an ERROR line, stop and ask the person working with you
 — do not guess a path and do not install anything.** Ask exactly this:
 

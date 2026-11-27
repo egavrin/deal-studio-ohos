@@ -30,6 +30,7 @@ import { searchToolSchema, webSearch, SEARCH_TOOL_NAME, SEARCH_CHARS } from './V
 import { WidgetBuildContext, widgetContextPrompt } from './VeraWidgetContext'
 import { AttemptStat, ReplyStats, failureVerdict } from './VeraChatStats'
 import { OperationCancellation, isCancelled, throwIfCancelled } from './OperationCancellation'
+import { dealer, DealerMessage, DealerSteer, DealerStep, DealerWatch } from './DealerBridge'
 export { OperationCancellation } from './OperationCancellation'
 
 const APP_OPEN: string = '<<app:'
@@ -466,6 +467,9 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
       'For a new general manager request, build a manager rather than copying a prior walking plan. ' +
       'Use discovery tools to refine this search if needed; include suitable actions in the widget brief.'))
   }
+  if (settings.useDealer()) {
+    return chatViaDealer(messages, canSearch, onText, onStatus, stats, onVerifiedSearch, cancellation)
+  }
   let reply = ''
   let searches = 0
   let discoveries = 0
@@ -556,6 +560,106 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
   stats.ms = Date.now() - startedAt - stats.searchMs
   return reply
 }
+
+/**
+ * chatReply's loop through dealer (DealerBridge.ets): the same messages in the same order (the capability evidence
+ * stays a system message after the person's), MAX_CHAT_TOOL_ROUNDS steps that may call the tools each still has budget
+ * for and then one without any, the same answer to a call over a limit.
+ */
+async function chatViaDealer(all: Record<string, Object>[], canSearch: boolean, onText: (soFar: string) => void,
+    onStatus: (status: string) => void, stats: ReplyStats, onVerifiedSearch: (text: string) => void,
+    cancellation?: OperationCancellation): Promise<string> {
+  let system = all[0]['content'] as string
+  // The whole conversation is context and the turn's input is empty, so nothing comes after the evidence.
+  let history = all.slice(1).map((m: Record<string, Object>): DealerMessage =>
+    new DealerMessage(m['role'] as string, m['content'] as string))
+  let searches = 0
+  let discoveries = 0
+  // What chatReply offers in a round: the tools whose budget is not used up, and none after MAX_CHAT_TOOL_ROUNDS.
+  let offered = (): string[] => {
+    let tools: string[] = discoveries < MAX_DISCOVERY_CALLS ? [SDK_TOOL, INTENT_TOOL] : []
+    return canSearch && searches < MAX_SEARCHES ? tools.concat([SEARCH_TOOL_NAME]) : tools
+  }
+  let step = (tools: string[]): DealerStep => {
+    let s = new DealerStep()
+    s.maxTokens = 4096
+    s.temperature = 0.7
+    s.toolCalls = true
+    s.tools = tools
+    return s
+  }
+  // The rounds after `round` (from 1).
+  let after = (round: number): DealerStep[] => {
+    let rest: DealerStep[] = []
+    for (let i = round; i < MAX_CHAT_TOOL_ROUNDS; i++) { rest.push(step(offered())) }
+    rest.push(step([]))
+    return rest
+  }
+  let steps = after(0)
+  let reply = ''
+  let said = ''
+  let soFar = ''
+  let startedAt = Date.now()
+  let watch = new DealerWatch()
+  watch.onText = (piece: string): void => {
+    soFar += piece
+    if (!isCancelled(cancellation)) { onText(said + soFar) }
+  }
+  watch.onStep = (_reason: string, text: string): void => {
+    // Text from before a tool call and text from after it are different paragraphs.
+    if (text.length > 0) { reply = said + text }
+    said = reply.length > 0 ? reply + '\n\n' : ''
+    soFar = ''
+  }
+  let answer = await dealer.turn('chat', system, history, [], steps, watch,
+    async (name: string, args: Record<string, Object>, at: number, steer: DealerSteer): Promise<string> => {
+      let round = at
+      if (name === INTENT_TOOL || name === SDK_TOOL) {
+        if (discoveries >= MAX_DISCOVERY_CALLS) { return 'Discovery limit reached. Use the candidates already returned.' }
+        discoveries++
+        if (discoveries === MAX_DISCOVERY_CALLS) { steer(after(at)) }
+        let need = typeof args['need'] === 'string' ? args['need'] as string : ''
+        onStatus('Checking phone capabilities: ' + need)
+        let result = ''
+        let callStartedAt = Date.now()
+        try {
+          result = await discoveryToolResult(name, need, round, false, cancellation)
+          throwIfCancelled(cancellation)
+        } catch (_e) {
+          throwIfCancelled(cancellation)
+          result = 'Discovery unavailable. The widget builder can check again; do not infer that phone actions are unsupported.'
+        }
+        traceTool('chat', round, name, need, callStartedAt, result)
+        onStatus('')
+        return result
+      }
+      if (!canSearch || searches >= MAX_SEARCHES || name !== SEARCH_TOOL_NAME) { return 'Search unavailable.' }
+      searches++
+      if (searches === MAX_SEARCHES) { steer(after(at)) }
+      let query = typeof args['query'] === 'string' ? (args['query'] as string).trim() : ''
+      onStatus('Searching the web: ' + query)
+      let searchStarted = Date.now()
+      let result = await webSearch(query, SEARCH_CHARS, cancellation)
+      throwIfCancelled(cancellation)
+      traceTool('chat', round, name, query, searchStarted, result)
+      if (result.startsWith('Web results for ')) { onVerifiedSearch(result) }
+      stats.searches = stats.searches + 1
+      stats.searchMs = stats.searchMs + (Date.now() - searchStarted)
+      onStatus('')
+      return result
+    }, cancellation)
+  throwIfCancelled(cancellation)
+  stats.inputTokens = stats.inputTokens + answer.inputTokens
+  stats.cachedTokens = stats.cachedTokens + answer.cachedTokens
+  stats.outputTokens = stats.outputTokens + answer.outputTokens
+  if (stats.ttftMs === 0 && answer.firstTextMs > 0) { stats.ttftMs = answer.firstTextMs }
+  // Time spent talking: the whole turn less the searches, which are counted apart.
+  stats.ms = Date.now() - startedAt - stats.searchMs
+  return reply
+}
+
+const SDK_TOOL = 'find_sdk_function'
+const INTENT_TOOL = 'find_intent_function'
 
 function queryOf(argsJson: string): string {
   try {

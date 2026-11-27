@@ -13,6 +13,7 @@
 
 import { http } from '@kit.NetworkKit'
 import { settings } from './SettingsStore'
+import { dealer } from './DealerBridge'
 
 /** The program's address for this function; the compiler lets the `Vera.` prefix through without the SDK index. */
 export const ASK_TARGET: string = 'Vera.Ask.text'
@@ -61,6 +62,17 @@ export function askAllowed(now: number): boolean {
 }
 
 async function askModel(prompt: string, maxWords: number): Promise<string | null> {
+  let maxTokens = Math.min(1200, Math.ceil(maxWords * 2.5) + 40)
+  if (settings.useDealer()) {
+    try {
+      // As the request below: 5 s to connect and 30 s to read.
+      let reply = await dealer.ask('ask', SYSTEM + ' Keep to ' + maxWords.toString() + ' words at most.', prompt, maxTokens, false,
+        0.7, (_soFar: string): void => {}, undefined, 35000)
+      return reply.text.trim()
+    } catch (_e) {
+      return null
+    }
+  }
   let client = http.createHttp()
   try {
     let messages: Record<string, Object>[] = []
@@ -77,7 +89,7 @@ async function askModel(prompt: string, maxWords: number): Promise<string | null
     payload['messages'] = messages
     payload['stream'] = false
     payload['temperature'] = 0.7
-    payload['max_tokens'] = Math.min(1200, Math.ceil(maxWords * 2.5) + 40)
+    payload['max_tokens'] = maxTokens
     if (settings.isDeepSeek()) {
       let thinking: Record<string, Object> = {}
       thinking['type'] = 'disabled'

@@ -22,6 +22,7 @@
 import { http } from '@kit.NetworkKit'
 import { hilog } from '@kit.PerformanceAnalysisKit'
 import { settings } from './SettingsStore'
+import { dealer } from './DealerBridge'
 import { webSearchHits, SearchHit, SearchHits } from './VeraWebSearch'
 
 const DOMAIN = 0x0000
@@ -148,6 +149,14 @@ function promptFor(labels: string[], asked: number[], hits: SearchHit[]): string
 /** One plain, non-streaming call with its own connection (DeepSeekEngine keeps one set of state and may be busy). null when it did not answer. */
 async function askModel(system: string, user: string): Promise<string | null> {
   if (!settings.hasApiKey()) { return null }
+  if (settings.useDealer()) {
+    try {
+      // As the request below: 5 s to connect and 15 s to read.
+      return (await dealer.ask('live', system, user, 200, false, 0, (_soFar: string): void => {}, undefined, 20000)).text
+    } catch (_e) {
+      return null
+    }
+  }
   let client = http.createHttp()
   try {
     let messages: Record<string, Object>[] = []

@@ -51,6 +51,7 @@ import { searchToolSchema, webSearch, SEARCH_TOOL_NAME, SEARCH_CHARS } from './V
 import { OperationCancellation, OperationController, isCancelled, throwIfCancelled, cancellationError } from './OperationCancellation'
 import { noteService, httpFailure, SERVICE_DEEPSEEK } from './ServiceHealth'
 import { noteTool } from './ToolLog'
+import { dealer, DealerMessage, DealerReply, DealerSteer, DealerStep, DealerWatch } from './DealerBridge'
 
 // Application generation uses this budget for both reasoning and source on every attempt.
 export const DEEPSEEK_GENERATION_MAX_TOKENS: number = 32768
@@ -109,6 +110,10 @@ const UI_NEEDS_PROMPT = "Extract only UI needs required by the request. Return a
  * output" the way just stopping cold would.
  */
 const MAX_TOOL_ROUNDS = 4
+/** Said once the tool rounds are used up, before the request that may no longer call a tool. */
+const LOOKUPS_OVER = 'The lookup budget is used up. Do not call or write out any tool call. ' +
+  'Write the complete program now from the results you already have; where something is still unknown, ' +
+  'use what the catalogue offers and show the limitation in the app.'
 
 /** One function call as it streams in: id and name arrive once, arguments in fragments. */
 class ToolCallAccumulator {
@@ -716,6 +721,13 @@ export class DeepSeekEngine {
     this.firstAnyAt = 0
     this.firstContentAt = 0
 
+    if (settings.useDealer()) {
+      try {
+        return await this.generateViaDealer(request, onToken)
+      } finally {
+        this.generating = false
+      }
+    }
     let canSearch = settings.hasExaKey()
     let searches = 0
     console.info('VERA-SEARCH-GATE canSearch=' + canSearch.toString())
@@ -815,9 +827,7 @@ export class DeepSeekEngine {
     if (stillAsking) {
       this.progress.round = round + 1
       this.report('request')
-      messages.push(plainMessage('user', 'The lookup budget is used up. Do not call or write out any tool call. ' +
-        'Write the complete program now from the results you already have; where something is still unknown, ' +
-        'use what the catalogue offers and show the limitation in the app.'))
+      messages.push(plainMessage('user', LOOKUPS_OVER))
       try {
         let final = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, TOOLS_NONE, 'gen', round + 1)
         throwIfCancelled(this.operationCancellation)
@@ -1123,6 +1133,9 @@ export class DeepSeekEngine {
   private async streamOnce(messages: Record<string, Object>[], temperature: number,
       maxTokens: number, onToken: TokenCallback, tools: string, src: string, round: number): Promise<StreamTurn> {
     throwIfCancelled(this.operationCancellation)
+    if (settings.useDealer() && tools === TOOLS_OFF) {
+      return this.streamViaDealer(messages, temperature, maxTokens, onToken, src)
+    }
     let key = settings.getApiKey()
     this.buffer = ''
     this.rawBody = ''
@@ -1194,6 +1207,162 @@ export class DeepSeekEngine {
     }
     traceTurn(src, round, turn.timing, turn.reasoning, turn.content, calls, tools === TOOLS_AUTO)
     return turn
+  }
+
+  /** What handleLine does on a reasoning delta: the time to the first output, and the thinking phase. */
+  private sawReasoning(): void {
+    if (isCancelled(this.operationCancellation)) { return }
+    if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
+    if (this.progress.phase !== 'thinking') { this.report('thinking') }
+  }
+
+  /** A dealer turn, noted in the service status as streamOnce notes its requests. */
+  private async dealerTurn(run: () => Promise<DealerReply>): Promise<DealerReply> {
+    try {
+      let reply = await run()
+      throwIfCancelled(this.operationCancellation)
+      noteService(SERVICE_DEEPSEEK, true)
+      return reply
+    } catch (e) {
+      throwIfCancelled(this.operationCancellation)
+      noteService(SERVICE_DEEPSEEK, false, (e as Error).message)
+      throw new Error(settings.providerLabel() + ' request failed: ' + (e as Error).message)
+    }
+  }
+
+  /** streamOnce without tools, through dealer (DealerBridge.ets): the same request, the same turn back. */
+  private async streamViaDealer(messages: Record<string, Object>[], temperature: number, maxTokens: number,
+      onToken: TokenCallback, src: string): Promise<StreamTurn> {
+    let split = splitMessages(messages)
+    let step = new DealerStep()
+    step.maxTokens = maxTokens
+    step.thinking = this.thinking
+    step.temperature = temperature
+    let turn = new StreamTurn()
+    turn.timing.sentAt = Date.now()
+    let watch = new DealerWatch()
+    watch.onText = (piece: string): void => {
+      if (isCancelled(this.operationCancellation)) { return }
+      if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
+      if (this.firstContentAt === 0) { this.firstContentAt = Date.now() }
+      onToken(piece)
+    }
+    watch.onReasoning = (_piece: string): void => { this.sawReasoning() }
+    let reply = await this.dealerTurn((): Promise<DealerReply> => dealer.turn(src, split.system, split.messages, split.input, [step], watch,
+      undefined, this.operationCancellation))
+    turn.content = reply.text
+    turn.finishReason = reply.finishReason
+    turn.inputTokens = reply.inputTokens
+    turn.outputTokens = reply.outputTokens
+    turn.cacheHitTokens = reply.lastCachedTokens
+    turn.timing.endAt = Date.now()
+    turn.timing.finishReason = reply.finishReason
+    return turn
+  }
+
+  /**
+   * generateRounds through dealer, which runs the tool loop: up to MAX_TOOL_ROUNDS steps that may call the tools,
+   * then one that sees them but cannot call them (tool_choice "none"), told in the last round's results that the
+   * lookups are over -- the same turn generateRounds makes request by request. The tools run here (runToolCall).
+   */
+  private async generateViaDealer(request: GenerateRequest, onToken: TokenCallback): Promise<GenerateResult> {
+    let canSearch = settings.hasExaKey()
+    let system = request.systemPrompt.length > 0 ? (canSearch ? SEARCH_NOTE_GEN : '') + request.systemPrompt : ''
+    let messages: DealerMessage[] = []
+    let input = request.userPrompt
+    if (request.previousSource.length > 0) {
+      messages.push(new DealerMessage('assistant', request.previousSource))
+      if (!request.repairByEdit) {
+        input = 'Return a complete replacement of the program above. Preserve unrelated behavior and compatible state field names and types. ' +
+          'Use source code only, without a patch, explanation, or continuation. Apply this request and any repair diagnostics: ' + request.userPrompt
+      }
+    }
+    let offered = [SDK_TOOL_NAME, INTENT_TOOL_NAME]
+    if (request.uiTool) { offered.push(UI_TOOL_NAME) }
+    if (canSearch) { offered.push(SEARCH_TOOL_NAME) }
+    let step = (choice: string): DealerStep => {
+      let s = new DealerStep()
+      s.maxTokens = request.maxTokens
+      s.thinking = this.thinking
+      s.temperature = request.temperature
+      s.toolCalls = true
+      s.tools = offered
+      s.toolChoice = choice
+      return s
+    }
+    // Rounds after `round` (from 1): the tool rounds left, then the one that may not call a tool.
+    let after = (round: number): DealerStep[] => {
+      let rest: DealerStep[] = []
+      for (let i = round; i < MAX_TOOL_ROUNDS; i++) { rest.push(step('')) }
+      rest.push(step('none'))
+      return rest
+    }
+    let steps: DealerStep[] = []
+    if (request.repairByEdit || request.toolsOff) {
+      steps.push(step('none'))
+    } else {
+      for (let i = 0; i < MAX_TOOL_ROUNDS; i++) { steps.push(step('')) }
+      steps.push(step('none'))
+    }
+    this.uiToolOffered = request.uiTool
+    let searches = 0
+    let round = 1
+    this.progress.round = round
+    this.report('request')
+    let watch = new DealerWatch()
+    watch.onText = (piece: string): void => {
+      if (isCancelled(this.operationCancellation)) { return }
+      if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
+      if (this.firstContentAt === 0) { this.firstContentAt = Date.now() }
+      onToken(piece)
+    }
+    watch.onReasoning = (_piece: string): void => { this.sawReasoning() }
+    watch.onStep = (reason: string, _text: string): void => {
+      if (reason === 'tool_calls') {
+        round++
+        this.progress.round = round
+        this.report('request')
+      }
+    }
+    let reply = await this.dealerTurn((): Promise<DealerReply> => dealer.turn('gen', system, messages, [input], steps, watch,
+      async (name: string, args: Record<string, Object>, at: number, steer: DealerSteer): Promise<string> => {
+        let text = ''
+        if (name === SEARCH_TOOL_NAME && searches >= MAX_SEARCHES_GEN) {
+          text = SEARCH_BUDGET_USED
+        } else {
+          if (name === SEARCH_TOOL_NAME) {
+            searches++
+            // As generateRounds stops offering the search once its budget is used.
+            if (searches >= MAX_SEARCHES_GEN && steps.length > 1) {
+              offered = offered.filter((tool: string): boolean => tool !== SEARCH_TOOL_NAME)
+              steer(after(at))
+            }
+          }
+          let call = new ToolCallAccumulator()
+          call.name = name
+          call.arguments = JSON.stringify(args)
+          text = (await this.runToolCall(call, request, at))['content'] as string
+        }
+        // What generateRounds says in a message of its own before the last request.
+        return at >= MAX_TOOL_ROUNDS && steps.length > 1 ? text + '\n\n' + LOOKUPS_OVER : text
+      }, this.operationCancellation))
+    this.inputTokens = reply.inputTokens
+    this.outputTokens = reply.outputTokens
+    this.cacheHitTokens = reply.lastCachedTokens
+    this.finishReason = reply.finishReason
+    this.toolRounds = reply.toolSteps
+    this.text = reply.text
+    this.generating = false
+    let result = new GenerateResult()
+    result.text = request.repairByEdit ? this.text.trim() : extractVeraSource(this.text)
+    result.inputTokens = this.inputTokens
+    result.outputTokens = this.outputTokens
+    result.cacheHitTokens = reply.cachedTokens
+    result.finishReason = this.finishReason
+    result.prefillMs = this.lastPrefillMs()
+    result.thinkMs = this.lastThinkMs()
+    result.toolRounds = this.toolRounds
+    return result
   }
 
   private buildBody(messages: Record<string, Object>[], temperature: number,
@@ -1337,5 +1506,42 @@ export class DeepSeekEngine {
     }
   }
 }
+
+/**
+ * A request's messages as dealer takes them, in their order: the leading system messages as its system prompt, the
+ * rest as its messages, and a final user message as the turn's input. A request that ends with another message has
+ * no input (dealer then answers the messages as they stand), so nothing is moved.
+ */
+class SplitMessages {
+  system: string = ''
+  messages: DealerMessage[] = []
+  input: string[] = []
+}
+
+function splitMessages(messages: Record<string, Object>[]): SplitMessages {
+  let split = new SplitMessages()
+  let leading = true
+  for (let i = 0; i < messages.length; i++) {
+    let role = messages[i]['role'] as string
+    let content = messages[i]['content']
+    let text = typeof content === 'string' ? content as string : JSON.stringify(content)
+    if (role === 'system' && leading) {
+      split.system = split.system.length > 0 ? split.system + '\n\n' + text : text
+      continue
+    }
+    leading = false
+    if (role === 'user' && i === messages.length - 1) {
+      split.input = [text]
+    } else if (role === 'user' || role === 'assistant' || role === 'system') {
+      split.messages.push(new DealerMessage(role, text))
+    } else {
+      throw new Error('a ' + role + ' message cannot go through dealer as a request without tools')
+    }
+  }
+  return split
+}
+
+// Every tool Generate and the chat may offer; a turn names the ones it does (DealerStep.tools).
+dealer.defineTools(toolSchemas(true, true))
 
 export const deepseek: DeepSeekEngine = new DeepSeekEngine()

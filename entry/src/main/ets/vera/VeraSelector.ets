@@ -7,9 +7,12 @@ import { settings } from './SettingsStore'
 import { askJevViaCloud } from './JevProxy'
 import { localJev } from './LocalJev'
 import { trace } from './VeraTiming'
+import { dealer } from './DealerBridge'
 import { SelectorCall, beginSelectorCall, finishSelectorCall, selectorUsage, selectorLabel } from './SelectorMetrics'
 
 const JEV_ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
+/** How napi_dealer.cpp begins a failure of status DEALER_INVALID_ARGUMENT: dealer did not take the request. */
+const DEALER_REFUSED: string = 'dealer status 1:'
 
 export async function askSelector(body: string, apiKey: string, cancellation?: OperationCancellation): Promise<string> {
   throwIfCancelled(cancellation)
@@ -51,6 +54,27 @@ async function sendSelector(body: string, apiKey: string, call: SelectorCall,
   }
   if (call.backend === 'llm') { return askJevViaCloud(body, cancellation, call) }
   if (apiKey.length === 0) { return '' }
+  // Through the dealer harness (DealerBridge.ets) when it is on: the same endpoint, key and body, and the same time
+  // as the request below (5 s to connect, 15 s to read). A body dealer cannot read (DEALER_INVALID_ARGUMENT, say a
+  // field it does not know) goes the direct way instead of losing the decision.
+  if (settings.useDealer()) {
+    try {
+      call.requests++
+      let answer = await dealer.decide(JEV_ENDPOINT, apiKey, body, cancellation, 20000)
+      throwIfCancelled(cancellation)
+      selectorUsage(call, answer, 200)
+      return answer
+    } catch (e) {
+      throwIfCancelled(cancellation)
+      let message = (e as Error).message
+      console.warn('VERA-DEALER jev failed: ' + message + ' questions=' + questionShapes(body))
+      if (message.indexOf(DEALER_REFUSED) < 0) {
+        call.error = message
+        call.partial = true
+        return ''
+      }
+    }
+  }
   try {
     let headers: Record<string, string> = {}
     headers['Content-Type'] = 'application/json'
@@ -80,5 +104,21 @@ async function sendSelector(body: string, apiKey: string, call: SelectorCall,
     call.error = (e as Error).message
     call.partial = true
     return ''
+  }
+}
+
+/** "name:type/options, ..." of a Jev request, for a log line. */
+function questionShapes(body: string): string {
+  try {
+    let questions = (JSON.parse(body) as Record<string, Object>)['questions'] as Record<string, Object>
+    return Object.keys(questions).map((name: string): string => {
+      let question = questions[name] as Record<string, Object>
+      let criteria = question['criteria']
+      let count = criteria === undefined || criteria === null ? 0 :
+        Array.isArray(criteria) ? (criteria as Object[]).length : Object.keys(criteria as Record<string, Object>).length
+      return name + ':' + String(question['type']) + '/' + count.toString()
+    }).join(', ')
+  } catch (_e) {
+    return '?'
   }
 }

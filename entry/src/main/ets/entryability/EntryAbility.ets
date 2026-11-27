@@ -124,6 +124,7 @@ export default class EntryAbility extends UIAbility {
       if (settings.useLocalSelector()) { localJev.prepare() }
       hilog.info(DOMAIN, 'VERA', 'Local Jev experimental mode: ' + String(settings.useLocalSelector()))
     }
+    this.extractDealer(want)
     this.extractExaKey(want)
     this.extractReasoningEffort(want)
     this.extractServerUrl(want)
@@ -334,6 +335,18 @@ export default class EntryAbility extends UIAbility {
     settings.init(this.context.filesDir)
     settings.setJevProxy(text)
     hilog.info(DOMAIN, 'VERA', 'Jev proxy flag updated from launch parameter')
+  }
+
+  /** `--ps dealer 1` routes the agent's model calls through the dealer harness; `--ps dealer 0` stops it. */
+  private extractDealer(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let flag = (want.parameters as Record<string, Object>)['dealer']
+    if (flag === null || flag === undefined || typeof flag !== 'string') { return }
+    let text = (flag as string).trim()
+    if (text !== '0' && text !== '1') { return }
+    settings.init(this.context.filesDir)
+    settings.setDealer(text === '1')
+    hilog.info(DOMAIN, 'VERA', 'Dealer flag set to ' + text + ' from launch parameter')
   }
 
   /**

@@ -30,7 +30,7 @@ function loadSource(file) {
     // Any other platform module is only touched when a network or file call is made, which host checks never do.
     if (name === 'liblocaljev.so') return {default:{status: async () => globalThis.__veraLocalJev ? globalThis.__veraLocalJev.status() : JSON.stringify({ready:false,reason:'host_adapter_not_configured'}),
       experimentalDecisions: body => { if (!globalThis.__veraLocalJev) throw Error('Local host adapter not configured'); return globalThis.__veraLocalJev.experimentalDecisions(body) }}}
-    if (name.startsWith('@kit.') || name === 'libllama.so') return {}
+    if (name.startsWith('@kit.') || name === 'libllama.so' || name === 'libdealer.so') return {}
     if (name.startsWith('.')) return loadSource(path.resolve(path.dirname(file), name + '.ets'))
     throw Error('Unsupported host dependency: ' + name)
   }

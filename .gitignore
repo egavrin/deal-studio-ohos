@@ -5,6 +5,8 @@ node_modules/
 oh_modules/
 /tmp/
 /entry/.cxx/
+# Built by tools/build-dealer.sh from the dealer repository.
+/entry/src/main/cpp/dealer/
 local.properties
 results/*.prev
 

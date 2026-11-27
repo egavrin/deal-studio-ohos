@@ -140,6 +140,12 @@ export class SettingsStore {
   private jevProxy: string = ''
   // Explicit demo choice; legacy jevProxy is retained for launch-parameter compatibility.
   private selectorMode: string = SELECTOR_TYPESAFE
+  /**
+   * Whether the agent's model calls (the plan, a written section, Jev) go through the dealer
+   * harness (DealerBridge.ets, libdealer.so) instead of DeepSeekEngine and askJev. A flag,
+   * `--ps dealer 1` on, `--ps dealer 0` off; off by default and kept across restarts.
+   */
+  private dealer: string = ''
   /** MODE_DEEPSEEK, MODE_SERVER or MODE_LOCAL; chosen on the Settings page and kept. */
   private mode: string = MODE_DEEPSEEK
   private loaded: boolean = false
@@ -173,6 +179,7 @@ export class SettingsStore {
         let selector = (obj['selectorMode'] as string) || ''
         this.selectorMode = selector === SELECTOR_LOCAL || selector === SELECTOR_LLM || selector === SELECTOR_TYPESAFE ?
           selector : (this.jevProxy.length > 0 ? SELECTOR_LLM : SELECTOR_TYPESAFE)
+        this.dealer = (obj['dealer'] as string) || ''
         let mode = (obj['mode'] as string) || ''
         this.mode = mode === MODE_SERVER || mode === MODE_LOCAL ? mode : MODE_DEEPSEEK
       } catch (_e) {}
@@ -192,6 +199,7 @@ export class SettingsStore {
     obj['reasoningEffort'] = this.reasoningEffort
     obj['jevProxy'] = this.jevProxy
     obj['selectorMode'] = this.selectorMode
+    obj['dealer'] = this.dealer
     obj['mode'] = this.mode
     try { writeText(this.path(), JSON.stringify(obj)) } catch (_e) {}
   }
@@ -287,6 +295,17 @@ export class SettingsStore {
   setSelectorKey(key: string): void {
     if (!this.loaded) { this.load() }
     this.selectorKey = key.trim()
+    this.save()
+  }
+
+  useDealer(): boolean {
+    if (!this.loaded) { this.load() }
+    return this.dealer === '1'
+  }
+
+  setDealer(on: boolean): void {
+    if (!this.loaded) { this.load() }
+    this.dealer = on ? '1' : ''
     this.save()
   }
 

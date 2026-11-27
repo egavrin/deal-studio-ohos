@@ -167,3 +167,23 @@ else()
   target_compile_definitions(phys PRIVATE PHYS_STUB=1)
   target_link_libraries(phys PRIVATE libace_napi.z.so libhilog_ndk.z.so)
 endif()
+
+# Dealer (napi_dealer.cpp): the agent harness from github.com/arkts-dev/dealer (crates/dealer-ffi),
+# linked statically so libdealer.so is one file. tools/build-dealer.sh cross-builds it for
+# aarch64-unknown-linux-ohos and copies the library and dealer.h into entry/src/main/cpp/dealer
+# (git-ignored); delete entry/.cxx once after that so CMake sees them. Without them the build still
+# succeeds, as a stub whose dealerAvailable() is false; `--ps dealer 1` then changes nothing.
+set(DEALER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dealer)
+add_library(dealer SHARED napi_dealer.cpp)
+if(EXISTS ${DEALER_DIR}/lib/libdealer_ffi.a AND EXISTS ${DEALER_DIR}/include/dealer.h)
+  target_include_directories(dealer PRIVATE ${DEALER_DIR}/include)
+  target_link_libraries(dealer PRIVATE ${DEALER_DIR}/lib/libdealer_ffi.a libace_napi.z.so libhilog_ndk.z.so)
+  # The static library carries all of its crates; keep only what the NAPI functions reach. Its
+  # symbols are hidden (--exclude-libs), or every one is exported and --gc-sections keeps them all:
+  # 12.6 MB then, 5.1 MB now.
+  target_link_options(dealer PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,--strip-all)
+else()
+  message(WARNING "dealer not found at ${DEALER_DIR} -- building a stub; run tools/build-dealer.sh.")
+  target_compile_definitions(dealer PRIVATE DEALER_STUB=1)
+  target_link_libraries(dealer PRIVATE libace_napi.z.so libhilog_ndk.z.so)
+endif()
