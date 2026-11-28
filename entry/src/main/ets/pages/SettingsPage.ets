@@ -8,10 +8,11 @@ import { AppRouteParams } from '../vera/AppNavigation'
 import { app, TonalButton, QuietButton } from '../components/AppStyle'
 
 /**
- * The connection, from any screen's gear (SettingsEntry.ets): how apps are generated, the cloud model, the selector and the
- * USB network. Everything here is kept in SettingsStore or asked of the system, so a screen under it reads it again when it
- * is shown; nothing is handed back.
+ * The connection, from any screen's gear (SettingsEntry.ets): how apps are generated, the cloud model, the selector
+ * (its proxy and the on-device decision model), and the USB network. Everything here is kept in SettingsStore or
+ * asked of the system, so a screen under it reads it again when it is shown; nothing is handed back.
  */
+
 @Component
 export struct SettingsPage {
   params: AppRouteParams = new AppRouteParams()

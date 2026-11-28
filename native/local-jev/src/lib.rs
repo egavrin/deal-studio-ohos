@@ -1,6 +1,7 @@
 //! Experimental local Jev decisions. Missing answers preserve application safeguards.
 pub mod laya;
 mod laya_backbone;
+pub mod npu;
 pub mod shared_experimental;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -422,6 +423,32 @@ pub fn experimental_decisions(mut raw: Value, body: &str) -> Value {
 }
 
 static ENGINE: OnceLock<Mutex<Result<Engine>>> = OnceLock::new();
+static NPU_GRAPHS: OnceLock<Mutex<Vec<(String, usize, usize)>>> = OnceLock::new();
+
+/// Tell the Laya engine where a compiled NPU serving graph lives, with its
+/// fixed shape (the ArkTS layer copies each rawfile to filesDir and calls
+/// this once per bucket). The engine compiles a bucket lazily on the first
+/// group that fits it and keeps it for the process; the CPU candle path
+/// serves when no bucket is registered, fits or builds.
+#[no_mangle]
+pub unsafe extern "C" fn local_jev_npu_graph(path: *const u8, len: usize, batch: usize, seq: usize) -> i32 {
+    let slot = NPU_GRAPHS.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if path.is_null() {
+        return if guard.is_empty() { 0 } else { 1 };
+    }
+    let slice = std::slice::from_raw_parts(path, len);
+    let text = String::from_utf8_lossy(slice).into_owned();
+    guard.push((text, batch, seq));
+    1
+}
+
+pub(crate) fn npu_graph_specs() -> Vec<(String, usize, usize)> {
+    let slot = NPU_GRAPHS.get_or_init(|| Mutex::new(Vec::new()));
+    let guard = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard.clone()
+}
+static LAYA: OnceLock<Mutex<Result<laya::Engine>>> = OnceLock::new();
 static EXPERIMENTAL_ENGINE: OnceLock<Mutex<Result<ExperimentalEngine>>> = OnceLock::new();
 
 enum ExperimentalEngine {
@@ -455,8 +482,17 @@ pub unsafe extern "C" fn local_jev_predict(data: *const u8, len: usize) -> *mut 
             return uncertain("shared_state_not_human_calibrated");
         }
         if !assets::LAYA_CONFIG.is_empty() {
-            // Laya remains disabled until independent human calibration and release acceptance exist.
-            return uncertain("laya_not_human_calibrated");
+            // Laya serves only through its manifest calibration (see laya.rs);
+            // uncalibrated or over-budget bodies answer nothing and the caller
+            // falls back to the cloud.
+            let engine = LAYA
+                .get_or_init(|| Mutex::new(laya::Engine::embedded()))
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            return match &*engine {
+                Ok(engine) => engine.predict(body),
+                Err(_) => uncertain("laya_model_unavailable"),
+            };
         }
         let engine = ENGINE
             .get_or_init(|| Mutex::new(Engine::embedded()))

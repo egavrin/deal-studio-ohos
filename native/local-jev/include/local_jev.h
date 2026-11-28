@@ -13,6 +13,9 @@ uint32_t local_jev_abi(void);
 char *local_jev_predict(const uint8_t *data, size_t len);
 // Experimental only. Returns logits and leaves the answer map empty.
 char *local_jev_diagnostic_scores(const uint8_t *data, size_t len);
+// Tell the engine where a compiled NPU serving graph lives (filesDir path)
+// with its fixed shape. Call once per bucket; returns 1 on success.
+int local_jev_npu_graph(const uint8_t *path, size_t len, size_t batch, size_t seq);
 // Developer opt-in only: uncalibrated decisions with raw scores and diagnostics.
 char *local_jev_experimental_decisions(const uint8_t *data, size_t len);
 // Laya benchmark decisions plus phase timings and group lengths.

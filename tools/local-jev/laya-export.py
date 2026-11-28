@@ -8,8 +8,11 @@ import subprocess
 
 
 def sha(path):
+    digest = hashlib.sha256()
     with path.open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for block in iter(lambda: stream.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def main():
@@ -28,14 +31,30 @@ def main():
         parser.error('--base-revision is required for a checkpoint without training provenance')
     target.mkdir(mode=0o700, parents=True, exist_ok=False)
     encoder = json.loads((base/'encoder/config.json').read_text())
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(base/'tokenizer', local_files_only=True)
+    # The tokenizer.json already carries the special-token table; reading it
+    # directly keeps export independent of the transformers version. Which
+    # token plays cls/sep/mask is named by tokenizer_config.json (this Laya
+    # checkpoint maps <cls> to <bos> and <sep> to <eos>).
+    tokenizer_json = json.loads((base/'tokenizer/tokenizer.json').read_text())
+    tokenizer_config = json.loads((base/'tokenizer/tokenizer_config.json').read_text())
+    special = {}
+    for item in tokenizer_json.get('added_tokens', []):
+        special[item.get('content')] = item.get('id')
+    def token_id(field):
+        value = tokenizer_config.get(field)
+        if isinstance(value, dict):
+            value = value.get('content')
+        return special.get(value)
+    cls_id = token_id('cls_token')
+    sep_id = token_id('sep_token')
+    mask_id = token_id('mask_token')
+    if cls_id is None or sep_id is None or mask_id is None:
+        raise SystemExit('tokenizer_config.json names a cls/sep/mask token missing from tokenizer.json')
     for layer_type, key in [('full_attention','global_rope_theta'), ('sliding_attention','local_rope_theta')]:
         if layer_type in encoder.get('rope_parameters', {}):
             encoder[key] = encoder['rope_parameters'][layer_type]['rope_theta']
-    exported = {**config, 'encoder_config': encoder, 'cls_token_id': tokenizer.cls_token_id,
-                'sep_token_id': tokenizer.sep_token_id, 'mask_token_id': tokenizer.mask_token_id,
-                'mask_token': tokenizer.mask_token}
+    exported = {**config, 'encoder_config': encoder, 'cls_token_id': cls_id,
+                'sep_token_id': sep_id, 'mask_token_id': mask_id, 'mask_token': '<mask>'}
     (target/'laya-config.json').write_text(json.dumps(exported, indent=2))
     tokenizer_json = json.loads((base/'tokenizer/tokenizer.json').read_text())
     (target/'tokenizer.json').write_text(json.dumps(tokenizer_json, ensure_ascii=False, separators=(',', ':')))

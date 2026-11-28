@@ -106,6 +106,22 @@ impl RotaryEmbedding {
         let k_embed = candle_nn::rotary_emb::rope(&k.contiguous()?, &self.cos, &self.sin)?;
         Ok((q_embed, k_embed))
     }
+
+    /// RoPE with a position offset: the queries/keys start at `offset` in the
+    /// full sequence (the prefix ahead of them is cached elsewhere).
+    fn apply_rotary_emb_qkv_offset(
+        &self,
+        q: &Tensor,
+        k: &Tensor,
+        offset: usize,
+    ) -> Result<(Tensor, Tensor)> {
+        let seq = q.dim(D::Minus2)?;
+        let cos = self.cos.narrow(0, offset, seq)?;
+        let sin = self.sin.narrow(0, offset, seq)?;
+        let q_embed = candle_nn::rotary_emb::rope(&q.contiguous()?, &cos, &sin)?;
+        let k_embed = candle_nn::rotary_emb::rope(&k.contiguous()?, &cos, &sin)?;
+        Ok((q_embed, k_embed))
+    }
 }
 
 pub(crate) fn attention(
@@ -176,6 +192,24 @@ impl ModernBertAttention {
         attention_mask: &Tensor,
         lengths: Option<&[usize]>,
     ) -> Result<Tensor> {
+        let (xs, _) = self.forward_inner(hidden_states, attention_mask, lengths, 0, None, false)?;
+        Ok(xs)
+    }
+
+    /// The attention with the state-prefix machinery: `offset` shifts RoPE
+    /// positions past the cached prefix, `prefix_kv` (post-RoPE k and v for
+    /// this layer) is prepended to the keys/values the queries attend to, and
+    /// `capture` additionally returns this layer's own (k, v) so a later call
+    /// can reuse them as its prefix.
+    fn forward_inner(
+        &self,
+        hidden_states: &Tensor,
+        attention_mask: &Tensor,
+        lengths: Option<&[usize]>,
+        offset: usize,
+        prefix_kv: Option<&(Tensor, Tensor)>,
+        capture: bool,
+    ) -> Result<(Tensor, Option<(Tensor, Tensor)>)> {
         let xs = hidden_states.clone();
         let (b, seq_len, d) = xs.dims3()?;
         let qkv = xs
@@ -193,17 +227,41 @@ impl ModernBertAttention {
         let k = qkv.get(1)?;
         let v = qkv.get(2)?;
 
-        let (q, k) = self.rotary_emb.apply_rotary_emb_qkv(&q, &k)?;
+        let (q, k) = if offset == 0 {
+            self.rotary_emb.apply_rotary_emb_qkv(&q, &k)?
+        } else {
+            self.rotary_emb.apply_rotary_emb_qkv_offset(&q, &k, offset)?
+        };
+        let kv = if capture { Some((k.clone(), v.clone())) } else { None };
+
+        let (k, v) = match prefix_kv {
+            Some((pk, pv)) => {
+                let b = q.dim(0)?;
+                let pk = pk.broadcast_as((b, pk.dim(1)?, pk.dim(2)?, pk.dim(3)?))?;
+                let pv = pv.broadcast_as((b, pv.dim(1)?, pv.dim(2)?, pv.dim(3)?))?;
+                // cat of a broadcast and a rope-view produces a layout gemm
+                // rejects; make both sides contiguous (a small copy next to the
+                // matmuls it feeds).
+                (
+                    Tensor::cat(&[pk, k], 2)?.contiguous()?,
+                    Tensor::cat(&[pv, v], 2)?.contiguous()?,
+                )
+            }
+            None => (k, v),
+        };
 
         let scale = (self.attention_head_size as f64).powf(-0.5);
         let q = (q * scale)?;
 
+        // The prefix path always runs the masked (not lengths-serial) form:
+        // the serial path's per-row crop assumes keys are all this call's own.
+        let lengths = if prefix_kv.is_some() { None } else { lengths };
         let xs = attention(&q, &k, &v, Some(attention_mask), lengths)?;
         let xs = xs.transpose(1, 2)?.reshape((b, seq_len, d))?;
         let xs = xs.apply(&self.proj)?;
         let xs = xs.reshape((b, seq_len, d))?;
 
-        Ok(xs)
+        Ok((xs, kv))
     }
 }
 
@@ -276,6 +334,29 @@ impl ModernBertLayer {
         local_attention_mask: &Tensor,
         lengths: Option<&[usize]>,
     ) -> Result<Tensor> {
+        let (out, _) = self.forward_inner(
+            xs,
+            global_attention_mask,
+            local_attention_mask,
+            lengths,
+            0,
+            None,
+            false,
+        )?;
+        Ok(out)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn forward_inner(
+        &self,
+        xs: &Tensor,
+        global_attention_mask: &Tensor,
+        local_attention_mask: &Tensor,
+        lengths: Option<&[usize]>,
+        offset: usize,
+        prefix_kv: Option<&(Tensor, Tensor)>,
+        capture: bool,
+    ) -> Result<(Tensor, Option<(Tensor, Tensor)>)> {
         let residual = xs.clone();
         let mut xs = xs.clone();
         if let Some(norm) = &self.attn_norm {
@@ -287,11 +368,13 @@ impl ModernBertLayer {
         } else {
             global_attention_mask
         };
-        let xs = self.attn.forward(&xs, attention_mask, lengths)?;
+        let (xs, kv) =
+            self.attn
+                .forward_inner(&xs, attention_mask, lengths, offset, prefix_kv, capture)?;
         let xs = (xs + residual)?;
         let mlp_out = xs.apply(&self.mlp_norm)?.apply(&self.mlp)?;
         let xs = (xs + mlp_out)?;
-        Ok(xs)
+        Ok((xs, kv))
     }
 }
 
@@ -334,6 +417,48 @@ fn get_local_attention_mask(
         })
         .collect();
     Tensor::from_slice(&mask, (seq_len, seq_len), device)
+}
+
+/// The sliding-window mask for queries that sit at absolute positions
+/// `offset..offset+q_len` attending to keys at absolute positions
+/// `0..offset+q_len` (a cached prefix ahead of the queries).
+fn get_local_attention_mask_offset(
+    q_len: usize,
+    total_len: usize,
+    offset: usize,
+    max_distance: usize,
+    device: &Device,
+) -> Result<Tensor> {
+    let mask: Vec<_> = (0..q_len)
+        .flat_map(|i| {
+            let qi = (offset + i) as i32;
+            (0..total_len).map(move |j| {
+                if (j as i32 - qi).abs() > max_distance as i32 {
+                    f32::NEG_INFINITY
+                } else {
+                    0.
+                }
+            })
+        })
+        .collect();
+    Tensor::from_slice(&mask, (q_len, total_len), device)
+}
+
+// Debug staging dump (env-gated): LOCAL_JEV_DUMP=/dir writes a stage tensor.
+fn dump_stage(name: &str, t: &Tensor) {
+    let Ok(dir) = std::env::var("LOCAL_JEV_DUMP") else { return };
+    let flat = t.flatten_all().and_then(|f| f.to_dtype(DType::F32)).and_then(|f| f.to_vec1::<f32>());
+    let Ok(vals) = flat else { return };
+    let shape: Vec<_> = t.dims().iter().map(|d| d.to_string()).collect();
+    let path = format!("{}/{}.bin", dir, name);
+    if let Ok(mut f) = std::fs::File::create(&path) {
+        use std::io::Write;
+        let bytes = unsafe {
+            std::slice::from_raw_parts(vals.as_ptr() as *const u8, vals.len() * 4)
+        };
+        let _ = f.write_all(bytes);
+    }
+    let _ = std::fs::write(format!("{}/{}.shape", dir, name), shape.join("x"));
 }
 
 // ModernBERT backbone
@@ -428,15 +553,125 @@ impl ModernBert {
             prepare_4d_attention_mask(mask, DType::F32, None)?.to_device(xs.device())?;
         let local_attention_mask =
             get_local_attention_mask(seq_len, self.local_attention_size / 2, xs.device())?;
+        dump_stage("ids_input", xs);
+        let mut xs = self.embed(xs)?;
+        dump_stage("00_embed", &xs);
+        for (li, layer) in self.layers.iter().enumerate() {
+            xs = layer.forward(&xs, &global_attention_mask, &local_attention_mask, lengths)?;
+            if li < 2 || li == self.layers.len() - 1 {
+                dump_stage(&format!("layer_{:02}", li), &xs);
+            }
+        }
+        let xs = xs.apply(&self.final_norm)?;
+        dump_stage("99_final", &xs);
+        Ok(xs)
+    }
+
+    fn embed(&self, xs: &Tensor) -> Result<Tensor> {
         let mut xs = xs.apply(&self.word_embeddings)?;
         if let Some(projection) = &self.embedding_projection {
             xs = xs.apply(projection)?;
         }
-        xs = xs.apply(&self.norm)?;
+        Ok(xs.apply(&self.norm)?)
+    }
+
+    /// The raw (pre-norm) embedding rows for the NPU serving path: the graph
+    /// applies the embedding norm itself.
+    pub fn embed_rows(&self, ids: &[u32]) -> Result<Vec<f32>> {
+        let n = ids.len();
+        let ids_t = Tensor::from_vec(ids.to_vec(), (n,), &Device::Cpu)?;
+        let mut xs = ids_t.apply(&self.word_embeddings)?;
+        if let Some(projection) = &self.embedding_projection {
+            xs = xs.apply(projection)?;
+        }
+        let mut rows: Vec<Vec<f32>> = xs.to_vec2()?;
+        let mut out = Vec::with_capacity(n * rows.first().map_or(0, |r| r.len()));
+        for row in rows.drain(..) {
+            out.extend(row);
+        }
+        Ok(out)
+    }
+
+    /// Encode the shared state prefix once: returns this layer's (k, v) for
+    /// every encoder layer (post-RoPE, so reusable only at the same absolute
+    /// positions) plus the prefix's final hidden states (post final_norm) for
+    /// the head that follows the encoder.
+    pub fn encode_prefix(
+        &self,
+        xs: &Tensor,
+        mask: &Tensor,
+    ) -> Result<(Vec<(Tensor, Tensor)>, Tensor)> {
+        let seq_len = xs.shape().dims()[1];
+        let global_attention_mask =
+            prepare_4d_attention_mask(mask, DType::F32, None)?.to_device(xs.device())?;
+        let local_attention_mask =
+            get_local_attention_mask(seq_len, self.local_attention_size / 2, xs.device())?;
+        let mut xs = self.embed(xs)?;
+        let mut cache = Vec::with_capacity(self.layers.len());
         for layer in self.layers.iter() {
-            xs = layer.forward(&xs, &global_attention_mask, &local_attention_mask, lengths)?;
+            let (out, kv) = layer.forward_inner(
+                &xs,
+                &global_attention_mask,
+                &local_attention_mask,
+                None,
+                0,
+                None,
+                true,
+            )?;
+            cache.push(kv.expect("capture requested"));
+            xs = out;
+        }
+        let hidden = xs.apply(&self.final_norm)?;
+        Ok((cache, hidden))
+    }
+
+    /// Encode the query part with the cached prefix as attention context.
+    /// `mask` covers only the queries' own keys (prefix keys are always
+    /// visible). This is the approximate side of state sharing: the prefix's
+    /// own representations were computed without seeing the queries.
+    pub fn forward_with_prefix(
+        &self,
+        xs: &Tensor,
+        mask: &Tensor,
+        prefix: &[(Tensor, Tensor)],
+    ) -> Result<Tensor> {
+        let q_len = xs.shape().dims()[1];
+        let prefix_len = prefix[0].0.dim(D::Minus2)?;
+        let total_len = prefix_len + q_len;
+        // Prefix keys are real tokens for every query: the padding mask over the
+        // keys is [ones(prefix) | own mask], with the queries as target length.
+        let ones = Tensor::ones((mask.dim(0)?, prefix_len), mask.dtype(), xs.device())?;
+        let full_mask = Tensor::cat(&[&ones, mask], 1)?;
+        let global_attention_mask = prepare_4d_attention_mask(&full_mask, DType::F32, Some(q_len))?
+            .to_device(xs.device())?;
+        let local_attention_mask = get_local_attention_mask_offset(
+            q_len,
+            total_len,
+            prefix_len,
+            self.local_attention_size / 2,
+            xs.device(),
+        )?;
+        let offset = prefix_len;
+        let mut xs = self.embed(xs)?;
+        for (layer, prefix_kv) in self.layers.iter().zip(prefix.iter()) {
+            let (out, _) = layer.forward_inner(
+                &xs,
+                &global_attention_mask,
+                &local_attention_mask,
+                None,
+                offset,
+                Some(prefix_kv),
+                false,
+            )?;
+            xs = out;
         }
         let xs = xs.apply(&self.final_norm)?;
         Ok(xs)
     }
+}
+
+/// Per-layer (k, v) cache of an encoded state prefix, plus its final hidden.
+pub struct StatePrefix {
+    pub layers: Vec<(Tensor, Tensor)>,
+    pub hidden: Tensor,
 }

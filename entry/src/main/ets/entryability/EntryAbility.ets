@@ -6,6 +6,13 @@ import { refreshForms } from '../vera/FormUpdater'
 import { store } from '../vera/ProjectStore'
 import { formBindings } from '../vera/FormBindings'
 import { settings } from '../vera/SettingsStore'
+import { runNpuSpike } from '../vera/NpuSpike'
+import { runLocalJevSpike } from '../vera/LocalJevSpike'
+import { runMsNnrtSpike, runHiaiSpike, runHiaiE2ESpike, runHiaiOpsSpike, fileReadTestSpike, runHiaiModelSpike } from '../vera/MsNnrtSpike'
+import { runProxySpike } from '../vera/ProxySpike'
+import { runFairProxy } from '../vera/FairProxySpike'
+import { NpuNapiLocalDecision } from '../vera/VeraLocalNapi'
+import { setLocalDecisionModel } from '../vera/VeraLocalDecision'
 import { localJev } from '../vera/LocalJev'
 import { resetLogprobsProbe } from '../vera/JevProxy'
 import { requestCalendarPermissions, requestMicrophonePermission } from '../vera/VeraPermissions'
@@ -71,6 +78,11 @@ export default class EntryAbility extends UIAbility {
     // Before anything can be generated or compiled: the vocabulary a program is
     // allowed to use must not change underneath a program that is being written.
     loadCatalogFile(this.context.filesDir)
+    // Register the in-app Candle local-Jev backend (liblocaljev.so). The hybrid
+    // route falls back to the cloud whenever it returns empty answers.
+    // NpuNapiLocalDecision registers the HiAI serving graph when the
+    // rawfile is packaged; without it this degrades to the candle CPU path.
+    setLocalDecisionModel(new NpuNapiLocalDecision(this.context))
     startPowerKeyProbe()
     this.extractProjectId(want)
     this.extractDevParameters(want)
@@ -117,6 +129,17 @@ export default class EntryAbility extends UIAbility {
     this.extractApiModel(want)
     this.extractSelectorKey(want)
     this.extractJevProxy(want)
+    this.extractJevLocal(want)
+    this.extractNpuSpike(want)
+    this.extractLocalJevSpike(want)
+    this.extractMsNnrtSpike(want)
+    this.extractHiaiSpike(want)
+    this.extractHiaiE2ESpike(want)
+    this.extractHiaiOpsSpike(want)
+    this.extractFileReadTest(want)
+    this.extractHiaiModelSpike(want)
+    this.extractProxySpike(want)
+    this.extractFairProxy(want)
     let localSelector = want.parameters === undefined || want.parameters === null ? undefined :
       (want.parameters as Record<string, Object>)['localJev']
     if (localSelector === '1' || localSelector === '0') {
@@ -325,6 +348,157 @@ export default class EntryAbility extends UIAbility {
    * base/model/key come from the existing apiBase/apiModel/cloudKey settings.
    * Optional: without it the selector calls go to TypeSafe directly.
    */
+  /**
+   * Phase 0 NPU spike: `--ps npuSpike 1` runs a MindSpore Lite load+predict on the
+   * CPU and on NNRT and logs the result (VERA-NPUSPIKE), to test whether a
+   * system-signed app can reach the Kirin NPU at runtime.
+   */
+  private extractNpuSpike(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['npuSpike']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'Npu spike requested')
+    runNpuSpike(this.context.filesDir).catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'npuSpike failed: ' + e.message)
+    })
+  }
+
+  /**
+   * Local-Jev spike: `--ps localJevSpike 1` times Candle forward passes on the
+   * device CPU through the localjev NAPI (VERA-LOCALJEV).
+   */
+  private extractLocalJevSpike(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['localJevSpike']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'Local-Jev spike requested')
+    runLocalJevSpike().catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'localJevSpike failed: ' + e.message)
+    })
+  }
+
+  /**
+   * NPU NNRT spike via the C NDK: `--ps nnrtSpike 1` builds the converted model on an
+   * NNRT accelerator device and predicts (VERA-MSNNRT), bypassing the ArkTS API.
+   */
+  private extractMsNnrtSpike(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['nnrtSpike']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'NNRT spike requested')
+    runMsNnrtSpike(this.context.filesDir, this.context).catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'msNnrtSpike failed: ' + e.message)
+    })
+  }
+
+  /**
+   * HiAI Foundation spike: `--ps hiaiSpike 1` probes whether this app's process
+   * can load the system libhiai.so and see the NPU (the realistic NPU path).
+   */
+  /**
+   * HiAI Foundation end-to-end spike: `--ps hiaiE2E 1`.
+   */
+  /**
+   * HiAI op battery: `--ps hiaiOps 1` compiles+runs one tiny graph per op the
+   * ModernBERT port needs, reporting per-op status.
+   */
+  /**
+   * File read test: `--ps fileRead 1` — can the app read /data/local/tmp/?
+   */
+  /**
+   * Large-model HiAI test: `--ps hiaiModel 1`.
+   */
+  private extractHiaiModelSpike(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['hiaiModel']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'HiAI model test requested')
+    settings.init(this.context.filesDir)
+    runHiaiModelSpike(this.context).catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'hiaiModel failed: ' + e.message)
+    })
+  }
+
+  private extractFileReadTest(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['fileRead']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'File read test requested')
+    fileReadTestSpike().catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'fileRead failed: ' + e.message)
+    })
+  }
+
+  private extractHiaiOpsSpike(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['hiaiOps']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'HiAI ops spike requested')
+    runHiaiOpsSpike().catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'hiaiOps failed: ' + e.message)
+    })
+  }
+
+  private extractHiaiE2ESpike(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['hiaiE2E']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'HiAI E2E spike requested')
+    runHiaiE2ESpike().catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'hiaiE2E failed: ' + e.message)
+    })
+  }
+
+  private extractHiaiSpike(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['hiaiSpike']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'HiAI spike requested')
+    runHiaiSpike().catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'hiaiSpike failed: ' + e.message)
+    })
+  }
+
+  /**
+   * Cloud (JevProxy) latency spike: `--ps proxySpike 1` times one askJevViaCloud call
+   * on a small Jev body (VERA-PROXYSPIKE), for the local-vs-cloud per-decision table.
+   */
+  private extractProxySpike(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['proxySpike']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'proxy spike requested')
+    settings.init(this.context.filesDir)
+    runProxySpike().catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'proxySpike failed: ' + e.message)
+    })
+  }
+
+  /**
+   * Fair cloud-side run: `--ps fairProxy 1` calls the JevProxy on the same bodies the
+   * local model was scored on (reads {filesDir}/npu/bodies.json, writes proxy-answers.json).
+   */
+  private extractFairProxy(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['fairProxy']
+    if (v === null || v === undefined || typeof v !== 'string' || (v as string).trim().length === 0) { return }
+    hilog.info(DOMAIN, 'VERA', 'fair proxy requested')
+    settings.init(this.context.filesDir)
+    runFairProxy(this.context.filesDir).catch((e: Error): void => {
+      hilog.error(DOMAIN, 'VERA', 'fairProxy failed: ' + e.message)
+    })
+  }
+
   private extractJevProxy(want: Want): void {
     let params = want.parameters as Record<string, Object>
     let url = params['jevProxy']
@@ -334,6 +508,27 @@ export default class EntryAbility extends UIAbility {
     settings.init(this.context.filesDir)
     settings.setJevProxy(text)
     hilog.info(DOMAIN, 'VERA', 'Jev proxy flag updated from launch parameter')
+  }
+
+  /**
+   * Whether the composer's selector calls use the hybrid local route
+   * (VeraLocalDecision.ets): easy/standard decisions to an on-device System-one
+   * model, the hard tier (code reading: verify/claims) to the cloud.
+   *     --ps jevLocal 1
+   * A flag. With no on-device model registered it is a no-op -- the route falls
+   * back to the cloud for every question -- so it changes nothing until a model
+   * is loaded.
+   */
+  private extractJevLocal(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let url = params['jevLocal']
+    if (url === null || url === undefined || typeof url !== 'string') { return }
+    let text = (url as string).trim()
+    if (text.length === 0) { return }
+    settings.init(this.context.filesDir)
+    settings.setJevLocal(text)
+    hilog.info(DOMAIN, 'VERA', 'Jev local route flag updated from launch parameter')
   }
 
   /**

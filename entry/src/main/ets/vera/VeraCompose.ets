@@ -29,6 +29,8 @@ import { OperationCancellation, throwIfCancelled } from './OperationCancellation
 import { FragmentSpec, StateFieldSpec, PortSpec, VetoSpec, fragments, vetoes, LIVE_KIND, liveFigureNumber } from './VeraTemplates'
 import { composeFragments } from './VeraSectionCompose'
 import { blockDefaults } from './VeraTemplateContent'
+import { settings } from './SettingsStore'
+import { splitJevBody, mergeJevAnswers, unansweredJevBody, localDecisionModel } from './VeraLocalDecision'
 import { askSelector } from './VeraSelector'
 import { ScreenPlan, PlanSlot, PlanComponent, StateItem, assemblePlan, FILL_PART, FILL_BLOCK, FILL_EFFECT, FILL_HOLE, FILL_OPEN,
   PLAN_FROM_SKETCH, TO_WRITE } from './ScreenPlan'
@@ -4748,9 +4750,93 @@ export class ComposeResult {
   composition: Composition | null = null
 }
 
-/** Compatibility entry point; all application selectors share VeraSelector. */
+/**
+ * The cloud decision path: the shared selector transport (VeraSelector), which
+ * chooses TypeSafe, the in-process cloud proxy or the local experimental
+ * selector and records the call. Every Jev question the local decision model
+ * does not answer ends here.
+ */
+async function askJevCloud(body: string, apiKey: string, cancellation?: OperationCancellation,
+    cloudOnly: boolean = false): Promise<string> {
+  return askSelector(body, apiKey, cancellation, cloudOnly)
+}
+
+/** How many answers a Jev reply carries (0 for '', unparseable, or {"answers":{}}). */
+function jevAnswerCount(reply: string): number {
+  if (reply.length === 0) { return 0 }
+  try {
+    let obj = JSON.parse(reply) as Record<string, Object>
+    let answers = obj['answers'] as Record<string, Object>
+    return answers ? Object.keys(answers).length : 0
+  } catch (e) {
+    return 0
+  }
+}
+
+/**
+ * The hybrid local route. Hard-tier questions (code reading: verify/claims, keyed
+ * "does.N"; and the formula/anatomy picks "expr.N"/"show.N" the calibration data
+ * says a small model gets wrong) go to the cloud; the rest go to the on-device
+ * decision model when one is loaded. The body is split by key, each half
+ * answered, and the answers merged (VeraLocalDecision.ets). With no on-device
+ * model registered the whole thing is one cloud call -- identical to the cloud
+ * path -- so turning the flag on before a model exists changes nothing.
+ */
+async function askJevViaLocal(body: string, apiKey: string, cancellation?: OperationCancellation): Promise<string> {
+  throwIfCancelled(cancellation)
+  let model = localDecisionModel()
+  if (!model.available()) {
+    return askJevCloud(body, apiKey, cancellation, true)
+  }
+  let split = splitJevBody(body)
+  // The hard-tier cloud batch runs concurrently with the local forward — the two are independent and the cloud is fast, so the total becomes max(cloud, local) not cloud + local.
+  let hardPromise: Promise<string> = Promise.resolve('')
+  if (split.hardCount > 0) {
+    hardPromise = askJevCloud(split.hard, apiKey, cancellation, true)
+  }
+  let easyReply = ''
+  let hardReply = ''
+  if (split.easyCount > 0) {
+    try {
+      easyReply = await model.answer(split.easy, cancellation)
+    } catch (e) {
+      throwIfCancelled(cancellation)
+      if ((e as Error).name === 'OperationCancelledError') { throw (e as Error) }
+      console.warn('VERA-JEVLOCAL model failed: ' + (e as Error).message)
+      easyReply = ''
+    }
+    throwIfCancelled(cancellation)
+    let localAnswers = jevAnswerCount(easyReply)
+    // Observability: without this line the local share of a hybrid run is
+    // silent and indistinguishable from pure cloud in the logs.
+    console.info('VERA-JEVLOCAL local answered ' + localAnswers.toString() + '/' + split.easyCount.toString() +
+      (localAnswers === 0 ? ' -- falling back to the cloud' : ''))
+    if (localAnswers < split.easyCount) {
+      // Per-question fallback: the local model serves only what its calibration
+      // is confident about (steps and the like); the cloud answers the rest --
+      // an empty reply from a stub or an uncalibrated model just means it all
+      // goes to the cloud, and a partial reply leaves no holes either way.
+      let rest = unansweredJevBody(split.easy, easyReply)
+      if (rest.length > 0) {
+        let cloudReply = await askJevCloud(rest, apiKey, cancellation, true)
+        throwIfCancelled(cancellation)
+        easyReply = mergeJevAnswers(easyReply, cloudReply)
+      }
+    }
+  }
+  hardReply = await hardPromise
+  throwIfCancelled(cancellation)
+  return mergeJevAnswers(hardReply, easyReply)
+}
+
 export async function askJev(body: string, apiKey: string, cancellation?: OperationCancellation): Promise<string> {
-  return askSelector(body, apiKey, cancellation)
+  throwIfCancelled(cancellation)
+  // The hybrid local route when on; the cloud path otherwise (its two shapes:
+  // the in-process cloud proxy, or the TypeSafe endpoint).
+  if (settings.useJevLocal()) {
+    return askJevViaLocal(body, apiKey, cancellation)
+  }
+  return askJevCloud(body, apiKey, cancellation)
 }
 
 /** Asks for the sketch: (system prompt, request, reply so far) -> the whole reply, or null when there was none. */

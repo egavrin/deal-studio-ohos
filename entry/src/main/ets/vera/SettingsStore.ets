@@ -138,6 +138,15 @@ export class SettingsStore {
    * to point at.
    */
   private jevProxy: string = ''
+  /**
+   * Whether the composer's selector calls (askJev/selectEdit) use the hybrid
+   * local route (VeraLocalDecision.ets): easy/standard questions go to an
+   * on-device System-one model, hard-tier (code reading: verify/claims) stays on
+   * the cloud. A flag like jevProxy: `--ps jevLocal 1`. With no on-device model
+   * registered it is a no-op -- it falls back to the cloud for every question --
+   * so turning it on changes nothing until a model is loaded.
+   */
+  private jevLocal: string = ''
   // Explicit demo choice; legacy jevProxy is retained for launch-parameter compatibility.
   private selectorMode: string = SELECTOR_TYPESAFE
   /** MODE_DEEPSEEK, MODE_SERVER or MODE_LOCAL; chosen on the Settings page and kept. */
@@ -170,6 +179,7 @@ export class SettingsStore {
         this.exaKey = (obj['exaKey'] as string) || ''
         this.reasoningEffort = (obj['reasoningEffort'] as string) || ''
         this.jevProxy = (obj['jevProxy'] as string) || ''
+        this.jevLocal = (obj['jevLocal'] as string) || ''
         let selector = (obj['selectorMode'] as string) || ''
         this.selectorMode = selector === SELECTOR_LOCAL || selector === SELECTOR_LLM || selector === SELECTOR_TYPESAFE ?
           selector : (this.jevProxy.length > 0 ? SELECTOR_LLM : SELECTOR_TYPESAFE)
@@ -191,6 +201,7 @@ export class SettingsStore {
     obj['exaKey'] = this.exaKey
     obj['reasoningEffort'] = this.reasoningEffort
     obj['jevProxy'] = this.jevProxy
+    obj['jevLocal'] = this.jevLocal
     obj['selectorMode'] = this.selectorMode
     obj['mode'] = this.mode
     try { writeText(this.path(), JSON.stringify(obj)) } catch (_e) {}
@@ -308,6 +319,29 @@ export class SettingsStore {
 
   /** Whether generation/structural selection uses the configured cloud-model approximation. */
   useJevProxy(): boolean { return this.getSelectorMode() === SELECTOR_LLM }
+
+  getJevLocal(): string {
+    if (!this.loaded) { this.load() }
+    return this.jevLocal
+  }
+
+  hasJevLocal(): boolean { return this.getJevLocal().length > 0 }
+
+  setJevLocal(url: string): void {
+    if (!this.loaded) { this.load() }
+    this.jevLocal = url.trim()
+    this.save()
+  }
+
+  /**
+   * Whether askJev/selectEdit should use the hybrid local route
+   * (VeraLocalDecision.ets): easy/standard questions to an on-device model, the
+   * hard tier (code reading) to the cloud. True when `jevLocal` is set to any
+   * non-empty value (`--ps jevLocal 1`, or the Settings page's "On-device
+   * decisions" switch, which stores '1' / ''). With no on-device model
+   * registered the route falls back to the cloud, so the flag alone is a no-op.
+   */
+  useJevLocal(): boolean { return this.getJevLocal().length > 0 }
 
   setApiKey(key: string): void {
     this.apiKey = key.trim()
