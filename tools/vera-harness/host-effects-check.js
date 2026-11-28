@@ -99,7 +99,7 @@ class DebounceOffAppActor extends RealAppActor { constructor(...args) { super(..
 const { InProcessHost } = runtime('InProcessHost')
 const { HostEffectsBridge } = runtime('HostEffectsBridge')
 const { StageTrace } = runtime('trace/StageTrace')
-const { EffectController, executeEffect, effectValues, effectConsentKey, effectConsentTitle, effectConsentValues, MAX_HELD_EFFECTS } = runtime('EffectController')
+const { EffectController, executeEffect, effectValues, effectConsentKey, effectConsentTitle, effectConsentValues, MAX_HELD_EFFECTS, MAX_ACTIVE_EFFECTS } = runtime('EffectController')
 const { compileVeraSource } = vera('VeraCompiler')
 const { veraStateStamp } = vera('VeraStateStamp')
 const { store } = vera('ProjectStore')
@@ -130,6 +130,14 @@ function fire(state: AppState, value: number): AppState {
 }
 function sdkFire(state: AppState, value: number): AppState {
   ${effectCode('sdk', sdkTarget)}
+  return state;
+}
+function flood(state: AppState, value: number): AppState {
+  let i: number = 0;
+  while (i < 20) {
+    ${effectCode('flood')}
+    i = i + 1;
+  }
   return state;
 }
 function foreground(state: AppState, value: number): AppState {
@@ -524,6 +532,36 @@ test('effect bound is enforced at enqueue: overflow is answered immediately and 
   await microtasks()
   assert.equal(calls.length, MAX_HELD_EFFECTS)
 })
+
+test('active platform calls are bounded independently of the held queue', async () => {
+  const p = controller()
+  grants.set('version-a', '*')
+  platform = () => new Promise(() => {})
+  const flood = Array.from({ length: MAX_HELD_EFFECTS + 10 }, (_, i) => request(i + 1))
+  p.controller.accept(flood)
+  await microtasks()
+  assert.equal(calls.length, MAX_ACTIVE_EFFECTS, 'only the active window reaches the platform')
+  assert.equal(p.controller.executing.size, MAX_ACTIVE_EFFECTS)
+  assert.ok(p.controller.outstanding() <= MAX_HELD_EFFECTS, 'held + active + pending stays bounded')
+  assert.equal(p.completed.length, 10, 'work past the outstanding bound is answered, not dropped silently')
+  p.controller.invalidate()
+})
+
+for (const askBeforeCalls of [false, true]) {
+  test('full host bounds active calls for ' + (askBeforeCalls ? 'previously granted ASK' : 'ALLOW') + ' effects', async () => {
+    const p = harness({ askBeforeCalls })
+    if (askBeforeCalls) { grants.set(programs.basic.vbc2, '*') }
+    await p.acquire()
+    platform = () => new Promise(() => {})
+    p.post('flood')
+    await microtasks()
+    assert.equal(calls.length, MAX_ACTIVE_EFFECTS, 'only the bounded active window reaches adapters')
+    assert.equal(p.effects.length, 20, 'the VM emitted the full handler batch')
+    p.bridge.invalidate()
+    await microtasks()
+    assert.equal(calls.length, MAX_ACTIVE_EFFECTS, 'nothing queued can start after invalidation')
+  })
+}
 
 test('a phone action that never answers is reported as timed out and does not block the queue', async () => {
   const p = controller({ effectTimeoutMs: 100 })

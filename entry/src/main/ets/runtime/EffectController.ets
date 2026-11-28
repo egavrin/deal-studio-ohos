@@ -5,8 +5,10 @@ import { runRawIntent } from '../vera/VeraIntents'
 import { runSdkAdapter, isSdkTargetImplemented } from '../vera/VeraSdkBackend'
 import { POLICY_ALLOW, POLICY_DENY, consentKeyFor, intentTargetPolicy, sdkTargetPolicy } from '../vera/VeraRuntimePolicy'
 
-/** At most this many effects wait behind the one being run or the one being asked about. */
+/** At most this many effects wait behind the ones being run or the one being asked about. */
 export const MAX_HELD_EFFECTS: number = 32
+/** At most this many platform calls are in flight at once. */
+export const MAX_ACTIVE_EFFECTS: number = 4
 /** A phone action that has not answered by then is reported as timed out; it is not cancelled. */
 export const EFFECT_TIMEOUT_MS: number = 30000
 /** The sdk target name for a still capture from the in-app live preview. */
@@ -111,11 +113,12 @@ export class EffectController {
       // The bound is enforced where the effects enter, not after the program
       // has already allocated them: a program that queues a hundred calls in
       // one handler is not given a hundred simultaneous platform requests.
+      // Held effects, active effects and the one being asked about all count.
       // The ones past the bound are answered immediately, so their handlers
       // are not left waiting silently -- and the answer travels the ordinary
       // result path (admission-controlled, asynchronous), so a handler that
       // retries cannot monopolize the host synchronously.
-      if (this.heldEffects.length - this.heldIndex >= MAX_HELD_EFFECTS) {
+      if (this.outstanding() >= MAX_HELD_EFFECTS) {
         let overflow = new EffectWork(effect, epoch,
           this.options.generation === undefined ? effect.vmGeneration : generation, stamp)
         this.deliver(overflow, 'error: too many phone actions at once', 'OVERFLOW')
@@ -263,11 +266,17 @@ export class EffectController {
       resultHandler: work.effect.resultHandler, generation: work.generation, outcome: outcome })
   }
 
+  /** Effects already held, running or waiting for consent. */
+  private outstanding(): number {
+    return (this.heldEffects.length - this.heldIndex) + this.executing.size + (this.pending === null ? 0 : 1)
+  }
+
   private runQueued(): void {
     if (this.draining) { return }
     this.draining = true
     try {
-      while (this.heldIndex < this.heldEffects.length && this.pending === null) {
+      while (this.heldIndex < this.heldEffects.length && this.pending === null &&
+          this.executing.size < MAX_ACTIVE_EFFECTS) {
         let work = this.heldEffects[this.heldIndex]
         this.heldIndex++
         if (!this.current(work)) { this.discard(work); continue }
@@ -323,6 +332,12 @@ export class EffectController {
       let message = e !== null && e !== undefined && e.message !== undefined ? e.message : String(e)
       this.deliver(work, 'error: ' + message, 'ERROR')
     }).catch((e: Error): void => { this.fail(work, e) })
-      .finally((): void => { if (timer >= 0) { clearTimeout(timer) }; this.executing.delete(work) })
+      .finally((): void => {
+        if (timer >= 0) { clearTimeout(timer) }
+        this.executing.delete(work)
+        // The next queued effect starts only after one of the bounded active
+        // slots is free; this is what turns a flood into a queue.
+        if (!this.draining) { this.runQueued() }
+      })
   }
 }

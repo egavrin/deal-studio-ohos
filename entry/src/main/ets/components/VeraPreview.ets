@@ -3299,7 +3299,14 @@ export struct VeraPreview {
       this.effectsBridge = new HostEffectsBridge(host, {
         askBeforeCalls: ASK_BEFORE_CALLS,
         traceOwner: this.traceOwner,
-        onPending: (effect: EffectRequest | null): void => { if (!this.disposed) { this.pending = effect } },
+        onPending: (effect: EffectRequest | null): void => {
+          if (!this.disposed) {
+            this.pending = effect
+            // A bridge-owned pending effect is never the renderer's shutter;
+            // clear any stale shutter ownership so Allow/Refuse delegate to it.
+            if (effect !== null) { this.pendingCameraNode = null }
+          }
+        },
         flushPendingInputFor: (appId: string): Promise<void> => this.flushPendingInputFor(appId),
         captureValidity: (effect: EffectRequest): (() => boolean) => {
           let next = this.captureFieldAction(effect.resultHandler, stringPayload(''))
@@ -3334,17 +3341,16 @@ export struct VeraPreview {
     let effect = this.pending
     // The in-app camera shutter asks through the same sheet a program's
     // sdk.call sees; its Allow is answered here because a person's tap has no
-    // bridge binding -- there is no VM awaiting a posted result.
-    if (effect !== null && effect.rawTarget === CAMERA_CAPTURE_TARGET) {
+    // bridge binding -- there is no VM awaiting a posted result. Ownership is
+    // the pending shutter node, not the target string: a program may call the
+    // same target through sdk.call and must delegate to the bridge.
+    let shutter = this.pendingCameraNode
+    if (effect !== null && shutter !== null) {
       this.pending = null
-      console.info('VERA-CONSENT allowed ' + this.consentTarget(effect))
-      // Remembered, so the same program asking the same thing again is not a
-      // question the person has to answer twice: program (stateDigest),
-      // target and the empty parameter set the shutter supplies.
-      consent.remember(stateDigest(this.vbc2), consentKeyFor(CAMERA_CAPTURE_TARGET, '', new Map<string, string>()))
-      let node = this.pendingCameraNode
       this.pendingCameraNode = null
-      if (node !== null) { this.runCameraCapture(node) }
+      console.info('VERA-CONSENT allowed ' + this.consentTarget(effect))
+      consent.remember(stateDigest(this.vbc2), consentKeyFor(CAMERA_CAPTURE_TARGET, '', new Map<string, string>()))
+      this.runCameraCapture(shutter)
       return
     }
     if (this.effectsBridge === null) { return }
@@ -3354,10 +3360,11 @@ export struct VeraPreview {
   private refusePending(): void {
     if (this.disposed) { return }
     let effect = this.pending
-    if (effect !== null && effect.rawTarget === CAMERA_CAPTURE_TARGET) {
-      // A refused capture adds no photo and tells no handler: the shutter was
-      // a person's tap, not a program awaiting an answer, so leaving the list
-      // as it was is the honest result. The preview stays ready for the next.
+    let shutter = this.pendingCameraNode
+    if (effect !== null && shutter !== null) {
+      // A refused shutter adds no photo and tells no handler: it was a
+      // person's tap, not a program awaiting an answer. A VM-originated
+      // capture has no pending shutter node and is delegated to the bridge.
       this.pending = null
       this.pendingCameraNode = null
       console.info('VERA-CONSENT refused ' + this.consentTarget(effect))

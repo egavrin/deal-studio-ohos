@@ -447,6 +447,9 @@ function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
   }
 }
 
+/** At most this many effects may be queued by one handler before it traps. */
+export const MAX_PENDING_EFFECTS: number = 32
+
 /**
  * One sdk.call the program asked for, waiting to be run.
  *
@@ -1040,6 +1043,9 @@ export class UiHostEnvironment extends HostEnvironment {
     let mode = args.length > 3 ? asString(args[3]) : 'background'
     let id = this.nextEffectId
     this.nextEffectId = id + 1
+    if (this.pendingEffects.length >= MAX_PENDING_EFFECTS) {
+      throw new RuntimeTrap('R0032', 'too many phone actions queued (limit ' + MAX_PENDING_EFFECTS.toString() + ')')
+    }
     let effect = new HostEffect(id, 'sdk', 'call', values, asString(args[2]))
     effect.rawTarget = target
     effect.rawParams = order.join(' ')

@@ -398,7 +398,12 @@ async function rejects(value, code) {
   return result.error
 }
 async function acquire(h, p, program = programs.basic, config = options(), id = '') {
-  return finish(h.acquire(id, program, config, p.subscriber))
+  const handle = await finish(h.acquire(id, program, config, p.subscriber))
+  // These are the pre-debounce lifecycle scenarios; keep their immediate-save
+  // assertions. The trailing-save/debounce contract is covered by app-actor-check.
+  const record = h.registry.get(handle.appId)
+  if (record && record.actor) { record.actor.saveDebounceMs = 0 }
+  return handle
 }
 const payload = (kind = 'NUMBER', num = 0, extra = {}) => ({ kind, num, str: '', bool: false, phase: 'move', id: 0, x: 0, y: 0, ...extra })
 function input(handle, action = 'add', value = 0, extra = {}) {
@@ -755,7 +760,7 @@ test('release waits for queued and coalesced work, then one final save; closing 
   assert.equal(count('save'), 2)
 })
 
-test('first release policy wins and releasing one lease keeps other-lease work live', async () => {
+test('first release wins, flushes deferred state, and keeps other-lease work live', async () => {
   const h = host(), p = probe(), a = await acquire(h, p, programs.basic, persistent())
   const b = await acquire(h, p, programs.basic, persistent(), a.appId)
   let release, after, sawFinalSave = false
@@ -768,9 +773,11 @@ test('first release policy wins and releasing one lease keeps other-lease work l
     after = watch(h.requestSnapshot(b))
   })
   await finish(release)
-  assert.equal(count('save'), 0)
+  // The first release flushes deferred state (the new trailing-save contract),
+  // even though its saveState option was false; the second release is a no-op.
+  assert.equal(count('save'), 1)
   assert.equal(stateOf(await finish(after)).n, 6)
-  p.frameHook = () => { sawFinalSave = count('save') > 0; p.frameHook = null }
+  p.frameHook = () => { sawFinalSave = count('save') > 1; p.frameHook = null }
   accepted(post(h, b, 'add', 4))
   assert.equal(sawFinalSave, false)
   rejected(post(h, a))
@@ -967,14 +974,16 @@ for (const mode of ['PREVIEW', 'LIVE_EPHEMERAL']) {
 }
 
 for (const runExpiryTimer of [true, false]) {
-  test('5-second idle expiry destroys unsaved state, timer executed=' + runExpiryTimer, async () => {
+  test('5-second idle expiry reloads state flushed by release, timer executed=' + runExpiryTimer, async () => {
     const h = host(), p = probe(), a = await acquire(h, p, programs.basic, persistent())
     accepted(post(h, a, 'add', 8))
     await finish(h.release(a))
     if (runExpiryTimer) advance(5000)
     else now += 5000
     const b = await acquire(h, p, programs.basic, persistent(), a.appId)
-    assert.equal((await snapshot(h, b)).n, 1)
+    // Release flushes the actor's deferred write (the new trailing-save
+    // contract), so the idle-expiry path reloads the flushed state.
+    assert.equal((await snapshot(h, b)).n, 9)
     rejected(post(h, a))
   })
 }
@@ -1798,7 +1807,8 @@ test('dispose cancels idle destruction callback and old handles cannot reach a f
   const freshHost = host(), q = probe(), b = await acquire(freshHost, q, programs.basic, persistent())
   for (const callback of callbacks) callback()
   rejected(post(freshHost, a, 'add', 100))
-  assert.equal((await snapshot(freshHost, b)).n, 1)
+  // Release flushed the value before the idle-expiry callback was cancelled.
+  assert.equal((await snapshot(freshHost, b)).n, 3)
 })
 
 for (const eventType of ['view', 'draw', 'move', 'surface']) {

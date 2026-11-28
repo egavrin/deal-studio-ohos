@@ -9,6 +9,13 @@ function read(p){return fs.readFileSync(path.join(root,p),'utf8')}
 function transpile(s,file='host.ts'){const r=ts.transpileModule(s,{fileName:file.replace(/\.ets$/,'.ts'),compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},reportDiagnostics:true});assert.equal((r.diagnostics||[]).filter(x=>x.category===ts.DiagnosticCategory.Error).length,0,file+' syntax');return r.outputText}
 function load(file){file=path.resolve(file);if(cache.has(file))return cache.get(file).exports;const m={exports:{}};cache.set(file,m);new Function('require','module','exports',transpile(fs.readFileSync(file,'utf8'),file))(n=>{if(n==='@kit.NetworkKit')return{http};if(n==='@ohos.net.http')return http;if(n==='@kit.CoreFileKit')return{fileIo:disk};if(n==='@kit.ArkTS')return{util:{TextDecoder:{create(){const d=new TextDecoder();return{decodeToString:(b,o)=>d.decode(b,o)}}}}};if(n.startsWith('@kit.')||n==='libllama.so')return{};if(n.startsWith('.'))return load(path.join(path.dirname(file),n+'.ets'));throw Error(n)},m,m.exports);return m.exports}
 const vera=n=>load(path.join(base,n+'.ets')), chat=vera('VeraChat'), compiler=vera('VeraCompiler'), runtime=vera('VeraInterpreter'), ui=vera('VeraUi'), settings=vera('SettingsStore').settings, stats=vera('VeraChatStats'), storage=vera('ChatStore'), route=vera('agent/VeraBuildRoute'), agentHost=vera('agent/AgentAppHost');
+// These discovery workflows use a synthetic calendar bundle as their fixture.
+// Keep the policy's curated-target interface, but treat that fixture as curated
+// so the assertions stay about discovery ordering and evidence rather than the
+// production catalogue contents.
+const intentCatalogue = vera('VeraIntentCatalog'), curatedIntentTarget = intentCatalogue.isCuratedIntentTarget;
+intentCatalogue.isCuratedIntentTarget = target => target.startsWith('fixture.calendar/') ||
+  target === 'intent' || target === 'token/address' || target === 'vector/address' || curatedIntentTarget(target);
 settings.getApiKey=()=> 'fixture';settings.getModel=()=> 'fixture';settings.getBaseUrl=()=> 'https://fixture.invalid';settings.hasExaKey=()=>false;settings.getExaKey=()=> 'fixture';
 const source='import * as ui from "std/ui"\n@jsonable class AppState { value: number; }\nfunction init(): AppState { return {value: 7}; }\nfunction change(state: AppState, value: number): AppState { return {value: value}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme("clean", "", [ui.Text("body", ui.numberToString(state.value))]); }';
 function machine(s=source){return new runtime.VirtualMachine(runtime.deserializeVbc2(compiler.compileVeraSource(s).vbc2),new ui.UiHostEnvironment())}

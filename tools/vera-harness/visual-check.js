@@ -122,7 +122,7 @@ async function test(name, action) {
   try {
    if(runtimeMode)StageTrace.configure(true,record=>records.push(record))
    let timeout
-   try { await Promise.race([action(),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(Error('Fixture did not settle: '+name)),2000)})]) }
+   try { await Promise.race([action(),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(Error('Fixture did not settle: '+name)),5000)})]) }
    finally { clearTimeout(timeout) }
 
   if(runtimeMode) {

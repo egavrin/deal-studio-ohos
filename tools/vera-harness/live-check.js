@@ -69,7 +69,7 @@ globalThis.__sdkTargetHook = () => false
   let searches = []
   search.webSearchHits = async q => { searches.push(q); return {hits: HITS, error: ''} }
   const model = reply => { globalThis.__veraHttp = () => ({on() {}, destroy() {}, request: async () => ({responseCode: 200, result: JSON.stringify({choices: [{message: {content: reply}}]})})}) }
-  const fresh = async p => { live.resetLiveAnswers(); return live.liveFetch(p) }
+  const fresh = async p => { live.resetLiveAnswers(); live.resetLiveRate(); return live.liveFetch(p) }
   const params = new Map([['query', 'usd rub today'], ['labels', 'USD/RUB||']])
   model('1|1|92,45')
   let answer = await fresh(params)
@@ -92,7 +92,7 @@ globalThis.__sdkTargetHook = () => false
   assert.match(await fresh(params), /^error: no model key/)
   // The same query and labels asked again within LIVE_REUSE_MS are answered from what was read: no second search, no second model call.
   settings.hasExaKey = () => true; settings.hasApiKey = () => true
-  live.resetLiveAnswers(); searches = []
+  live.resetLiveAnswers(); live.resetLiveRate(); searches = []
   let modelCalls = 0
   search.webSearchHits = async q => { searches.push(q); return {hits: HITS, error: ''} }
   globalThis.__veraHttp = () => ({on() {}, destroy() {}, request: async () => { modelCalls++; return {responseCode: 200, result: JSON.stringify({choices: [{message: {content: '1|1|92,45'}}]})} }})
@@ -101,7 +101,7 @@ globalThis.__sdkTargetHook = () => false
   await live.liveFetch(new Map([['query', 'usd rub today'], ['labels', 'EUR/RUB||']]))
   assert.equal(searches.length, 2, 'other labels are another question')
   // An error is not kept: it is tried again.
-  live.resetLiveAnswers(); searches = []
+  live.resetLiveAnswers(); live.resetLiveRate(); searches = []
   search.webSearchHits = async q => { searches.push(q); return {hits: [], error: 'no results'} }
   await live.liveFetch(params); await live.liveFetch(params)
   assert.equal(searches.length, 2, 'an error is asked again')
