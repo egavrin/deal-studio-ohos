@@ -468,7 +468,7 @@ calibration (T\*=2.2, min_confidence 0.71) fitted from the recorded device run
 `local_jev_predict` runs the batched scorer through it: a real generation logged
 `local answered 8/16` with the cloud covering the rest (per-question fallback,
 `unansweredJevBody`), compiled and rendered. `expr`/`show` are cloud-tier prefixes outright
-(the fair-measurement report), and the Settings page has an "On-device decisions" switch.
+(the fair-measurement report), and the Settings page has an "On-device decision model" switch.
 Build/deploy and the current serving state: `build.md`; the fair local-vs-cloud
 measurement: `cpu-vs-cloud.md`; the host eval: `host-eval.md`. Still open: the at-scale
 per-type calibration refit (§5.A — the fit so far is in-sample, n≈109), `selectEdit` is not

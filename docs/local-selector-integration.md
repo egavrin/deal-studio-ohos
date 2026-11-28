@@ -99,14 +99,24 @@ hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps localJev 1
 hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps localJev 0
 ```
 
-The phone's **Settings > Jev selector** now offers **TypeSafe**, **LLM approximation**
-(configured cloud model through JevProxy), and **Local experimental** (embedded model).
-This explicit choice persists across restarts and applies to generation and structural
-edits. The page shows missing credentials and local loading/readiness; the local option
-is labeled uncalibrated. Generation-provider settings are separate. There is no automatic
-selector-provider fallback. Older saved `jevProxy` settings migrate to LLM approximation;
-otherwise TypeSafe remains the default. Existing launch parameters still work, but only
-from trusted native callers; another app cannot change the selection through them.
+The phone's **Settings > Jev decisions** separates the two local features:
+
+- **On-device decision model** — the Laya hybrid route (`--ps jevLocal 1`, `0` turns it
+  off). When on, simple/confident decisions run on the phone; code reading and the
+  decisions it declines use the answer source below.
+- **Answers from** — **TypeSafe Jev** (hosted API), **Cloud model** (the configured
+  model through JevProxy, approximating Jev), or **On-device selector** (the embedded
+  shared-state Q8 model, experimental and uncalibrated). This is the source for every
+  decision when the decision model is off, and for the declined/hard half when it is on;
+  the on-device selector is not offered together with the decision model because it
+  cannot supply the cloud half.
+
+The choice persists across restarts and applies to generation and structural edits. The
+page shows missing credentials and local loading/readiness; generation-provider settings
+are separate. There is no automatic selector-provider fallback. Older saved `jevProxy`
+settings migrate to Cloud model; otherwise TypeSafe remains the default. Existing launch
+parameters still work, but only from trusted native callers; another app cannot change
+the selection through them.
 The selected local model is prepared asynchronously at startup or when chosen.
 Generate and Settings show the experimental status. Local unavailability blocks
 generation rather than silently bypassing selection.

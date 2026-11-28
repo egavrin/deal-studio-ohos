@@ -325,21 +325,31 @@ export class SettingsStore {
     return this.jevLocal
   }
 
-  hasJevLocal(): boolean { return this.getJevLocal().length > 0 }
+  hasJevLocal(): boolean { return this.useJevLocal() }
 
-  setJevLocal(url: string): void {
+  /**
+   * Stores the on-device decision setting. '0', 'off' and 'false' mean off, so
+   * a launch parameter can turn the route off as well as on; an http(s) URL is
+   * the debug-only off-phone service, and any other non-empty value selects the
+   * embedded backend.
+   */
+  setJevLocal(value: string): void {
     if (!this.loaded) { this.load() }
-    this.jevLocal = url.trim()
+    let text = value.trim()
+    let lower = text.toLowerCase()
+    this.jevLocal = lower === '0' || lower === 'off' || lower === 'false' ? '' : text
     this.save()
   }
 
+  setJevLocalEnabled(on: boolean): void { this.setJevLocal(on ? '1' : '') }
+
   /**
-   * Whether askJev/selectEdit should use the hybrid local route
-   * (VeraLocalDecision.ets): easy/standard questions to an on-device model, the
-   * hard tier (code reading) to the cloud. True when `jevLocal` is set to any
-   * non-empty value (`--ps jevLocal 1`, or the Settings page's "On-device
-   * decisions" switch, which stores '1' / ''). With no on-device model
-   * registered the route falls back to the cloud, so the flag alone is a no-op.
+   * Whether askJev/selectEdit use the hybrid local route
+   * (VeraLocalDecision.ets): simple, confident decisions go to the embedded
+   * Laya model; code reading and the questions it declines go to the selected
+   * Jev answer source. Off by default; `--ps jevLocal 1` or the Settings
+   * switch turns it on. With no embedded model registered the route falls
+   * back to the source for everything.
    */
   useJevLocal(): boolean { return this.getJevLocal().length > 0 }
 

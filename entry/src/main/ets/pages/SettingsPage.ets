@@ -8,9 +8,9 @@ import { AppRouteParams } from '../vera/AppNavigation'
 import { app, TonalButton, QuietButton } from '../components/AppStyle'
 
 /**
- * The connection, from any screen's gear (SettingsEntry.ets): how apps are generated, the cloud model, the selector
- * (its proxy and the on-device decision model), and the USB network. Everything here is kept in SettingsStore or
- * asked of the system, so a screen under it reads it again when it is shown; nothing is handed back.
+ * The connection, from any screen's gear (SettingsEntry.ets): how apps are generated, the cloud model, Jev decisions
+ * (the hybrid on-device model and the answer source for the rest), and the USB network. Everything here is kept in
+ * SettingsStore or asked of the system, so a screen under it reads it again when it is shown; nothing is handed back.
  */
 
 @Component
@@ -22,6 +22,8 @@ export struct SettingsPage {
   @State model: string = ''
   @State selector: string = SELECTOR_TYPESAFE
   @State localSelectorNote: string = ''
+  @State localDecisionsOn: boolean = false
+  @State sourceAdjusted: boolean = false
   @State usbNetStatus: string = 'off'
   private filesDir: string = ''
   private usbNetTimer: number = -1
@@ -39,8 +41,17 @@ export struct SettingsPage {
   private reload(): void {
     this.mode = settings.getMode()
     this.model = settings.getModel()
+    this.localDecisionsOn = settings.useJevLocal()
+    // The hybrid route needs a cloud source for code reading and for the
+    // decisions the phone declines; the experimental on-device selector is a
+    // different model and cannot serve that half.
+    this.sourceAdjusted = false
+    if (this.localDecisionsOn && settings.useLocalSelector()) {
+      settings.setSelectorMode(settings.hasApiKey() ? SELECTOR_LLM : SELECTOR_TYPESAFE)
+      this.sourceAdjusted = true
+    }
     this.selector = settings.getSelectorMode()
-    this.localSelectorNote = settings.useLocalSelector() ? 'Local experimental: ' + localJev.statusNote() : ''
+    this.localSelectorNote = settings.useLocalSelector() ? localJev.statusNote() : ''
     this.usbNetStatus = readUsbNetStatus(this.filesDir)
   }
 
@@ -50,7 +61,7 @@ export struct SettingsPage {
     this.usbNetStatus = readUsbNetStatus(this.filesDir)
     this.usbNetTimer = setInterval(() => {
       this.usbNetStatus = readUsbNetStatus(this.filesDir)
-      this.localSelectorNote = settings.useLocalSelector() ? 'Local experimental: ' + localJev.statusNote() : ''
+      this.localSelectorNote = settings.useLocalSelector() ? localJev.statusNote() : ''
     }, 1000)
   }
 
@@ -75,23 +86,67 @@ export struct SettingsPage {
   private pickSelector(mode: string): void {
     settings.setSelectorMode(mode)
     this.selector = settings.getSelectorMode()
+    this.sourceAdjusted = false
     if (mode === SELECTOR_LOCAL) { localJev.prepare() }
-    this.localSelectorNote = settings.useLocalSelector() ? 'Local experimental: ' + localJev.statusNote() : ''
+    this.localSelectorNote = settings.useLocalSelector() ? localJev.statusNote() : ''
+  }
+
+  /** The answer sources that make sense with the on-device decision model. */
+  private selectorChoices(): string[] {
+    return this.localDecisionsOn ? [SELECTOR_TYPESAFE, SELECTOR_LLM] :
+      [SELECTOR_TYPESAFE, SELECTOR_LLM, SELECTOR_LOCAL]
+  }
+
+  private toggleLocalDecisions(): void {
+    let on = !this.localDecisionsOn
+    settings.setJevLocalEnabled(on)
+    this.localDecisionsOn = settings.useJevLocal()
+    if (on && settings.useLocalSelector()) {
+      settings.setSelectorMode(settings.hasApiKey() ? SELECTOR_LLM : SELECTOR_TYPESAFE)
+      this.selector = settings.getSelectorMode()
+      this.sourceAdjusted = true
+    }
+  }
+
+  /** What the decision-model switch does, in one line that follows it. */
+  private localDecisionLine(): string {
+    return this.localDecisionsOn
+      ? 'Laya on the phone: simple, confident decisions; the source below answers the rest'
+      : 'Off: every Jev decision uses the answer source below'
+  }
+
+  /** What the answer sources are used for under the current switch. */
+  private sourceLine(): string {
+    return this.localDecisionsOn ? 'Answers from (for code reading and the decisions the phone declines)' :
+      'Answers from (every Jev decision)'
+  }
+
+  /** The selected source cannot answer the hybrid route's cloud half, or ''. */
+  private sourceMissing(): string {
+    if (!this.localDecisionsOn) { return '' }
+    if (this.selector === SELECTOR_TYPESAFE && !settings.hasSelectorKey()) {
+      return 'TypeSafe Jev has no key, so the cloud half would be empty. Choose Cloud model or add --ps typesafeKey <key>.'
+    }
+    if (this.selector === SELECTOR_LLM && !settings.hasApiKey()) {
+      return 'The cloud model has no key, so the cloud half would be empty. Add --ps cloudKey <key>.'
+    }
+    return ''
   }
 
   private selectorTitle(mode: string): string {
-    if (mode === SELECTOR_TYPESAFE) { return 'TypeSafe' }
-    return mode === SELECTOR_LLM ? 'LLM approximation' : 'Local experimental'
+    if (mode === SELECTOR_TYPESAFE) { return 'TypeSafe Jev' }
+    return mode === SELECTOR_LLM ? 'Cloud model' : 'On-device selector'
   }
 
   private selectorDetail(mode: string): string {
     if (mode === SELECTOR_TYPESAFE) {
-      return settings.hasSelectorKey() ? 'TypeSafe API · key configured' : 'Missing TypeSafe key (--ps typesafeKey <key>)'
+      return 'Hosted Jev API' + (settings.hasSelectorKey() ? ' · key configured' : ' · missing key (--ps typesafeKey <key>)')
     }
     if (mode === SELECTOR_LLM) {
-      return settings.hasApiKey() ? 'Cloud model · ' + this.model : 'Missing cloud key (--ps cloudKey <key>)'
+      return settings.hasApiKey() ? this.model + ' · approximates Jev' : 'Missing cloud key (--ps cloudKey <key>)'
     }
-    return 'Embedded model · ' + (this.localSelectorNote.length > 0 ? this.localSelectorNote : localJev.statusNote())
+    let note = this.localSelectorNote.length > 0 ? this.localSelectorNote : localJev.statusNote()
+    return 'Shared-state Q8 · experimental · ' + note
   }
 
   private async toggleUsbNet(): Promise<void> {
@@ -109,7 +164,7 @@ export struct SettingsPage {
 
   private modeTitle(mode: string): string {
     if (mode === MODE_DEEPSEEK) { return settings.providerLabel() }
-    return mode === MODE_SERVER ? 'Server' : 'On the phone'
+    return mode === MODE_SERVER ? 'Server' : 'Phone model'
   }
 
   private modeDetail(mode: string): string {
@@ -177,16 +232,30 @@ export struct SettingsPage {
             .width('100%')
           }
 
-          this.section('Jev selector')
+          this.section('Jev decisions')
           Column() {
-            ForEach([SELECTOR_TYPESAFE, SELECTOR_LLM, SELECTOR_LOCAL], (mode: string, index: number) => {
+            this.localDecisionRow()
+            Divider().color(app.secondaryFill).margin({ left: 14, right: 14 })
+            Text(this.sourceLine())
+              .fontSize(12).fontColor(app.inkMuted).width('100%')
+              .padding({ left: 14, right: 14, top: 10, bottom: 4 })
+            ForEach(this.selectorChoices(), (mode: string, index: number) => {
               if (index > 0) { Divider().color(app.secondaryFill).margin({ left: 44 }) }
               this.selectorRow(mode)
             }, (mode: string) => mode)
           }
           .width('100%').backgroundColor(app.surface).borderRadius(14)
-          Text('Used for generation and structural edits. Saved across restarts. No automatic selector fallback.')
+          Text(this.localDecisionsOn
+            ? 'Simple decisions run on the phone; the source above answers code reading and anything the phone is unsure about. Turn this off to use the experimental on-device selector. Saved across restarts.'
+            : 'Every Jev decision uses the source above. Saved across restarts; there is no automatic fallback between sources.')
             .fontSize(12).fontColor(app.inkMuted).width('100%')
+          if (this.sourceAdjusted) {
+            Text('The experimental on-device selector was switched off: the decision model needs a cloud source for the half it declines.')
+              .fontSize(12).fontColor(app.warningInk).width('100%')
+          }
+          if (this.sourceMissing().length > 0) {
+            Text(this.sourceMissing()).fontSize(12).fontColor(app.warningInk).width('100%')
+          }
           if (this.selector === SELECTOR_LOCAL) {
             Text('Experimental and uncalibrated. Planning and code generation still use the cloud.')
               .fontSize(12).fontColor(app.warningInk).width('100%')
@@ -263,6 +332,28 @@ export struct SettingsPage {
     }
     .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
     .onClick(() => { this.pickSelector(mode) })
+  }
+
+  /**
+   * The hybrid decision model's switch, above the answer source. Like the USB
+   * switch it reads the tracked state here rather than taking it as a builder
+   * argument, so a flip redraws the row.
+   */
+  @Builder
+  localDecisionRow() {
+    Row({ space: 12 }) {
+      Column({ space: 2 }) {
+        Text('On-device decision model').fontSize(16).fontColor(app.inkStrong)
+        Text(this.localDecisionLine()).fontSize(12).fontColor(app.inkMuted)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      Toggle({ type: ToggleType.Switch, isOn: this.localDecisionsOn })
+        .hitTestBehavior(HitTestMode.None)
+    }
+    .width('100%')
+    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .onClick(() => { this.toggleLocalDecisions() })
   }
 
   /**

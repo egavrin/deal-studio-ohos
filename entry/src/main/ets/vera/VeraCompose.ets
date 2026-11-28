@@ -4753,8 +4753,8 @@ export class ComposeResult {
 /**
  * The cloud decision path: the shared selector transport (VeraSelector), which
  * chooses TypeSafe, the in-process cloud proxy or the local experimental
- * selector and records the call. Every Jev question the local decision model
- * does not answer ends here.
+ * selector and records the call. `cloudOnly` excludes the local selector: the
+ * hybrid route needs a cloud source for the half its own model declines.
  */
 async function askJevCloud(body: string, apiKey: string, cancellation?: OperationCancellation,
     cloudOnly: boolean = false): Promise<string> {
@@ -4776,11 +4776,11 @@ function jevAnswerCount(reply: string): number {
 /**
  * The hybrid local route. Hard-tier questions (code reading: verify/claims, keyed
  * "does.N"; and the formula/anatomy picks "expr.N"/"show.N" the calibration data
- * says a small model gets wrong) go to the cloud; the rest go to the on-device
- * decision model when one is loaded. The body is split by key, each half
- * answered, and the answers merged (VeraLocalDecision.ets). With no on-device
- * model registered the whole thing is one cloud call -- identical to the cloud
- * path -- so turning the flag on before a model exists changes nothing.
+ * says a small model gets wrong) go to the selected cloud answer source; the rest
+ * go to the on-device decision model when one is loaded. The body is split by key,
+ * each half answered, and the answers merged (VeraLocalDecision.ets). With no
+ * on-device model registered the whole thing is one cloud call -- identical to
+ * the cloud path -- so turning the flag on before a model exists changes nothing.
  */
 async function askJevViaLocal(body: string, apiKey: string, cancellation?: OperationCancellation): Promise<string> {
   throwIfCancelled(cancellation)
@@ -4831,8 +4831,8 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
 
 export async function askJev(body: string, apiKey: string, cancellation?: OperationCancellation): Promise<string> {
   throwIfCancelled(cancellation)
-  // The hybrid local route when on; the cloud path otherwise (its two shapes:
-  // the in-process cloud proxy, or the TypeSafe endpoint).
+  // The hybrid local route when on; otherwise every decision uses the selected
+  // answer source (TypeSafe Jev, the cloud model, or the on-device selector).
   if (settings.useJevLocal()) {
     return askJevViaLocal(body, apiKey, cancellation)
   }
