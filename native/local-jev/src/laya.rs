@@ -966,7 +966,19 @@ groups += 1;
             return uncertain("laya_not_human_calibrated");
         };
         match self.batched_scores(body, true, None) {
-            Ok(raw) => crate::decisions(&raw, calibration.temperature, calibration.min_confidence),
+            Ok(raw) => {
+                let mut decided =
+                    crate::decisions(&raw, calibration.temperature, calibration.min_confidence);
+                // The raw per-option logits ride along so a recorded run can be
+                // refitted (temperature, per-type thresholds) without paying a
+                // second forward pass; callers that only read `answers` ignore them.
+                if let (Some(scores), Some(object)) =
+                    (raw.get("scores"), decided.as_object_mut())
+                {
+                    object.insert("scores".to_string(), scores.clone());
+                }
+                decided
+            }
             Err(reason) => uncertain(&reason),
         }
     }

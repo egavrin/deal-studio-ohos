@@ -65,7 +65,7 @@ import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { ToolCall, ToolTotal, toolCalls, resetToolLog, toolTotals, toolMs } from '../vera/ToolLog'
 import { ServiceNote, serviceNotes, resetServiceHealth, describeService, silent, serviceTrouble } from '../vera/ServiceHealth'
 import { Stage, addStage, appMs, yourMs, byWho, WHO_MODEL, WHO_JEV, WHO_SEARCH, WHO_PHONE, WHO_YOU } from '../vera/RunStages'
-import { SelectorCall, selectorCalls, selectorTotals, selectorStages, selectorLabel } from '../vera/SelectorMetrics'
+import { SelectorCall, selectorCalls, selectorTotals, selectorStages, selectorLabel, selectorRecording } from '../vera/SelectorMetrics'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
@@ -727,6 +727,10 @@ export struct GeneratePage {
       rec.selectorHttpRequests = selectors.requests
       rec.localSelectorCalls = selectors.localSelectorCalls
       rec.localDecisionCalls = selectors.localDecisionCalls
+      rec.localDecisionQuestions = selectors.localQuestions
+      rec.localDecisionAnswered = selectors.localAnswered
+      rec.localDecisionTypes = selectors.localTypes
+      rec.recordedBodies = selectorRecording()
       rec.modelCalls = this.runModelCalls + selectors.requests + selectors.localCalls
       rec.inputTokens = run.inputTokens
       rec.cacheHitTokens = run.cacheHitTokens
@@ -2903,11 +2907,29 @@ host.worldGuide = this.worldGuide
       (!call.ok ? ' · ' + call.error : ''))
   }
 
+  /** The on-device served fraction, with its per-type breakdown, or ''. */
+  private localServedLine(): string {
+    let totals = selectorTotals(this.selectorMetrics)
+    if (totals.localQuestions === 0) { return '' }
+    let pct = Math.round(100 * totals.localAnswered / totals.localQuestions)
+    let line = 'On-device served ' + totals.localAnswered.toString() + '/' + totals.localQuestions.toString() +
+      ' questions (' + pct.toString() + '%)'
+    let types = Object.keys(totals.localTypes).sort()
+    for (let key of types) {
+      let pair = totals.localTypes[key]
+      line += ' · ' + key + ' ' + pair[1].toString() + '/' + pair[0].toString()
+    }
+    return line
+  }
+
   @LocalBuilder
   selectorPanel() {
     MetricCard({ title: 'Jev decision calls', value: this.formatMs(selectorTotals(this.selectorMetrics).ms) }) {
       Text('Every source this run used. Rows show each call\'s own time; the headline is wall-clock, so concurrent local and cloud calls are not double-counted. Local inference has no model API charge.')
         .fontSize(11).fontColor(app.inkMuted).width('100%')
+      if (this.localServedLine().length > 0) {
+        Text(this.localServedLine()).fontSize(11).fontColor(app.inkMuted).width('100%')
+      }
       ForEach(this.selectorMetrics, (call: SelectorCall, index: number) => {
         MetricLine({ title: selectorLabel(call.backend), right: this.formatMs(call.ms),
           detail: this.selectorDetail(call), bad: !call.ok })

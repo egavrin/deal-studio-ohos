@@ -42,12 +42,26 @@ const near = (actual, expected) => assert(Math.abs(actual-expected)<1e-12,`${act
   // API cost, and a partial local answer is normal (the cloud fills the rest).
   const hybrid=new OperationController()
   const hc=M.beginSelectorCall('local-decision','laya-multilingual-quantized',body,hybrid)
-  M.finishLocalDecisionCall(hc,1,40,false)
+  const served=JSON.stringify({answers:{part:{choice:'a'}}})
+  M.finishLocalDecisionCall(hc,served,40,false)
   const ht=M.selectorTotals(M.selectorCalls(hybrid))
   assert.equal(ht.calls,1);assert.equal(ht.localCalls,1);assert.equal(ht.localDecisionCalls,1)
   assert.equal(ht.localSelectorCalls,0);assert.equal(ht.requests,0);assert.equal(ht.estimatedUsd,0)
   assert.equal(hc.questions,2);assert.equal(hc.answered,1);assert.equal(hc.ok,true)
   assert.equal(hc.finished,true);assert.equal(hc.ms,40)
+  assert.deepEqual(hc.typeCounts,{part:[1,1],unit:[1,0]},'per-type served counts come from the reply')
+  assert.equal(ht.localQuestions,2);assert.equal(ht.localAnswered,1)
+  assert.deepEqual(ht.localTypes,{part:[1,1],unit:[1,0]})
+  // Dev-only recording keeps the body and reply on the call, and only then.
+  M.setSelectorRecording(true)
+  const recOwner=new OperationController()
+  const rec=M.beginSelectorCall('llm','fixture',body,recOwner)
+  M.finishSelectorCall(rec,served)
+  assert.equal(rec.body,body);assert.equal(rec.reply,served)
+  M.setSelectorRecording(false)
+  const quiet=M.beginSelectorCall('llm','fixture',body)
+  M.finishSelectorCall(quiet,served)
+  assert.equal(quiet.body,'');assert.equal(quiet.reply,'')
   assert.equal(M.selectorLabel('local-decision'),'On-device Jev model (Laya)')
   // A cloud call that overlapped the local forward: shown with its real 10 ms in
   // the detail list, but contributing only its residual to the stage total.

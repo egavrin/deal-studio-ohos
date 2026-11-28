@@ -50,6 +50,13 @@ export class RunLogRecord {
   localSelectorCalls: number = 0
   /** The hybrid Laya decision model's on-device invocations. */
   localDecisionCalls: number = 0
+  /** Questions the local decision model was asked, and how many it served. */
+  localDecisionQuestions: number = 0
+  localDecisionAnswered: number = 0
+  /** Per question-type prefix, [asked, served], over the local decision calls. */
+  localDecisionTypes: Record<string, number[]> = {}
+  /** Present only under dev selector recording: each call's body and reply. */
+  recordedBodies: boolean = false
   selectorCalls: SelectorCall[] = []
   /** Prompt tokens (-1 when the provider did not report usage). */
   inputTokens: number = -1

@@ -27,10 +27,28 @@ export class SelectorCall {
   outputTokens: number = -1
   estimatedUsd: number = -1
   partial: boolean = false
+  /** Per question-type prefix (the key before its first dot), [asked, served];
+   *  filled for local-decision calls, so the served fraction can be read per type. */
+  typeCounts: Record<string, number[]> = {}
+  /** The request body, kept only while selector recording is on. */
+  body: string = ''
+  /** The reply, kept only while selector recording is on. */
+  reply: string = ''
 }
 
 const calls: WeakMap<OperationCancellation, SelectorCall[]> = new WeakMap<OperationCancellation, SelectorCall[]>()
 const questionIds: WeakMap<SelectorCall, string[]> = new WeakMap<SelectorCall, string[]>()
+
+/**
+ * Dev-only selector recording: keeps each call's body and reply so a real
+ * generation can be turned into calibration-refit data (the on-device model's
+ * raw scores next to the answer the selected source gave). Off by default and
+ * set only from a trusted launch parameter; the run log then carries the same
+ * prompt-derived text it already carries in `prompt`.
+ */
+let recording = false
+export function setSelectorRecording(on: boolean): void { recording = on }
+export function selectorRecording(): boolean { return recording }
 
 export function selectorLabel(backend: string): string {
   if (backend === 'local-decision') { return 'On-device Jev model (Laya)' }
@@ -52,6 +70,7 @@ export function beginSelectorCall(backend: string, model: string, body: string,
       questionIds.set(call, ids)
     }
   } catch (_e) {}
+  if (recording) { call.body = body }
   if (backend === 'local-experimental' || backend === 'local-decision') {
     call.inputTokens = 0
     call.cacheHitTokens = 0
@@ -133,6 +152,7 @@ export function selectorUsage(call: SelectorCall, text: string, status: number,
 
 /** Validate only answer presence for accounting, not correctness/confidence. */
 export function finishSelectorCall(call: SelectorCall, reply: string): void {
+  if (recording) { call.reply = reply }
   let ids = questionIds.get(call)
   questionIds.delete(call)
   try {
@@ -158,14 +178,14 @@ export function finishSelectorCall(call: SelectorCall, reply: string): void {
 /**
  * Closes a local Laya inference call. It is a Jev call for the Metrics tab and
  * the run log, but not an HTTP selector request: zero requests, zero tokens and
- * no API charge. `answered` is the number the model served before the cloud
- * fallback; a partial local reply is normal, so it is not marked as an error.
+ * no API charge. The reply is read for the count and the per-type breakdown of
+ * what the model served before the cloud fallback; a partial local reply is
+ * normal, so it is not marked as an error.
  */
-export function finishLocalDecisionCall(call: SelectorCall, answered: number, ms: number,
+export function finishLocalDecisionCall(call: SelectorCall, reply: string, ms: number,
     failed: boolean = false): void {
   call.ms = Math.max(0, ms)
   call.stageMs = Math.max(0, ms)
-  call.answered = Math.max(0, Math.min(answered, call.questions))
   call.requests = 0
   call.inputTokens = 0
   call.cacheHitTokens = 0
@@ -175,6 +195,29 @@ export function finishLocalDecisionCall(call: SelectorCall, answered: number, ms
   call.ok = !failed
   call.error = failed ? 'on-device inference failed' : ''
   call.finished = true
+  if (recording) { call.reply = reply }
+  call.answered = 0
+  let ids = questionIds.get(call)
+  questionIds.delete(call)
+  try {
+    let root = JSON.parse(reply) as Record<string, Object>
+    let answers = root['answers'] as Record<string, Object>
+    if (answers !== undefined && answers !== null && ids !== undefined) {
+      for (let key of ids) {
+        let answer = answers[key] as Record<string, Object>
+        let served = answer !== null && answer !== undefined &&
+          ((typeof answer['choice'] === 'string' && (answer['choice'] as string).length > 0) ||
+          (typeof answer['noul'] === 'number' && Number.isFinite(answer['noul'] as number)))
+        if (served) { call.answered++ }
+        let dot = key.indexOf('.')
+        let type = dot > 0 ? key.substring(0, dot) : key
+        let pair = call.typeCounts[type]
+        if (pair === undefined) { pair = [0, 0]; call.typeCounts[type] = pair }
+        pair[0]++
+        if (served) { pair[1]++ }
+      }
+    }
+  } catch (_e) {}
 }
 
 function stageMsOf(call: SelectorCall): number {
@@ -190,6 +233,11 @@ export class SelectorTotals {
   localSelectorCalls: number = 0
   /** The hybrid Laya decision model only. */
   localDecisionCalls: number = 0
+  /** Questions the local decision model was asked, and how many it served. */
+  localQuestions: number = 0
+  localAnswered: number = 0
+  /** Per question-type prefix, [asked, served], over the local decision calls. */
+  localTypes: Record<string, number[]> = {}
   ms: number = 0
   inputTokens: number = -1
   cacheHitTokens: number = -1
@@ -204,7 +252,19 @@ export function selectorTotals(list: SelectorCall[]): SelectorTotals {
     out.calls++
     out.requests += call.requests
     if (call.backend === 'local-experimental') { out.localCalls++; out.localSelectorCalls++ }
-    if (call.backend === 'local-decision') { out.localCalls++; out.localDecisionCalls++ }
+    if (call.backend === 'local-decision') {
+      out.localCalls++
+      out.localDecisionCalls++
+      out.localQuestions += call.questions
+      out.localAnswered += call.answered
+      for (let key of Object.keys(call.typeCounts)) {
+        let pair = call.typeCounts[key]
+        let total = out.localTypes[key]
+        if (total === undefined) { total = [0, 0]; out.localTypes[key] = total }
+        total[0] += pair[0]
+        total[1] += pair[1]
+      }
+    }
     out.ms += stageMsOf(call)
     out.inputTokens = plus(out.inputTokens, call.inputTokens)
     out.cacheHitTokens = plus(out.cacheHitTokens, call.cacheHitTokens)
@@ -226,8 +286,10 @@ export function selectorStages(stages: Stage[], list: SelectorCall[]): Stage[] {
   for (let backend of backends) {
     let group = list.filter((c: SelectorCall): boolean => c.backend === backend)
     let totals = selectorTotals(group)
-    let note = backend === 'local-decision' ? totals.calls.toString() + ' on-device call(s)' :
-      totals.calls.toString() + ' selector call(s), ' + totals.requests.toString() + ' HTTP request(s)'
+    let note = backend === 'local-decision'
+      ? totals.calls.toString() + ' on-device call(s), ' + totals.localAnswered.toString() + '/' +
+        totals.localQuestions.toString() + ' questions served'
+      : totals.calls.toString() + ' selector call(s), ' + totals.requests.toString() + ' HTTP request(s)'
     let spent = 0
     for (let call of group) { spent += call.ms }
     let overlapped = spent - totals.ms

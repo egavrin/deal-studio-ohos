@@ -25,6 +25,7 @@ const FIRST_APP_UID = 10000
 // the launcher, the widget and shortcuts send those.
 export const DEV_PARAMETER_NAMES: string[] = [
   'deepseekKey', 'typesafeKey', 'exaKey', 'reasoningEffort', 'veraServer', 'localJev',
+  'jevLocal', 'jevLocalLog',
   'probeTarget', 'probeParams', 'probeMode', 'probeSdkTarget', 'probeSdkParams',
   'probeSdkSearch', 'veraBenchmark', 'veraSdkEval', 'veraUiEval', 'veraUiAb',
   'veraCompose', 'veraComposePlan', 'veraCustom', 'veraAlign', 'veraWhole',

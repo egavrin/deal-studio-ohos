@@ -4813,7 +4813,7 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
       easyReply = await model.answer(split.easy, cancellation)
     } catch (e) {
       if (localCall !== null) {
-        finishLocalDecisionCall(localCall, 0, Date.now() - localStarted, true)
+        finishLocalDecisionCall(localCall, easyReply, Date.now() - localStarted, true)
         localClosed = true
       }
       throwIfCancelled(cancellation)
@@ -4825,7 +4825,7 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
     localWallMs = Date.now() - localStarted
     let localAnswers = jevAnswerCount(easyReply)
     if (localCall !== null && !localClosed) {
-      finishLocalDecisionCall(localCall, localAnswers, localWallMs, false)
+      finishLocalDecisionCall(localCall, easyReply, localWallMs, false)
       localClosed = true
     }
     // Observability: without this line the local share of a hybrid run is

@@ -157,7 +157,10 @@ rows name On-device Jev model (Laya), Local Jev selector (experimental), TypeSaf
 Jev or Cloud LLM Jev approximation, show batch wall time, answered/requested
 question counts and actual HTTP attempts (including proxy retries). A hybrid run
 therefore shows the local model's time and the questions it answered, next to the
-cloud calls that answered the rest. A cloud call that ran concurrently with the
+cloud calls that answered the rest, plus the served fraction the calibration
+trusts, broken down per question type (`theme 0/1 · steps 3/3 · …`), in the card
+and in the run log (`localDecisionQuestions`, `localDecisionAnswered`,
+`localDecisionTypes`). A cloud call that ran concurrently with the
 local forward is shown in full in the call rows but contributes only its residual
 to the wall-clock stage total, so the stages still sum to the run's elapsed time.
 Local calls show **$0 API cost** and zero HTTP requests; this does not mean cloud
@@ -176,6 +179,14 @@ the existing official DeepSeek Flash peak/off-peak tariff. Other endpoints, miss
 usage and incomplete attempts remain **unknown/partial**, not free. These are
 published-rate estimates, not invoices. Writer cost is hidden for unpriced models.
 A failed proxy noul request is no longer counted as a confident negative answer.
+
+**Dev-only selector recording** (`--ps jevLocalLog 1`, trusted native callers
+only) keeps each Jev call's body and reply in the run log, and the on-device
+model's reply carries its raw per-option logits, so a recorded generation is
+exactly the calibration-refit datum: the local scores next to the answers the
+selected source gave for the same questions. The recording is off by default;
+recorded text is prompt-derived, like the run log's own `prompt` field, and
+should not be published without review.
 
 ## Verification
 

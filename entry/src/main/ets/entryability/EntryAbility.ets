@@ -13,6 +13,7 @@ import { runProxySpike } from '../vera/ProxySpike'
 import { runFairProxy } from '../vera/FairProxySpike'
 import { NpuNapiLocalDecision } from '../vera/VeraLocalNapi'
 import { setLocalDecisionModel } from '../vera/VeraLocalDecision'
+import { setSelectorRecording } from '../vera/SelectorMetrics'
 import { localJev } from '../vera/LocalJev'
 import { resetLogprobsProbe } from '../vera/JevProxy'
 import { requestCalendarPermissions, requestMicrophonePermission } from '../vera/VeraPermissions'
@@ -130,6 +131,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSelectorKey(want)
     this.extractJevProxy(want)
     this.extractJevLocal(want)
+    this.extractSelectorRecording(want)
     this.extractNpuSpike(want)
     this.extractLocalJevSpike(want)
     this.extractMsNnrtSpike(want)
@@ -529,6 +531,24 @@ export default class EntryAbility extends UIAbility {
     settings.init(this.context.filesDir)
     settings.setJevLocal(text)
     hilog.info(DOMAIN, 'VERA', 'Jev local route flag updated from launch parameter')
+  }
+
+  /**
+   * Dev-only selector recording: `--ps jevLocalLog 1` keeps each Jev call's body
+   * and reply in the run log, so real generations grow the calibration-refit
+   * data (the local model's raw scores next to the answers the selected source
+   * gave). `--ps jevLocalLog 0` turns it back off.
+   */
+  private extractSelectorRecording(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let v = params['jevLocalLog']
+    if (v === null || v === undefined || typeof v !== 'string') { return }
+    let text = (v as string).trim().toLowerCase()
+    if (text.length === 0) { return }
+    let on = !(text === '0' || text === 'off' || text === 'false')
+    setSelectorRecording(on)
+    hilog.info(DOMAIN, 'VERA', 'Selector recording ' + (on ? 'on' : 'off') + ' from launch parameter')
   }
 
   /**
