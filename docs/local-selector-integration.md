@@ -143,6 +143,11 @@ The archive listing includes the HAP and all four notice and license files.
 
 ## Selector metrics
 
+The hybrid route splits an easy half the engine's per-call token budget would
+reject into halves and merges the replies, so a big sketch still gets on-device
+answers instead of silently falling back to the cloud; the rejected attempt
+costs only its tokenization (the budget is checked before any inference).
+
 `SelectorMetrics.ets` records every Jev invocation under its operation owner,
 including initial choice, later verification, structural edits, surface edits,
 widget generation, and the hybrid route's on-device Laya forward (`local-decision`

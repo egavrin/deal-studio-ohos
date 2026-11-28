@@ -103,6 +103,32 @@ assert.deepEqual(Object.keys(both.answers).sort(), ['steps.count', 'theme'])
 assert.equal(both.answers['steps.count'].choice, 'one')
 assert.equal(both.answers['theme'].choice, 'clean')
 
+// Over-budget bodies split in halves: each half keeps the state and the model.
+const big = JSON.stringify({model: 'jev-latest', state: 's', questions: {
+  'theme': {type: 'choice'}, 'a': {type: 'choice'}, 'b': {type: 'choice'}, 'c': {type: 'choice'}}})
+const halves = local.splitJevBodyHalf(big)
+assert.equal(halves.length, 2)
+const h0 = JSON.parse(halves[0]), h1 = JSON.parse(halves[1])
+assert.equal(h0.state, 's'); assert.equal(h1.state, 's')
+assert.equal(h0.model, 'jev-latest'); assert.equal(h1.model, 'jev-latest')
+assert.deepEqual(Object.keys(h0.questions).sort(), ['a', 'theme'])
+assert.deepEqual(Object.keys(h1.questions).sort(), ['b', 'c'])
+assert.equal(local.splitJevBodyHalf(JSON.stringify({state: 's', questions: {'a': {}}})).length, 0,
+  'a single question cannot be split')
+assert.equal(local.splitJevBodyHalf('not json').length, 0)
+
+// The reason a local reply answered nothing, and the merged refit datum.
+assert.equal(local.jevLocalReason('{"answers":{},"local":{"status":"uncertain","reason":"call_token_budget"}}'),
+  'call_token_budget')
+assert.equal(local.jevLocalReason('{"answers":{}}'), '')
+assert.equal(local.jevLocalReason('junk'), '')
+const withScores = local.mergeJevAnswers(
+  '{"answers":{"a":{"choice":"x"}},"scores":{"a":{"logits":{"x":1,"y":0}}}}',
+  '{"answers":{"b":{"choice":"y"}},"scores":{"b":{"logits":{"y":2,"z":1}}}}')
+const mergedScores = JSON.parse(withScores)
+assert.deepEqual(Object.keys(mergedScores.answers).sort(), ['a', 'b'])
+assert.deepEqual(Object.keys(mergedScores.scores).sort(), ['a', 'b'], 'raw logits survive the merge')
+
 // The default backend is unavailable, so the route falls back to the cloud.
 assert.equal(local.localDecisionModel().available(), false, 'no model registered by default')
 

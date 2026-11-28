@@ -139,24 +139,73 @@ export function unansweredJevBody(body: string, reply: string): string {
 }
 
 /**
+ * Why a local reply answered nothing, from its `local.reason` ('' when the reply
+ * is not shaped like a local reply). The route reads it to tell a declined
+ * calibration apart from a body the engine could not accept at all.
+ */
+export function jevLocalReason(reply: string): string {
+  let root = parseObject(reply)
+  if (root === null) { return '' }
+  let local: Object | null = root['local']
+  if (local === null || local === undefined) { return '' }
+  let reason = (local as Record<string, Object>)['reason']
+  return typeof reason === 'string' ? reason : ''
+}
+
+/**
+ * Split a Jev body's questions into two halves, each keeping the state and the
+ * model. '' list when there is nothing to split (one question, or a body that
+ * cannot be parsed): a body the engine rejects for its size is then served, or
+ * declined, as it is. The halves are balanced by key order, which is the order
+ * the sketch asked them in.
+ */
+export function splitJevBodyHalf(body: string): string[] {
+  let root = parseObject(body)
+  let questionsRaw: Object | null = root === null ? null : root['questions']
+  if (root === null || questionsRaw === null || questionsRaw === undefined) { return [] }
+  let questions = questionsRaw as Record<string, Object>
+  let keys = Object.keys(questions)
+  if (keys.length < 2) { return [] }
+  let model: Object = root['model'] !== undefined ? root['model'] : 'jev-latest'
+  let state: Object = root['state'] !== undefined ? root['state'] : ''
+  let cut = Math.ceil(keys.length / 2)
+  let first: Record<string, Object> = {}
+  let second: Record<string, Object> = {}
+  for (let i = 0; i < keys.length; i++) {
+    if (i < cut) { first[keys[i]] = questions[keys[i]] } else { second[keys[i]] = questions[keys[i]] }
+  }
+  return [bodyFor(model, state, first), bodyFor(model, state, second)]
+}
+
+/**
  * Merge two Jev replies (`{"answers":{...}}`) into one. A reply that is '' or
  * cannot be parsed contributes no answers; the caller keeps its own defaults for
  * the questions it left unanswered.
  */
 export function mergeJevAnswers(hardReply: string, easyReply: string): string {
   let answers: Record<string, Object> = {}
+  let scores: Record<string, Object> = {}
   let replies: string[] = [hardReply, easyReply]
   for (let reply of replies) {
     if (reply.length === 0) { continue }
     let root = parseObject(reply)
     if (root === null) { continue }
     let a: Object | null = root['answers']
-    if (a === null || a === undefined) { continue }
-    let obj = a as Record<string, Object>
-    for (let key of Object.keys(obj)) { answers[key] = obj[key] }
+    if (a !== null && a !== undefined) {
+      let obj = a as Record<string, Object>
+      for (let key of Object.keys(obj)) { answers[key] = obj[key] }
+    }
+    // The raw per-option logits ride along when a run is recorded, so a merged
+    // reply is still one calibration-refit datum.
+    let sc: Object | null = root['scores']
+    if (sc !== null && sc !== undefined) {
+      let obj = sc as Record<string, Object>
+      for (let key of Object.keys(obj)) { scores[key] = obj[key] }
+    }
   }
   let wrapper: Record<string, Object> = {}
   wrapper['answers'] = answers
+  if (Object.keys(scores).length > 0) { wrapper['scores'] = scores }
   return JSON.stringify(wrapper)
 }
 

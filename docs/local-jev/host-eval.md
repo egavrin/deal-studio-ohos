@@ -99,3 +99,46 @@ formula (`expr`/`show`/`arg`) and code-reading steps**, with **per-type calibrat
 (§5.A) before the local answers are trusted. It also shows the standard-step
 threshold must be re-fit, not reused, and that a generic 151M encoder is the wrong
 tool for the formula picks — exactly what §3.2/§5.B predicted.
+
+## Body size, state length and chunked on-device serving (2026-11-28)
+
+Measured from bodies recorded on the phone with the new dev selector recording
+(`--ps jevLocalLog 1`), on the host runner with the serving calibration
+(T*=2.2, min_confidence 0.71).
+
+**Where the tokens are.** Compose-route bodies carry a *short* state
+(~300–950 chars: the request plus the sketch's parts) and heavy *questions* —
+`arg`/`expr`/`effect`/`countdown` questions run 600–900 chars each, `expr` up to
+30+ formula options. Condensing the state is therefore not the speed lever for
+this route; the question/option text is (the capped input policy already
+truncates options, and `state_tokens_dropped` is 0 on these bodies).
+`state-condense.py` stays for the bodies that do carry a long state (agent-route
+bodies with the section as code).
+
+**The per-call token budget silently zeroes local serving on big sketches.** The
+engine caps one call at 8192 tokens over all questions (`CALL_TOKENS`), checked
+before any inference. A recorded 35-question body was rejected with
+`call_token_budget`: the local tier answered 0/35 in ~4 s and the cloud covered
+everything. The served-fraction metric now shows this as 0% instead of hiding it.
+
+**Chunked serving (now in the hybrid route).** The route splits an over-budget
+easy half in halves, recursively, and merges the replies; a rejected attempt
+costs only its tokenization. The same recorded 35-question body, run as three
+chunks on the host:
+
+| | full body | 12/12/11 chunks |
+|---|---|---|
+| served locally | 0/35 (`call_token_budget`) | **13/35** (steps 5, written 5, arg 2, widget 1) |
+| agreement with the cloud's answers | — | 8/13 (62%, n=13) |
+| host forward time | 3 s (reject only) | ~576 s (~15 s/question at these option sizes) |
+
+The same behaviour end-to-end on the phone: a workout-timer request whose sketch
+asked 56 easy questions served **18/56 locally in 859 s** (written 4/4, steps
+4/4, unit 4/5, arg 6/21) with the cloud covering the remaining 38 in ~6 s — a
+run that, before chunking, answered 0 on-device and finished in ~15 s.
+
+The 62% is one body and 13 decisions — well below the in-sample 94.4%, so the
+per-type refit (§5.A) stays the gate for trusting what gets served. The wall
+cost is the binding constraint: chunking fixes *coverage* on big sketches, and
+the Metrics tab now shows both the served fraction and the time it cost, so the
+NPU (§7.11) or better kernels remain what make big-body serving practical.

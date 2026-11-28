@@ -31,7 +31,8 @@ import { composeFragments } from './VeraSectionCompose'
 import { blockDefaults } from './VeraTemplateContent'
 import { settings } from './SettingsStore'
 import { SelectorCall, beginSelectorCall, finishLocalDecisionCall } from './SelectorMetrics'
-import { splitJevBody, mergeJevAnswers, unansweredJevBody, localDecisionModel } from './VeraLocalDecision'
+import { splitJevBody, splitJevBodyHalf, mergeJevAnswers, unansweredJevBody, jevLocalReason,
+  localDecisionModel, LocalDecisionModel } from './VeraLocalDecision'
 import { askSelector } from './VeraSelector'
 import { ScreenPlan, PlanSlot, PlanComponent, StateItem, assemblePlan, FILL_PART, FILL_BLOCK, FILL_EFFECT, FILL_HOLE, FILL_OPEN,
   PLAN_FROM_SKETCH, TO_WRITE } from './ScreenPlan'
@@ -4783,6 +4784,27 @@ function jevAnswerCount(reply: string): number {
  * on-device model registered the whole thing is one cloud call -- identical to
  * the cloud path -- so turning the flag on before a model exists changes nothing.
  */
+/**
+ * Answers a Jev body on the device, splitting it when the engine's per-call
+ * token budget rejects the whole thing: a big sketch's questions are asked in
+ * halves, recursively, and the replies merged. A rejected attempt costs only
+ * its tokenization (the budget is checked before any inference), so splitting
+ * late is free compared to guessing a chunk size in ArkTS, where the token
+ * count is not known. Without this, a body over the budget answers nothing
+ * on-device and the whole easy half goes to the cloud.
+ */
+async function answerLocalChunked(model: LocalDecisionModel, body: string,
+    cancellation?: OperationCancellation): Promise<string> {
+  throwIfCancelled(cancellation)
+  let reply = await model.answer(body, cancellation)
+  if (jevLocalReason(reply) !== 'call_token_budget') { return reply }
+  let halves = splitJevBodyHalf(body)
+  if (halves.length === 0) { return reply }
+  let first = await answerLocalChunked(model, halves[0], cancellation)
+  let second = await answerLocalChunked(model, halves[1], cancellation)
+  return mergeJevAnswers(first, second)
+}
+
 async function askJevViaLocal(body: string, apiKey: string, cancellation?: OperationCancellation): Promise<string> {
   throwIfCancelled(cancellation)
   let model = localDecisionModel()
@@ -4810,7 +4832,7 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
     let localStarted = Date.now()
     let localClosed = false
     try {
-      easyReply = await model.answer(split.easy, cancellation)
+      easyReply = await answerLocalChunked(model, split.easy, cancellation)
     } catch (e) {
       if (localCall !== null) {
         finishLocalDecisionCall(localCall, easyReply, Date.now() - localStarted, true)
