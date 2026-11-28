@@ -228,6 +228,10 @@ export function selectorStages(stages: Stage[], list: SelectorCall[]): Stage[] {
     let totals = selectorTotals(group)
     let note = backend === 'local-decision' ? totals.calls.toString() + ' on-device call(s)' :
       totals.calls.toString() + ' selector call(s), ' + totals.requests.toString() + ' HTTP request(s)'
+    let spent = 0
+    for (let call of group) { spent += call.ms }
+    let overlapped = spent - totals.ms
+    if (overlapped >= 50) { note += ', ' + Math.round(overlapped).toString() + ' ms overlapped' }
     out.push(new Stage(selectorLabel(backend), WHO_JEV, totals.ms, note))
   }
   return out
