@@ -725,7 +725,8 @@ export struct GeneratePage {
       rec.selectorCalls = this.selectorMetrics
       rec.selectorMs = selectors.ms
       rec.selectorHttpRequests = selectors.requests
-      rec.localSelectorCalls = selectors.localCalls
+      rec.localSelectorCalls = selectors.localSelectorCalls
+      rec.localDecisionCalls = selectors.localDecisionCalls
       rec.modelCalls = this.runModelCalls + selectors.requests + selectors.localCalls
       rec.inputTokens = run.inputTokens
       rec.cacheHitTokens = run.cacheHitTokens
@@ -2890,9 +2891,10 @@ host.worldGuide = this.worldGuide
   }
 
   private selectorDetail(call: SelectorCall): string {
-    let cost = call.backend === 'local-experimental' ? '$0 API cost' :
+    let onDevice = call.backend === 'local-experimental' || call.backend === 'local-decision'
+    let cost = onDevice ? '$0 API cost' :
       (call.estimatedUsd >= 0 ? '~' + this.formatUsd(call.estimatedUsd) : 'cost unknown')
-    let usage = call.backend === 'local-experimental' ? '' :
+    let usage = onDevice ? '' :
       (' · ' + (call.inputTokens >= 0 ? call.inputTokens.toString() : '?') + ' input / ' +
       (call.outputTokens >= 0 ? call.outputTokens.toString() : '?') + ' output tokens')
     return call.answered.toString() + '/' + call.questions.toString() + ' questions answered · ' +
@@ -2903,8 +2905,8 @@ host.worldGuide = this.worldGuide
 
   @LocalBuilder
   selectorPanel() {
-    MetricCard({ title: 'Selector calls', value: this.formatMs(selectorTotals(this.selectorMetrics).ms) }) {
-      Text('Separate from cloud planning and code writing. Local inference has no model API charge.')
+    MetricCard({ title: 'Jev decision calls', value: this.formatMs(selectorTotals(this.selectorMetrics).ms) }) {
+      Text('Every source this run used: on-device Laya, TypeSafe Jev, or the cloud model. Local inference has no model API charge.')
         .fontSize(11).fontColor(app.inkMuted).width('100%')
       ForEach(this.selectorMetrics, (call: SelectorCall, index: number) => {
         MetricLine({ title: selectorLabel(call.backend), right: this.formatMs(call.ms),

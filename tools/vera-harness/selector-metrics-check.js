@@ -31,13 +31,26 @@ const near = (actual, expected) => assert(Math.abs(actual-expected)<1e-12,`${act
   assert(calls.every(c=>c.ok&&c.answered===2&&c.questions===2))
   assert.deepEqual(M.selectorCalls(other),[])
   calls[0].ok=false;assert.equal(M.selectorCalls(owner)[0].ok,true,'snapshot isolation')
-  assert.equal(H.serviceNotes()[0].service,'Local Jev (experimental)');assert.equal(H.serviceNotes()[0].answered,2)
+  assert.equal(H.serviceNotes()[0].service,'Local Jev selector (experimental)');assert.equal(H.serviceNotes()[0].answered,2)
   const fast=M.selectorCalls(owner);fast[0].ms=8;fast[1].ms=0
   const coarse=[new S.Stage('initial choice',S.WHO_JEV,500),new S.Stage('plan',S.WHO_MODEL,1000)]
   const stages=M.selectorStages(coarse,fast)
   assert.equal(S.appMs(stages),1008,'replace coarse Jev timing; retain fast/zero calls')
   assert.equal(stages[1].ms,8);assert.match(stages[1].note,/2 selector call/)
   assert.deepEqual(M.selectorStages(stages,fast),stages,'idempotent close/finish')
+  // The hybrid Laya decision model is a Jev call too: no HTTP, no tokens, no
+  // API cost, and a partial local answer is normal (the cloud fills the rest).
+  const hybrid=new OperationController()
+  const hc=M.beginSelectorCall('local-decision','laya-multilingual-quantized',body,hybrid)
+  M.finishLocalDecisionCall(hc,1,40,false)
+  const ht=M.selectorTotals(M.selectorCalls(hybrid))
+  assert.equal(ht.calls,1);assert.equal(ht.localCalls,1);assert.equal(ht.localDecisionCalls,1)
+  assert.equal(ht.localSelectorCalls,0);assert.equal(ht.requests,0);assert.equal(ht.estimatedUsd,0)
+  assert.equal(hc.questions,2);assert.equal(hc.answered,1);assert.equal(hc.ok,true)
+  assert.equal(hc.finished,true);assert.equal(hc.ms,40)
+  assert.equal(M.selectorLabel('local-decision'),'On-device Jev model (Laya)')
+  const hybridStages=M.selectorStages(coarse,M.selectorCalls(hybrid))
+  assert(hybridStages.some(s=>s.name==='On-device Jev model (Laya)'&&s.ms===40))
   globalThis.__veraLocalJev.experimentalDecisions=async()=>{throw Error('inference failed')}
   const failed=new OperationController();await askSelector(body,'',failed)
   assert.equal(M.selectorCalls(failed)[0].ok,false);assert.equal(H.serviceNotes()[0].failed,1)
@@ -123,5 +136,5 @@ const near = (actual, expected) => assert(Math.abs(actual-expected)<1e-12,`${act
   assert.match(page,/rec.selectorHttpRequests = selectors.requests/)
   assert.match(page,/this.selectorMetrics.length > 0\) \{ this.selectorPanel\(\)/)
   assert.equal(queue.length,0)
-  console.log('selector-metrics-check: local/TypeSafe/proxy, all phases, fast stages, usage/rates/retries, failures, ownership and cancellation passed')
+  console.log('selector-metrics-check: local selector and hybrid decision model/TypeSafe/proxy, all phases, fast stages, usage/rates/retries, failures, ownership and cancellation passed')
 })().catch(e=>{console.error(e);process.exitCode=1})

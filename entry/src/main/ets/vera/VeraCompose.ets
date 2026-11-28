@@ -30,6 +30,7 @@ import { FragmentSpec, StateFieldSpec, PortSpec, VetoSpec, fragments, vetoes, LI
 import { composeFragments } from './VeraSectionCompose'
 import { blockDefaults } from './VeraTemplateContent'
 import { settings } from './SettingsStore'
+import { SelectorCall, beginSelectorCall, finishLocalDecisionCall } from './SelectorMetrics'
 import { splitJevBody, mergeJevAnswers, unansweredJevBody, localDecisionModel } from './VeraLocalDecision'
 import { askSelector } from './VeraSelector'
 import { ScreenPlan, PlanSlot, PlanComponent, StateItem, assemblePlan, FILL_PART, FILL_BLOCK, FILL_EFFECT, FILL_HOLE, FILL_OPEN,
@@ -4797,9 +4798,19 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
   let easyReply = ''
   let hardReply = ''
   if (split.easyCount > 0) {
+    // The local forward is a Jev call like the cloud ones: the Metrics tab and
+    // the run log must show its share of the time and the questions it answered.
+    let localCall: SelectorCall | null = beginSelectorCall('local-decision',
+      'laya-multilingual-quantized', split.easy, cancellation)
+    let localStarted = Date.now()
+    let localClosed = false
     try {
       easyReply = await model.answer(split.easy, cancellation)
     } catch (e) {
+      if (localCall !== null) {
+        finishLocalDecisionCall(localCall, 0, Date.now() - localStarted, true)
+        localClosed = true
+      }
       throwIfCancelled(cancellation)
       if ((e as Error).name === 'OperationCancelledError') { throw (e as Error) }
       console.warn('VERA-JEVLOCAL model failed: ' + (e as Error).message)
@@ -4807,6 +4818,10 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
     }
     throwIfCancelled(cancellation)
     let localAnswers = jevAnswerCount(easyReply)
+    if (localCall !== null && !localClosed) {
+      finishLocalDecisionCall(localCall, localAnswers, Date.now() - localStarted, false)
+      localClosed = true
+    }
     // Observability: without this line the local share of a hybrid run is
     // silent and indistinguishable from pure cloud in the logs.
     console.info('VERA-JEVLOCAL local answered ' + localAnswers.toString() + '/' + split.easyCount.toString() +

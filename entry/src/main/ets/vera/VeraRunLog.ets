@@ -38,14 +38,18 @@ export class RunLogRecord {
   attempts: number = 0
   /** How many model requests the run sent: program attempts and compile
    *  repairs, tool round trips inside them, the agent's auxiliary calls, selector
-   *  HTTP attempts (including retries), local selector invocations, and one for a server run's /compile request. Not the number of user
-   *  requests -- each record is already one of those. */
+   *  HTTP attempts (including retries), on-device Jev invocations (the local
+   *  selector and the hybrid Laya model), and one for a server run's /compile
+   *  request. Not the number of user requests -- each record is already one. */
   modelCalls: number = 0
   /** Writer-only requests, separate from paid selector HTTP and native inference. */
   writerCalls: number = 0
   selectorMs: number = 0
   selectorHttpRequests: number = 0
+  /** The experimental shared-state selector's on-device invocations. */
   localSelectorCalls: number = 0
+  /** The hybrid Laya decision model's on-device invocations. */
+  localDecisionCalls: number = 0
   selectorCalls: SelectorCall[] = []
   /** Prompt tokens (-1 when the provider did not report usage). */
   inputTokens: number = -1

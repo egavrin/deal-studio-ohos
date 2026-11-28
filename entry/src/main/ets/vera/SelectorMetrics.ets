@@ -29,7 +29,8 @@ const calls: WeakMap<OperationCancellation, SelectorCall[]> = new WeakMap<Operat
 const questionIds: WeakMap<SelectorCall, string[]> = new WeakMap<SelectorCall, string[]>()
 
 export function selectorLabel(backend: string): string {
-  if (backend === 'local-experimental') { return 'Local Jev (experimental)' }
+  if (backend === 'local-decision') { return 'On-device Jev model (Laya)' }
+  if (backend === 'local-experimental') { return 'Local Jev selector (experimental)' }
   if (backend === 'llm') { return 'Cloud LLM Jev approximation' }
   return 'TypeSafe Jev'
 }
@@ -47,7 +48,7 @@ export function beginSelectorCall(backend: string, model: string, body: string,
       questionIds.set(call, ids)
     }
   } catch (_e) {}
-  if (backend === 'local-experimental') {
+  if (backend === 'local-experimental' || backend === 'local-decision') {
     call.inputTokens = 0
     call.cacheHitTokens = 0
     call.outputTokens = 0
@@ -150,10 +151,36 @@ export function finishSelectorCall(call: SelectorCall, reply: string): void {
   if (!call.ok && call.error.length === 0) { call.error = 'incomplete or missing selector answer' }
 }
 
+/**
+ * Closes a local Laya inference call. It is a Jev call for the Metrics tab and
+ * the run log, but not an HTTP selector request: zero requests, zero tokens and
+ * no API charge. `answered` is the number the model served before the cloud
+ * fallback; a partial local reply is normal, so it is not marked as an error.
+ */
+export function finishLocalDecisionCall(call: SelectorCall, answered: number, ms: number,
+    failed: boolean = false): void {
+  call.ms = Math.max(0, ms)
+  call.answered = Math.max(0, Math.min(answered, call.questions))
+  call.requests = 0
+  call.inputTokens = 0
+  call.cacheHitTokens = 0
+  call.outputTokens = 0
+  call.estimatedUsd = 0
+  call.partial = false
+  call.ok = !failed
+  call.error = failed ? 'on-device inference failed' : ''
+  call.finished = true
+}
+
 export class SelectorTotals {
   calls: number = 0
   requests: number = 0
+  /** Every on-device Jev invocation (decision model and selector). */
   localCalls: number = 0
+  /** The experimental shared-state selector only. */
+  localSelectorCalls: number = 0
+  /** The hybrid Laya decision model only. */
+  localDecisionCalls: number = 0
   ms: number = 0
   inputTokens: number = -1
   cacheHitTokens: number = -1
@@ -167,7 +194,8 @@ export function selectorTotals(list: SelectorCall[]): SelectorTotals {
   for (let call of list) {
     out.calls++
     out.requests += call.requests
-    if (call.backend === 'local-experimental') { out.localCalls++ }
+    if (call.backend === 'local-experimental') { out.localCalls++; out.localSelectorCalls++ }
+    if (call.backend === 'local-decision') { out.localCalls++; out.localDecisionCalls++ }
     out.ms += call.ms
     out.inputTokens = plus(out.inputTokens, call.inputTokens)
     out.cacheHitTokens = plus(out.cacheHitTokens, call.cacheHitTokens)
@@ -189,8 +217,9 @@ export function selectorStages(stages: Stage[], list: SelectorCall[]): Stage[] {
   for (let backend of backends) {
     let group = list.filter((c: SelectorCall): boolean => c.backend === backend)
     let totals = selectorTotals(group)
-    out.push(new Stage(selectorLabel(backend), WHO_JEV, totals.ms,
-      totals.calls.toString() + ' selector call(s), ' + totals.requests.toString() + ' HTTP request(s)'))
+    let note = backend === 'local-decision' ? totals.calls.toString() + ' on-device call(s)' :
+      totals.calls.toString() + ' selector call(s), ' + totals.requests.toString() + ' HTTP request(s)'
+    out.push(new Stage(selectorLabel(backend), WHO_JEV, totals.ms, note))
   }
   return out
 }

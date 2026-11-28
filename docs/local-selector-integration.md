@@ -143,25 +143,30 @@ The archive listing includes the HAP and all four notice and license files.
 
 ## Selector metrics
 
-`SelectorMetrics.ets` records every `askSelector` invocation under its operation owner,
-including initial choice, later verification, structural edits, surface edits and
-widget generation. It stores no prompts, answers or credentials. Finished UI/log
-records are snapshots: a cancelled operation's late native/HTTP completion cannot
-rewrite another run. The local model's eager preparation outside a run is not
-charged as inference time; preparation awaited inside a selector call is included.
+`SelectorMetrics.ets` records every Jev invocation under its operation owner,
+including initial choice, later verification, structural edits, surface edits,
+widget generation, and the hybrid route's on-device Laya forward (`local-decision`
+— recorded even though it is native inference, not an HTTP selector call). It
+stores no prompts, answers or credentials. Finished UI/log records are snapshots:
+a cancelled operation's late native/HTTP completion cannot rewrite another run.
+The local model's eager preparation outside a run is not charged as inference
+time; preparation awaited inside a selector call is included.
 
-The Metrics tab separates **Writer model calls** from **Selector calls**. Selector
-rows name Local Jev (experimental), TypeSafe Jev or Cloud LLM Jev approximation,
-show batch wall time, answered/requested question counts and actual HTTP attempts
-(including proxy retries). Local calls show **$0 API cost** and zero HTTP requests;
-this does not mean cloud planning/writing is free. Sub-50ms and even zero-rounded
-selector calls are retained. Coarse agent Jev stages are replaced, not added to,
-with the measured boundary totals. `compose.jevMs` now sums all selector phases;
-`initialJevMs` preserves the earlier initial-selection-only diagnostic.
+The Metrics tab separates **Writer model calls** from **Jev decision calls**. Jev
+rows name On-device Jev model (Laya), Local Jev selector (experimental), TypeSafe
+Jev or Cloud LLM Jev approximation, show batch wall time, answered/requested
+question counts and actual HTTP attempts (including proxy retries). A hybrid run
+therefore shows the local model's time and the questions it answered, next to the
+cloud calls that answered the rest. Local calls show **$0 API cost** and zero HTTP
+requests; this does not mean cloud planning/writing is free. Sub-50ms and even
+zero-rounded calls are retained. Coarse agent Jev stages are replaced, not added
+to, with the measured boundary totals. `compose.jevMs` sums all Jev phases
+including local inference; `initialJevMs` preserves the earlier
+initial-selection-only diagnostic.
 
 Run-log records retain `modelCalls` as the total invocation count and add
-`writerCalls`, `selectorCalls`, `selectorMs`, `selectorHttpRequests` and
-`localSelectorCalls`. Selector usage/cost is added once to run/version totals with
+`writerCalls`, `selectorCalls`, `selectorMs`, `selectorHttpRequests`,
+`localSelectorCalls` and `localDecisionCalls`. Selector usage/cost is added once to run/version totals with
 its own tariff, never priced as writer tokens. TypeSafe estimates use $0.042/M
 input and free output; the approximation uses reported chat-completions usage and
 the existing official DeepSeek Flash peak/off-peak tariff. Other endpoints, missing
