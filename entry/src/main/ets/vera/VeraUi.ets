@@ -13,6 +13,7 @@ import {
 import { resolveStyle } from './VeraUiCatalog'
 import { invokeStdGfx } from './VeraGfx'
 import { invokeStdScene } from './VeraScene'
+import { sdkParamProblem } from './VeraRuntimePolicy'
 
 export class VeraUiNode {
   id: number = 0
@@ -445,6 +446,9 @@ function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
       throw new RuntimeTrap('R0015', `unknown std/strings function: ${name}`)
   }
 }
+
+/** At most this many effects may be queued by one handler before it traps. */
+export const MAX_PENDING_EFFECTS: number = 32
 
 /**
  * One sdk.call the program asked for, waiting to be run.
@@ -1024,17 +1028,24 @@ export class UiHostEnvironment extends HostEnvironment {
       throw new RuntimeTrap('R0027',
         'sdk.call parameters are name and value in pairs; got ' + pairs.length.toString() + ' items')
     }
+    let raw: string[] = []
+    for (let item of pairs) { raw.push(asString(item)) }
+    let tooLarge = sdkParamProblem(target, raw)
+    if (tooLarge.length > 0) { throw new RuntimeTrap('R0030', tooLarge) }
     let values = new Map<string, string>()
     let order: string[] = []
-    for (let i = 0; i + 1 < pairs.length; i = i + 2) {
-      let key = asString(pairs[i]).trim()
+    for (let i = 0; i + 1 < raw.length; i = i + 2) {
+      let key = raw[i].trim()
       if (key.length === 0) { continue }
-      values.set(key, asString(pairs[i + 1]))
+      values.set(key, raw[i + 1])
       order.push(key)
     }
     let mode = args.length > 3 ? asString(args[3]) : 'background'
     let id = this.nextEffectId
     this.nextEffectId = id + 1
+    if (this.pendingEffects.length >= MAX_PENDING_EFFECTS) {
+      throw new RuntimeTrap('R0032', 'too many phone actions queued (limit ' + MAX_PENDING_EFFECTS.toString() + ')')
+    }
     let effect = new HostEffect(id, 'sdk', 'call', values, asString(args[2]))
     effect.rawTarget = target
     effect.rawParams = order.join(' ')

@@ -7,6 +7,7 @@ import { carryState } from '../vera/VeraStateCarry'
 import { store } from '../vera/ProjectStore'
 import { ProgramRef, AcquireOptions, RuntimeMode } from './shared/Messages'
 import { StageTrace } from './trace/StageTrace'
+import { stateSizeProblem } from '../vera/VeraRuntimePolicy'
 
 export interface AppActorCallbacks {
   render: (paint: boolean, reveal: boolean) => void
@@ -19,6 +20,12 @@ export interface AppActorCallbacks {
 export class AppActor {
   private callbacks: AppActorCallbacks
   private traceOwner: Object
+  /**
+   * Non-forced saves are debounced by this window so a fast ticker cannot
+   * rewrite the state file every 16 ms. The host checks pin the per-dispatch
+   * save order by setting it to 0.
+   */
+  saveDebounceMs: number = 250
   private vm: VirtualMachine | null = null
   private host: UiHostEnvironment | null = null
   private currentState: RuntimeValue | null = null
@@ -31,6 +38,10 @@ export class AppActor {
   private lastViewAt: number = 0
   private lastSurfaceSave: number = 0
   private worldUnsaved: boolean = false
+  /** A save was skipped by the debounce and still owes a write. */
+  private saveDirty: boolean = false
+  private lastSaveAt: number = 0
+  private saveTimer: number = -1
   private disposed: boolean = false
   private cancelled: boolean = false
 
@@ -53,6 +64,7 @@ export class AppActor {
     this.refreshes = false
     this.lastViewAt = 0
     this.lastSurfaceSave = 0
+    this.saveDirty = false
     this.worldUnsaved = false
     this.program = program
     this.mode = options.mode
@@ -124,6 +136,11 @@ export class AppActor {
     if (!this.ready() || this.mode === 'PREVIEW') { return }
     try {
       let encoded = this.snapshot()
+      let problem = stateSizeProblem(encoded.length)
+      if (problem.length > 0) {
+        console.warn('VERA-STATE snapshot skipped: ' + problem)
+        return
+      }
       StageTrace.snapshot(this.traceOwner, encoded)
       this.callbacks.snapshot(encoded)
     } catch (e) {
@@ -132,13 +149,34 @@ export class AppActor {
     }
   }
 
-  persistState(): boolean {
+  /**
+   * Saves, unless a save just happened and this one is not forced: a fast
+   * ticker otherwise rewrites the state file every 16 ms. A skipped save is
+   * not a lost one -- it marks the actor dirty and schedules a trailing save,
+   * so the last write always lands even when nothing follows it.
+   */
+  persistState(force: boolean = false): boolean {
+    if (!force && Date.now() - this.lastSaveAt < this.saveDebounceMs) {
+      this.saveDirty = true
+      if (this.saveTimer < 0) {
+        this.saveTimer = setTimeout((): void => {
+          this.saveTimer = -1
+          if (this.saveDirty && !this.disposed && !this.cancelled) { this.persistState(true) }
+        }, this.saveDebounceMs)
+      }
+      return true
+    }
     try {
       return this.saveNow()
     } catch (e) {
       console.error('VERA-STATE save failed: ' + (e as Error).message)
       return false
     }
+  }
+
+  /** Whether a write is still owed: a save the debounce skipped, or world events not yet saved. */
+  hasPendingSave(): boolean {
+    return this.saveDirty || this.worldUnsaved
   }
 
   saveNow(): boolean {
@@ -148,9 +186,21 @@ export class AppActor {
     let encoded = ''
     try {
       encoded = JSON.stringify(encodeRuntimeValue(this.currentState!))
+      // A state past the ceiling is not written: a program that grew without
+      // end would otherwise push the store's file past any usable size. The
+      // program still runs; it just will not remember past this point.
+      let problem = stateSizeProblem(encoded.length)
+      if (problem.length > 0) {
+        console.error('VERA-STATE save skipped: ' + problem)
+        return false
+      }
       store.saveState(keys[0], keys[1], this.stamp(), encoded)
       this.diskState = encoded
       this.worldUnsaved = false
+      // Only a write that landed clears the debt and starts the window: a
+      // failed save must leave the dirty flag set so the trailing save retries.
+      this.saveDirty = false
+      this.lastSaveAt = Date.now()
       this.callbacks.saved(keys[0])
       if (StageTrace.enabled()) {
         StageTrace.emit(this.traceOwner, 'SAVE', { digest: StageTrace.digest(encoded), result: 'OK' })
@@ -179,6 +229,8 @@ export class AppActor {
 
   dispose(): void {
     this.cancel()
+    if (this.saveTimer >= 0) { clearTimeout(this.saveTimer); this.saveTimer = -1 }
+    this.saveDirty = false
     this.disposed = true
     this.vm = null
     this.host = null
@@ -320,7 +372,7 @@ export class AppActor {
   surfaceSave(now: number, editsPending: boolean): string {
     if (!this.ready() || this.mode === 'PREVIEW' || now - this.lastSurfaceSave < 5000) { return 'NOT_DUE' }
     if (editsPending) { return 'DEFERRED' }
-    if (!this.persistState()) { return 'NOT_SAVED' }
+    if (!this.persistState(true)) { return 'NOT_SAVED' }
     this.lastSurfaceSave = now
     this.notifyStateSnapshot()
     return 'DONE'
@@ -330,7 +382,7 @@ export class AppActor {
     if (!this.ready() || this.mode === 'PREVIEW' || !this.worldUnsaved ||
       (!stopping && now - this.lastSurfaceSave < 5000)) { return 'NOT_DUE' }
     if (editsPending) { return 'DEFERRED' }
-    if (!this.persistState()) { return 'ERROR' }
+    if (!this.persistState(true)) { return 'ERROR' }
     this.lastSurfaceSave = now
     return 'DONE'
   }

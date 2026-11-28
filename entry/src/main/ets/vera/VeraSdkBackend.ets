@@ -44,6 +44,8 @@ import { AbilityContext, ensureCameraPermission } from './VeraPermissions'
 import { calendarSdkTargets, runCalendarSdkAdapter } from './VeraCalendarSdk'
 import { notifySdkTargets, runNotifySdkAdapter } from './VeraNotifySdk'
 import { LIVE_TARGET, liveFetch } from './VeraLive'
+import { sdkTargetDenied } from './VeraRuntimePolicy'
+import { domainOf, publicHostError, sourceUrlError } from './VeraSource'
 import { ASK_TARGET, askText } from './VeraAsk'
 import { camera, cameraPicker } from '@kit.CameraKit'
 import { audio } from '@kit.AudioKit'
@@ -456,6 +458,12 @@ async function playAudio(params: Map<string, string>): Promise<string> {
             }
             avPlayerFile = fs.openSync(path, fs.OpenMode.READ_ONLY)
             source = 'fd://' + avPlayerFile.fd.toString()
+          } else {
+            // Remote media is a network request like Vera.Source.fetch: https
+            // only, a named public host and no private/local address.
+            let bad = sourceUrlError(url)
+            if (bad.length === 0) { bad = await publicHostError(domainOf(url).replace(/\.+$/, '')) }
+            if (bad.length > 0) { return 'error: ' + bad }
           }
           await prepareAvPlayerSource(player, source)
           await player.play()
@@ -5440,6 +5448,9 @@ const ADAPTERS: Map<string, SdkAdapter> = new Map<string, SdkAdapter>([
  * reason a call hangs.
  */
 export async function runSdkAdapter(target: string, params: Map<string, string>): Promise<string> {
+  // The runtime policy is the final gate: a denied target is unavailable even if
+  // a program reached it through a dynamically built string or an old VBC.
+  if (sdkTargetDenied(target)) { return 'error: this function is not available to generated apps' }
   // The live-data block's own function (VeraLive.ets): not an SDK function, so not in ADAPTERS or the index.
   if (target === LIVE_TARGET) { return await liveFetch(params) }
   // A live source found at generation (VeraSource.ets): one GET, read at the paths the program names.
@@ -5473,6 +5484,7 @@ export async function runSdkAdapter(target: string, params: Map<string, string>)
  * recall is still measured against everything the SDK has.
  */
 export function isSdkTargetImplemented(target: string): boolean {
+  if (sdkTargetDenied(target)) { return false }
   return calendarSdkTargets.indexOf(target) >= 0 || notifySdkTargets.indexOf(target) >= 0 || ADAPTERS.has(target) || target === LIVE_TARGET ||
     target === SOURCE_TARGET || target === ASK_TARGET
 }

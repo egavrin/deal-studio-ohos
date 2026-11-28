@@ -296,6 +296,8 @@ function fixture(program = programs.basic, config = {}) {
     assert(p.handle)
     assert.equal(p.activeProgram, program.vbc2)
     assert.equal(p.flushFailure, null)
+    const record = h.registry.get(p.handle.appId)
+    if (record && record.actor) { record.actor.saveDebounceMs = 0 }
   }, state: async () => decode(await finish(h.requestSnapshot(p.handle))) }
 }
 function draft(p, value, composing = false) {
@@ -1702,6 +1704,48 @@ scenarios.push({ name: 'retained camera delivers only current actor input and st
   finishCapture('file://fixture/late.jpg')
   await finish(f.p.operations)
   assert.equal(inputs().length, 2)
+} })
+
+scenarios.push({ name: 'camera consent ownership distinguishes shutter from VM sdk.capture', action: async () => {
+  const f = fixture(compile({ camera: true }))
+  await f.mount()
+  const node = walk(f.p.liveRoot).find(item => item.kind === 'camera')
+  let captures = 0
+  f.p.camera = { capture: () => { captures++; return Promise.resolve('file://fixture/owned.jpg') }, stop: () => {} }
+  f.p.cameraNode = node
+  f.p.cameraSurfaceId = 'preview-fixture'
+  f.p.cameraReady = true
+  let allowed = 0, refused = 0
+  f.p.effectsBridge = { allowPending: () => { allowed++ }, refusePending: () => { refused++ }, invalidate: () => {}, onMailboxWritable: () => {} }
+  const effect = target => ({ appId: 'fixture', vmGeneration: 1, effectId: 7, kind: 'sdk',
+    rawTarget: 'CameraKit.PhotoOutput.capture', params: target, resultHandler: 'edit', mode: '' })
+
+  // Shutter-owned: Allow runs the camera and not the bridge; Refuse tells the
+  // person and does not call the bridge or capture.
+  f.p.pending = effect([])
+  f.p.pendingCameraNode = node
+  f.p.allowPending()
+  await Promise.resolve()
+  assert.equal(captures, 1)
+  assert.equal(allowed, 0)
+  f.p.pending = effect([])
+  f.p.pendingCameraNode = node
+  f.p.refusePending()
+  assert.equal(f.p.cameraNote, 'Capture declined')
+  assert.equal(refused, 0)
+
+  // VM-originated: the same target with parameters but no shutter node is
+  // delegated to the effects bridge and never runs the renderer camera.
+  f.p.pending = effect(['title', 'page'])
+  f.p.pendingCameraNode = null
+  f.p.allowPending()
+  assert.equal(allowed, 1)
+  assert.equal(captures, 1)
+  f.p.pending = effect(['title', 'page'])
+  f.p.pendingCameraNode = null
+  f.p.refusePending()
+  assert.equal(refused, 1)
+  assert.equal(captures, 1)
 } })
 
 async function cleanup() {

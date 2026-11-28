@@ -11,8 +11,10 @@
  */
 
 import { VeraUiNode, formatVeraNumber, formatVeraClock, formatVeraDate, unitAfter, keepUnits } from '../vera/VeraUi'
-import { veraStateStamp } from '../vera/VeraStateStamp'
+import { stateDigest, veraStateStamp } from '../vera/VeraStateStamp'
 import { scheduleCardRefresh } from '../vera/FormUpdater'
+import { consent } from '../vera/VeraConsentStore'
+import { MAX_APP_TIMERS, POLICY_ASK, consentKeyFor, imageSourceError, sdkTargetPolicy, screenNodeProblem } from '../vera/VeraRuntimePolicy'
 import { LengthMetrics, mediaquery, matrix4 } from '@kit.ArkUI'
 
 import { catalogKinds } from '../vera/VeraUiCatalog'
@@ -331,13 +333,22 @@ class LiveTheme {
 }
 
 /**
- * Whether a call is shown to the person before it runs.
+ * Whether a consequential call is shown to the person before it runs.
  *
- * Off by request: a program that blinks the torch every two seconds cannot ask
- * about every flash, and a demo that stops on a dialog is not a demo. On, it
- * asks once per program and per call and remembers the answer.
+ * The policy (VeraRuntimePolicy.ets) decides: read-only/local actions such as
+ * getters, torch and vibration run immediately; state-changing, privacy and
+ * paid actions ask once per program, target and exact parameter set. The
+ * blanket off switch is gone: the policy is the product rule now.
  */
-const ASK_BEFORE_CALLS: boolean = false
+const ASK_BEFORE_CALLS: boolean = true
+/**
+ * The sdk target name for a still capture from the in-app camera. The shutter
+ * Button in the renderer calls this through the same consent queue a program's
+ * sdk.call would, instead of reaching CameraKit directly: PhotoOutput.capture is
+ * an ASK target in VeraRuntimePolicy, and the consent sheet is the only thing
+ * that stops a generated app from snapping a photo the person did not mean to.
+ */
+const CAMERA_CAPTURE_TARGET: string = 'CameraKit.PhotoOutput.capture'
 
 /**
  * One bar of a ui.Sparkline drawn with bars: true -- its height in vp, the category name under it
@@ -658,6 +669,10 @@ export struct VeraPreview {
    */
   @State pending: EffectRequest | null = null
   private effectsBridge: HostEffectsBridge | null = null
+  /** The next id for a shutter-tap effect (the VM's own sdk.call ids live on the host). */
+  private cameraEffectSeq: number = 1
+  /** The camera node whose capture waits behind the consent sheet. */
+  private pendingCameraNode: LiveNode | null = null
   private spinTimer: number = -1
   private motionClock: MotionClock = new MotionClock()
   private motionTimer: number = -1
@@ -875,7 +890,7 @@ export struct VeraPreview {
       this.flushFailure = null
       this.admissionBlocked = false
       this.transitioning = false
-      let binding = this.bridge().beginBinding(program.stamp)
+      let binding = this.bridge().beginBinding(stateDigest(program.vbc2))
       this.effectsBinding = binding
       binding.bind(this.handle!)
       this.queuePost(new PreviewPost('VIEW'))
@@ -907,7 +922,7 @@ export struct VeraPreview {
     this.worldTransitionError = ''
     this.error = ''
     this.viewError = ''
-    let binding = this.bridge().beginBinding(program.stamp)
+    let binding = this.bridge().beginBinding(stateDigest(program.vbc2))
     this.effectsBinding = binding
     this.syncEditGate()
     try {
@@ -990,7 +1005,7 @@ export struct VeraPreview {
           this.observedErrors.clear()
         }
         if (original !== null && !originalInvalid && (!originalReleased || !this.disposed)) {
-          let restoredBinding = this.bridge().beginBinding(veraStateStamp(originalProgram))
+          let restoredBinding = this.bridge().beginBinding(stateDigest(originalProgram))
           this.effectsBinding = restoredBinding
           try {
             if (originalReleased) {
@@ -1073,6 +1088,7 @@ export struct VeraPreview {
     this.postEdits = false
     if (this.effectsBridge !== null) { this.effectsBridge!.invalidate() }
     this.effectsBinding = null
+    this.pendingCameraNode = null
     if (!this.disposed) { this.pending = null }
     this.syncEditGate()
   }
@@ -1324,9 +1340,27 @@ export struct VeraPreview {
     if (node.kind === 'ticker' && node.checked && node.minimum > 0 &&
         node.tickerId.length > 0 && node.action.length > 0) {
       let id = scope.length > 0 ? JSON.stringify([scope, node.tickerId]) : node.tickerId
-      wanted.set(id, new TimerConfig(node.minimum, node.action))
+      // A screen that declares fifty tickers must not create fifty platform
+      // intervals. Existing ids still update; new ids past the cap are ignored.
+      if (wanted.has(id) || wanted.size < MAX_APP_TIMERS) {
+        wanted.set(id, new TimerConfig(node.minimum, node.action))
+      }
     }
     for (let child of node.children) { this.collectTickers(child, wanted, scope) }
+  }
+
+  /** Counts the live tree without recursion and returns the policy error, if any. */
+  private liveNodeProblem(root: LiveNode): string {
+    let stack: LiveNode[] = [root]
+    let count = 0
+    while (stack.length > 0) {
+      let node = stack.pop() as LiveNode
+      count += 1
+      let problem = screenNodeProblem(count)
+      if (problem.length > 0) { return problem }
+      for (let child of node.children) { stack.push(child) }
+    }
+    return ''
   }
 
   private startTimer(id: string, config: TimerConfig): void {
@@ -1657,6 +1691,11 @@ export struct VeraPreview {
         })
       }
       if (this.liveRoot !== null) {
+        let problem = this.liveNodeProblem(this.liveRoot!)
+        if (problem.length > 0) {
+          this.error = 'This screen is too large: ' + problem
+          return
+        }
         this.markLiveNodeGeneration(this.liveRoot!)
         markIconRoom(this.liveRoot!)
       }
@@ -2738,21 +2777,67 @@ export struct VeraPreview {
     console.info('VERA-CAMERAUI shutter action=' + node.action + ' ready=' + this.cameraReady.toString() + ' busy=' + this.cameraBusy.toString())
     if (this.camera === null || this.cameraNode !== node || !this.cameraReady || this.cameraBusy ||
         this.transitioning || node.action.length === 0) { return }
+    // A consent dialog already up owns the screen; a shutter tap that arrives
+    // then is dropped rather than queued behind it, because the person cannot
+    // have meant two captures at once.
+    if (this.pending !== null) { return }
+    if (this.needsCameraConsent()) {
+      // PhotoOutput.capture is an ASK target. Route the tap through the same
+      // consent sheet a program-facing sdk.call sees: the request carries the
+      // capture node's action, and allowPending runs the actual capture once
+      // the person allows it. The grant is remembered for this program, so
+      // the next tap captures immediately.
+      let id = this.cameraEffectSeq
+      this.cameraEffectSeq = id + 1
+      let effect: EffectRequest = { appId: '', vmGeneration: 0, effectId: id, kind: 'sdk',
+        rawTarget: CAMERA_CAPTURE_TARGET, params: [], resultHandler: node.action, mode: '' }
+      this.pendingCameraNode = node
+      console.info('VERA-CONSENT asking for ' + this.consentTitle(effect))
+      this.pending = effect
+      return
+    }
+    this.runCameraCapture(node)
+  }
+
+  /**
+   * Whether the shutter needs the consent sheet before it captures. The policy
+   * says PhotoOutput.capture is ASK; a grant already held for this program and
+   * target (the empty parameter set, since the program supplies none) skips it.
+   */
+  private needsCameraConsent(): boolean {
+    if (!ASK_BEFORE_CALLS) { return false }
+    if (sdkTargetPolicy(CAMERA_CAPTURE_TARGET) !== POLICY_ASK) { return false }
+    let key = consentKeyFor(CAMERA_CAPTURE_TARGET, '', new Map<string, string>())
+    return !consent.has(stateDigest(this.vbc2), key)
+  }
+
+  /**
+   * The capture itself, factored out so the shutter tap and the consent
+   * sheet's Allow both reach it. The captured URI goes to the program's
+   * handler as a string input; a capture that fails or lands on a screen that
+   * has gone shows a note and changes nothing. Returns a promise that settles
+   * when the capture is done, so the one-at-a-time guarantee holds when the
+   * consent path runs it.
+   */
+  private runCameraCapture(node: LiveNode): Promise<void> {
     let camera = this.camera
+    if (camera === null) { return Promise.resolve() }
     let next = this.captureFieldAction(node.action, stringPayload(''), true, node)
     this.cameraBusy = true
     this.cameraNote = ''
-    camera.capture().then((uri: string) => {
+    return camera.capture().then((uri: string) => {
       console.info('VERA-CAMERAUI captured ' + uri)
       if (this.disposed || this.camera !== camera) { return }
-      this.cameraBusy = false
       next.payload = stringPayload(uri)
       this.enqueueFieldAction(next)
     }).catch((e: Error) => {
       if (this.disposed || this.camera !== camera) { return }
-      this.cameraBusy = false
       this.cameraNote = e.message
       console.error('VERA-CAMERAUI capture failed ' + e.message)
+    }).then(() => {
+      // cameraStop clears cameraBusy when the preview goes; only clear it here
+      // when the camera that started this capture is still the one on screen.
+      if (this.camera === camera) { this.cameraBusy = false }
     })
   }
 
@@ -3214,7 +3299,14 @@ export struct VeraPreview {
       this.effectsBridge = new HostEffectsBridge(host, {
         askBeforeCalls: ASK_BEFORE_CALLS,
         traceOwner: this.traceOwner,
-        onPending: (effect: EffectRequest | null): void => { if (!this.disposed) { this.pending = effect } },
+        onPending: (effect: EffectRequest | null): void => {
+          if (!this.disposed) {
+            this.pending = effect
+            // A bridge-owned pending effect is never the renderer's shutter;
+            // clear any stale shutter ownership so Allow/Refuse delegate to it.
+            if (effect !== null) { this.pendingCameraNode = null }
+          }
+        },
         flushPendingInputFor: (appId: string): Promise<void> => this.flushPendingInputFor(appId),
         captureValidity: (effect: EffectRequest): (() => boolean) => {
           let next = this.captureFieldAction(effect.resultHandler, stringPayload(''))
@@ -3245,12 +3337,41 @@ export struct VeraPreview {
   }
 
   private allowPending(): void {
-    if (this.disposed || this.effectsBridge === null) { return }
+    if (this.disposed) { return }
+    let effect = this.pending
+    // The in-app camera shutter asks through the same sheet a program's
+    // sdk.call sees; its Allow is answered here because a person's tap has no
+    // bridge binding -- there is no VM awaiting a posted result. Ownership is
+    // the pending shutter node, not the target string: a program may call the
+    // same target through sdk.call and must delegate to the bridge.
+    let shutter = this.pendingCameraNode
+    if (effect !== null && shutter !== null) {
+      this.pending = null
+      this.pendingCameraNode = null
+      console.info('VERA-CONSENT allowed ' + this.consentTarget(effect))
+      consent.remember(stateDigest(this.vbc2), consentKeyFor(CAMERA_CAPTURE_TARGET, '', new Map<string, string>()))
+      this.runCameraCapture(shutter)
+      return
+    }
+    if (this.effectsBridge === null) { return }
     this.effectsBridge!.allowPending()
   }
 
   private refusePending(): void {
-    if (this.disposed || this.effectsBridge === null) { return }
+    if (this.disposed) { return }
+    let effect = this.pending
+    let shutter = this.pendingCameraNode
+    if (effect !== null && shutter !== null) {
+      // A refused shutter adds no photo and tells no handler: it was a
+      // person's tap, not a program awaiting an answer. A VM-originated
+      // capture has no pending shutter node and is delegated to the bridge.
+      this.pending = null
+      this.pendingCameraNode = null
+      console.info('VERA-CONSENT refused ' + this.consentTarget(effect))
+      this.cameraNote = 'Capture declined'
+      return
+    }
+    if (this.effectsBridge === null) { return }
     this.effectsBridge!.refusePending()
   }
 
@@ -6332,12 +6453,24 @@ export struct VeraPreview {
       // branch here, so every generated program that used one painted nothing
       // and still reported success.
       if (node.source.length > 0) {
-        Image(node.source)
-          .width('100%')
-          .height(180)
-          .objectFit(ImageFit.Contain)
-          .borderRadius(this.t().radiusControl)
-          .accessibilityText(node.alt)
+        if (imageSourceError(node.source).length > 0) {
+          Text('Image blocked: ' + imageSourceError(node.source))
+            .fontSize(this.t().sizeCaption + 1)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().dangerInk)
+            .width('100%')
+            .height(180)
+            .textAlign(TextAlign.Center)
+            .backgroundColor(this.t().surface)
+            .borderRadius(this.t().radiusControl)
+        } else {
+          Image(node.source)
+            .width('100%')
+            .height(180)
+            .objectFit(ImageFit.Contain)
+            .borderRadius(this.t().radiusControl)
+            .accessibilityText(node.alt)
+        }
       } else {
         Text(node.alt.length > 0 ? node.alt : 'image')
           .fontSize(this.t().sizeCaption + 1)

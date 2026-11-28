@@ -283,6 +283,9 @@ function probe() {
     },
     error(kind, message) { error(kind, message, kind !== 'INIT') }
   }, events)
+  // Existing scenarios pin the per-dispatch save order; the debounce itself
+  // has its own scenario below.
+  actor.saveDebounceMs = 0
   StageTrace.configure(true, record => {
     if (record.event === 'EXECUTE') events.push({ type: 'execute', entry: record.attributes.entry })
     if (record.event === 'RESUME_STATE_RELOAD') events.push({ type: 'reload', changed: record.attributes.changed })
@@ -879,6 +882,53 @@ test('world save shares the 5000ms gate, defers drafts, bypasses time when stopp
   assert.deepEqual(sequence(p), ['save', 'saved'])
   assert.equal(stateOf(store.loadState('project', 'version', programs.world.stamp)).n, 6)
   assert.equal(p.actor.worldDirty(), false)
+})
+
+test('debounced saves keep the last write: the trailing save lands and the release flush covers the rest', () => {
+  const p = probe()
+  p.actor.saveDebounceMs = 250
+  p.actor.initialize(programs.basic, options())
+  p.reset()
+  // The first save is immediate (nothing saved yet), so the disk holds state 1.
+  p.actor.dispatch('change', number(2))
+  assert.deepEqual(sequence(p), ['change', 'snapshot', 'view', 'frame', 'save', 'saved', 'effect:change'])
+  assert.equal(stateOf(store.loadState('project', 'version', programs.basic.stamp)).n, 3)
+  assert.equal(p.actor.hasPendingSave(), false)
+  // A change inside the debounce window is not written yet, but is owed: the
+  // reviewer's case was this save being lost when nothing followed it.
+  const realSetTimeout = globalThis.setTimeout
+  let armed = null
+  globalThis.setTimeout = (fn, ms) => { armed = { fn, ms }; return 1 }
+  try {
+    now += 100
+    p.reset()
+    p.actor.dispatch('change', number(4))
+    assert.deepEqual(sequence(p), ['change', 'snapshot', 'view', 'frame', 'effect:change'])
+    assert.equal(stateOf(store.loadState('project', 'version', programs.basic.stamp)).n, 3)
+    assert.equal(p.actor.hasPendingSave(), true)
+    assert.ok(armed !== null && armed.ms === 250, 'trailing save must be armed')
+    // The trailing save fires once the window has passed: state 2 is on disk.
+    now += 1000
+    p.reset()
+    armed.fn()
+    assert.deepEqual(sequence(p), ['save', 'saved'])
+    assert.equal(stateOf(store.loadState('project', 'version', programs.basic.stamp)).n, 7)
+    assert.equal(p.actor.hasPendingSave(), false)
+    // Another change inside the window arms a new trailing save; if the screen
+    // goes instead, the release path flushes exactly what hasPendingSave says.
+    p.reset()
+    now += 100
+    p.actor.dispatch('change', number(2))
+    assert.equal(p.actor.hasPendingSave(), true)
+    p.actor.saveNow()
+    assert.equal(stateOf(store.loadState('project', 'version', programs.basic.stamp)).n, 9)
+    assert.equal(p.actor.hasPendingSave(), false)
+    // 'load': the store reads the record it replaces during the flush.
+    assert.deepEqual(sequence(p), ['change', 'snapshot', 'view', 'frame', 'effect:change', 'save', 'saved', 'load'])
+  } finally {
+    globalThis.setTimeout = realSetTimeout
+  }
+  noErrors(p)
 })
 
 test('failed world persistence retains dirty state and deadline for immediate retries and unchanged saving events', () => {

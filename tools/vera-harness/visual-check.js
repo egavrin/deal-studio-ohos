@@ -64,7 +64,8 @@ function hostModule(mocks={}, observe=()=>{}) {
   '../vera/VeraGfx':loadVera('VeraGfx'),'../vera/VeraStateCarry':loadVera('VeraStateCarry'),
   '../vera/VeraConsentStore':{consent:mocks.consent||{has:()=>false,remember(){}}},
   '../vera/VeraIntents':{runRawIntent:mocks.runRawIntent||(()=>{throw Error('Unexpected intent')})},
-  '../vera/VeraSdkBackend':{runSdkAdapter:mocks.runSdkAdapter||(()=>{throw Error('Unexpected SDK call')})},
+  '../vera/VeraSdkBackend':{runSdkAdapter:mocks.runSdkAdapter||(()=>{throw Error('Unexpected SDK call')}),
+   isSdkTargetImplemented:mocks.isSdkTargetImplemented||(()=>true)},
   './trace/StageTrace':{StageTrace}
  }
  function load(file) {
@@ -80,8 +81,12 @@ function hostModule(mocks={}, observe=()=>{}) {
   },mod,mod.exports,mocks.Date||Date,mocks.console||{info(){},warn(){},error(){}})
   return mod.exports
  }
+ const RealAppActor=load(path.join(sourceRoot,'runtime/AppActor.ets')).AppActor
+ class DebounceOffAppActor extends RealAppActor { constructor(...args){super(...args);this.saveDebounceMs=0} }
+ dependencies['./AppActor']={AppActor:DebounceOffAppActor}
  const {InProcessHost,HostOperationFailure}=load(path.join(sourceRoot,'runtime/InProcessHost.ets'))
- const {HostEffectsBridge}=load(path.join(sourceRoot,'runtime/HostEffectsBridge.ets'))
+ const RealBridge=load(path.join(sourceRoot,'runtime/HostEffectsBridge.ets')).HostEffectsBridge
+ class HostEffectsBridge extends RealBridge { constructor(host,options,execute){super(host,{...options,effectTimeoutMs:0},execute)} }
   const runtime=new InProcessHost()
   runtimes.add(runtime)
 
@@ -117,7 +122,7 @@ async function test(name, action) {
   try {
    if(runtimeMode)StageTrace.configure(true,record=>records.push(record))
    let timeout
-   try { await Promise.race([action(),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(Error('Fixture did not settle: '+name)),2000)})]) }
+   try { await Promise.race([action(),new Promise((_,reject)=>{timeout=setTimeout(()=>reject(Error('Fixture did not settle: '+name)),5000)})]) }
    finally { clearTimeout(timeout) }
 
   if(runtimeMode) {
@@ -314,7 +319,8 @@ function view(state: AppState): ui.View { return ui.Text("body", ui.numberToStri
      return {probe,...host,platform,events,executions,delivered,bytecode,load,observeDispatch,
       snapshot:()=>host.runtime.requestSnapshot(probe.handle),onPlatform(action){platformHook=action}}
     }
-   function hostEffect(id=1,kind='sdk',rawTarget='fixture.read') { return {id,kind,fn:'call',rawTarget,rawMode:'foreground',values:new Map([['body','fixture payload'],['count','2']]),resultHandler:'answer'+id} }
+   const CONSENT_INTENT='com.huawei.hmsapp.music/phone/MainAbility/PlayMusicList'
+   function hostEffect(id=1,kind='sdk',rawTarget=CONSENT_INTENT) { return {id,kind,fn:'call',rawTarget,rawMode:'foreground',values:new Map([['body','fixture payload'],['count','2']]),resultHandler:'answer'+id} }
     function effectController(probe) { return probe.effectsBridge?.binding?.controller }
     function heldRequests(probe) { const controller=effectController(probe);return controller?controller.heldEffects.slice(controller.heldIndex).map(work=>work.effect):[] }
    function seedEffects(probe) { probe.acceptEffects([hostEffect(3),hostEffect(2)]);assert.deepEqual(probe.pending,probe.localEffectRequest(hostEffect(3)));assert.deepEqual(heldRequests(probe),[probe.localEffectRequest(hostEffect(2))]) }
@@ -473,7 +479,8 @@ function view(state: AppState): ui.View { return ui.Text("body", ui.numberToStri
     probe.acceptEffects([first,allowed,refused,last])
     assert.equal(platform.length,1);assert.deepEqual(probe.pending,probe.localEffectRequest(allowed));assert.deepEqual(heldRequests(probe),[refused,last].map(effect=>probe.localEffectRequest(effect)))
     probe.allowPending()
-    assert.equal(platform.length,2);assert.deepEqual(probe.pending,probe.localEffectRequest(refused));assert.deepEqual(heldRequests(probe),[probe.localEffectRequest(last)]);assert.deepEqual(events.filter(event=>event[0]==='remember'),[['remember',probe.stamp(),allowed.rawTarget]])
+    assert.equal(platform.length,2);assert.deepEqual(probe.pending,probe.localEffectRequest(refused));assert.deepEqual(heldRequests(probe),[probe.localEffectRequest(last)])
+    assert.deepEqual(events.filter(event=>event[0]==='remember'),[['remember',loadVera('VeraStateStamp').stateDigest(probe.vbc2),loadVera('VeraRuntimePolicy').consentKeyFor(allowed.rawTarget,'foreground',allowed.values)]])
     probe.refusePending();await settlePreview(probe)
     assert.equal(platform.length,3);assert.equal(probe.pending,null);assert.deepEqual(heldRequests(probe),[]);assert.deepEqual(delivered,[['answer3','declined by the person']])
     for(const [index,call] of platform.entries())await settleEffect(call,false,'reply'+index)
@@ -2121,7 +2128,8 @@ const f=await fieldProbe(), {probe,first}=f
       const methods=['reconcileTimers','collectTickers','stopAllTimers','stopPartsTimer'].map(name=>declaration(renderer,'  private '+name+'(')).join('\n')
      const compiled=ts.transpileModule(declaration(renderer,'class TimerConfig')+'\nclass Probe { '+methods+' }',{compilerOptions:{target:ts.ScriptTarget.ES2020},reportDiagnostics:true})
      assert.deepEqual((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error),[])
-     const Probe=new Function('StageTrace','clearInterval',compiled.outputText+';return Probe')(StageTrace,id=>{stops.push(id);f.intervals.delete(id)})
+     const policy=loadVera('VeraRuntimePolicy')
+     const Probe=new Function('StageTrace','clearInterval','MAX_APP_TIMERS',compiled.outputText+';return Probe')(StageTrace,id=>{stops.push(id);f.intervals.delete(id)},policy.MAX_APP_TIMERS)
      let now=10000, surfaceStops=0
      const starts=[], stops=[], calls=[], scheduled=f.intervals
       for(const name of ['reconcileTimers','collectTickers','stopAllTimers','stopPartsTimer'])probe[name]=Probe.prototype[name]

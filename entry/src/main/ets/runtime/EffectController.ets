@@ -2,12 +2,24 @@ import { EffectRequest } from './shared/Messages'
 import { StageTrace } from './trace/StageTrace'
 import { consent } from '../vera/VeraConsentStore'
 import { runRawIntent } from '../vera/VeraIntents'
-import { runSdkAdapter } from '../vera/VeraSdkBackend'
+import { runSdkAdapter, isSdkTargetImplemented } from '../vera/VeraSdkBackend'
+import { POLICY_ALLOW, POLICY_DENY, consentKeyFor, intentTargetPolicy, sdkTargetPolicy } from '../vera/VeraRuntimePolicy'
+
+/** At most this many effects wait behind the ones being run or the one being asked about. */
+export const MAX_HELD_EFFECTS: number = 32
+/** At most this many platform calls are in flight at once. */
+export const MAX_ACTIVE_EFFECTS: number = 4
+/** A phone action that has not answered by then is reported as timed out; it is not cancelled. */
+export const EFFECT_TIMEOUT_MS: number = 30000
+/** The sdk target name for a still capture from the in-app live preview. */
+const CAMERA_CAPTURE_TARGET: string = 'CameraKit.PhotoOutput.capture'
 
 export type EffectExecutor = (effect: EffectRequest) => Promise<string>
 
 export interface EffectControllerOptions {
   askBeforeCalls: boolean
+  /** A phone action that has not answered by then is reported as timed out. 0 disables (host checks). */
+  effectTimeoutMs?: number
   stamp: () => string
   isCurrent: () => boolean
   onPending: (effect: EffectRequest | null) => void
@@ -28,11 +40,16 @@ export function effectValues(effect: EffectRequest): Map<string, string> {
   return values
 }
 
+/**
+ * What a grant is about: the target, the mode and the exact values. A grant
+ * for "makeCall 123" must not silently cover "makeCall 911".
+ */
 export function effectConsentKey(effect: EffectRequest): string {
-  return effect.rawTarget
+  return consentKeyFor(effect.rawTarget, effect.mode, effectValues(effect))
 }
 
 export function effectConsentTitle(effect: EffectRequest): string {
+  if (effect.rawTarget === CAMERA_CAPTURE_TARGET) { return 'Capture a photo' }
   if (effect.kind === 'sdk') {
     let parts = effect.rawTarget.split(effect.rawTarget.indexOf('/') >= 0 ? '/' : '.')
     return 'Run ' + parts[parts.length - 1]
@@ -93,6 +110,20 @@ export class EffectController {
     let stamp = this.options.askBeforeCalls ? this.options.stamp() : ''
     if (epoch !== this.epoch || !this.options.isCurrent()) { return }
     for (let effect of effects) {
+      // The bound is enforced where the effects enter, not after the program
+      // has already allocated them: a program that queues a hundred calls in
+      // one handler is not given a hundred simultaneous platform requests.
+      // Held effects, active effects and the one being asked about all count.
+      // The ones past the bound are answered immediately, so their handlers
+      // are not left waiting silently -- and the answer travels the ordinary
+      // result path (admission-controlled, asynchronous), so a handler that
+      // retries cannot monopolize the host synchronously.
+      if (this.outstanding() >= MAX_HELD_EFFECTS) {
+        let overflow = new EffectWork(effect, epoch,
+          this.options.generation === undefined ? effect.vmGeneration : generation, stamp)
+        this.deliver(overflow, 'error: too many phone actions at once', 'OVERFLOW')
+        continue
+      }
       this.heldEffects.push(new EffectWork(effect, epoch,
         this.options.generation === undefined ? effect.vmGeneration : generation, stamp))
     }
@@ -197,9 +228,29 @@ export class EffectController {
       (this.options.generation === undefined || this.options.generation!() === work.generation)
   }
 
+  /**
+   * Whether this call is shown to the person before it runs.
+   *
+   * The policy (VeraRuntimePolicy.ets) decides: read-only/local actions such
+   * as getters, torch and vibration run immediately; state-changing, privacy
+   * and paid actions ask once per program, target and exact parameter set.
+   */
   private needsConsent(work: EffectWork): boolean {
-    return this.options.askBeforeCalls && work.effect.kind === 'sdk' &&
-      !consent.has(work.stamp, effectConsentKey(work.effect))
+    if (!this.options.askBeforeCalls) { return false }
+    let effect = work.effect
+    if (effect.kind !== 'sdk') { return false }
+    let target = effect.rawTarget
+    let policy = target.indexOf('/') >= 0 ? intentTargetPolicy(target) : sdkTargetPolicy(target)
+    // A denied target is answered with an error by runSdkAdapter/runRawIntent;
+    // it never becomes a dialog because there is no choice to offer.
+    if (policy === POLICY_DENY) { return false }
+    // Read-only/local actions do not interrupt the person.
+    if (policy === POLICY_ALLOW) { return false }
+    // An unknown or unimplemented target has no capability to approve; let it
+    // reach its honest "not implemented" answer instead of showing a dialog.
+    if (target.indexOf('/') < 0 && !isSdkTargetImplemented(target)) { return false }
+    // Already allowed, for this program, target and exact parameter set.
+    return !consent.has(work.stamp, effectConsentKey(effect))
   }
 
   private requestTrace(work: EffectWork): void {
@@ -215,11 +266,17 @@ export class EffectController {
       resultHandler: work.effect.resultHandler, generation: work.generation, outcome: outcome })
   }
 
+  /** Effects already held, running or waiting for consent. */
+  private outstanding(): number {
+    return (this.heldEffects.length - this.heldIndex) + this.executing.size + (this.pending === null ? 0 : 1)
+  }
+
   private runQueued(): void {
     if (this.draining) { return }
     this.draining = true
     try {
-      while (this.heldIndex < this.heldEffects.length && this.pending === null) {
+      while (this.heldIndex < this.heldEffects.length && this.pending === null &&
+          this.executing.size < MAX_ACTIVE_EFFECTS) {
         let work = this.heldEffects[this.heldIndex]
         this.heldIndex++
         if (!this.current(work)) { this.discard(work); continue }
@@ -256,7 +313,14 @@ export class EffectController {
     } catch (e) {
       answer = Promise.reject(e)
     }
-    answer.then((text: string): void => {
+    // A phone action that has not answered by then is reported as timed out;
+    // it is not cancelled. The adapter behind it may still finish on its own.
+    let timer = -1
+    let timeoutMs = this.options.effectTimeoutMs === undefined ? EFFECT_TIMEOUT_MS : this.options.effectTimeoutMs!
+    let timed = new Promise<string>((_resolve: (text: string) => void, reject: (error: Error) => void): void => {
+      if (timeoutMs > 0) { timer = setTimeout((): void => { reject(new Error('phone action timed out')) }, timeoutMs) }
+    })
+    Promise.race([answer, timed]).then((text: string): void => {
       if (work.finished) { return }
       this.deliver(work, text, text.startsWith('declined') ? 'DECLINED' : text.startsWith('error') ? 'ERROR' : 'OK')
     }, (e: Error): void => {
@@ -268,6 +332,12 @@ export class EffectController {
       let message = e !== null && e !== undefined && e.message !== undefined ? e.message : String(e)
       this.deliver(work, 'error: ' + message, 'ERROR')
     }).catch((e: Error): void => { this.fail(work, e) })
-      .finally((): void => { this.executing.delete(work) })
+      .finally((): void => {
+        if (timer >= 0) { clearTimeout(timer) }
+        this.executing.delete(work)
+        // The next queued effect starts only after one of the bounded active
+        // slots is free; this is what turns a flood into a queue.
+        if (!this.draining) { this.runQueued() }
+      })
   }
 }

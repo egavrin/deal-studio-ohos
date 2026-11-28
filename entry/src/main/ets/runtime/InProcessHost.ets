@@ -926,7 +926,12 @@ export class InProcessHost implements EffectResultHost {
   private finishRelease(record: ActorRecord, entry: MailboxEntry): void {
     let failure: Error | null = null
     try {
-      if (entry.saveState && record.options.mode === 'LIVE_PERSISTENT') { record.actor!.saveNow() }
+      // The debounce may still owe a write (the final tap inside its window);
+      // leaving the screen is the last chance to flush it, so release saves
+      // whenever a write is pending, not only when the caller asked.
+      if (record.options.mode === 'LIVE_PERSISTENT' && (entry.saveState || record.actor!.hasPendingSave())) {
+        record.actor!.saveNow()
+      }
     } catch (e) {
       failure = e as Error
     } finally {

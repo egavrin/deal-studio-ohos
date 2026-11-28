@@ -1,5 +1,5 @@
 import { ActorHandle, AdmissionResult, EffectRequest } from './shared/Messages'
-import { EffectController, EffectExecutor, executeEffect } from './EffectController'
+import { EffectController, EffectExecutor, executeEffect, MAX_HELD_EFFECTS } from './EffectController'
 import { StageTrace } from './trace/StageTrace'
 
 export interface EffectResultHost {
@@ -8,6 +8,8 @@ export interface EffectResultHost {
 
 export interface HostEffectsBridgeOptions {
   askBeforeCalls: boolean
+  /** A phone action that has not answered by then is reported as timed out. 0 disables (host checks). */
+  effectTimeoutMs?: number
   onPending: (effect: EffectRequest | null) => void
   flushPendingInputFor: (appId: string) => void | Promise<void>
   captureValidity?: (effect: EffectRequest) => () => boolean
@@ -84,6 +86,7 @@ export class HostEffectsBridge {
     this.binding = state
     state.controller = new EffectController({
       askBeforeCalls: this.options.askBeforeCalls,
+      effectTimeoutMs: this.options.effectTimeoutMs,
       stamp: (): string => state.stamp,
       isCurrent: (): boolean => this.binding === state && state.handle !== null,
       traceResults: false,
@@ -181,6 +184,14 @@ export class HostEffectsBridge {
       if (owner !== undefined) { state.owners.set(key, owner) }
     }
     if (state.handle === null) {
+      // Effects that arrive before the program is bound wait here; they are
+      // bounded the same way the running queue is. There is no handle to
+      // answer an overflow through yet, so the excess is dropped and traced
+      // rather than silently buffered without end.
+      if (state.buffered.length >= MAX_HELD_EFFECTS) {
+        this.terminalTrace(state, effect, 'DROPPED_OVERFLOW')
+        return
+      }
       state.buffered.push({ appId: effect.appId, vmGeneration: effect.vmGeneration, effectId: effect.effectId,
         kind: effect.kind, rawTarget: effect.rawTarget, params: effect.params.slice(),
         resultHandler: effect.resultHandler, mode: effect.mode })

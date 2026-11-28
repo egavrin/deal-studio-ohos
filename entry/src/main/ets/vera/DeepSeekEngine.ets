@@ -43,6 +43,7 @@ import { sdkContract } from './VeraSdkContracts'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
 import { isSdkTargetImplemented } from './VeraSdkBackend'
+import { isCuratedIntentTarget } from './VeraIntentCatalog'
 import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
 import { findUiComponentsByEmbedding } from './VeraUiIndex'
 import { describeComponents, optionalComponents } from './VeraUiCatalog'
@@ -323,6 +324,11 @@ function intentResultsJson(entries: IntentEntry[], sdkAlso: SdkEntry[] = []): st
   }
   let items: Record<string, Object>[] = []
   for (let e of entries) {
+    // Raw device-registry intents have no reviewed contract and are denied at
+    // runtime; do not offer one to the model in the first place.
+    let targetMatch = /sdk\.call\(\s*"([^"]+)"/.exec(e.callHint)
+    let target = targetMatch !== null ? targetMatch[1] : ''
+    if (target.length > 0 && !isCuratedIntentTarget(target)) { continue }
     let item: Record<string, Object> = {}
     item['kind'] = e.kind
     item['description'] = e.description
