@@ -1,6 +1,7 @@
 //! Experimental local Jev decisions. Missing answers preserve application safeguards.
 pub mod laya;
 mod laya_backbone;
+pub mod npu;
 pub mod shared_experimental;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -12,7 +13,7 @@ use std::{
     collections::BTreeMap,
     ffi::{c_char, CString},
     path::Path,
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, MutexGuard, OnceLock},
 };
 use tokenizers::Tokenizer;
 mod assets {
@@ -422,15 +423,76 @@ pub fn experimental_decisions(mut raw: Value, body: &str) -> Value {
 }
 
 static ENGINE: OnceLock<Mutex<Result<Engine>>> = OnceLock::new();
+static NPU_GRAPHS: OnceLock<Mutex<Vec<(String, usize, usize)>>> = OnceLock::new();
+
+/// Tell the Laya engine where a compiled NPU serving graph lives, with its
+/// fixed shape (the ArkTS layer copies each rawfile to filesDir and calls
+/// this once per bucket). The engine compiles a bucket lazily on the first
+/// group that fits it and keeps it for the process; the CPU candle path
+/// serves when no bucket is registered, fits or builds.
+#[no_mangle]
+pub unsafe extern "C" fn local_jev_npu_graph(path: *const u8, len: usize, batch: usize, seq: usize) -> i32 {
+    let slot = NPU_GRAPHS.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if path.is_null() {
+        return if guard.is_empty() { 0 } else { 1 };
+    }
+    let slice = std::slice::from_raw_parts(path, len);
+    let text = String::from_utf8_lossy(slice).into_owned();
+    guard.push((text, batch, seq));
+    1
+}
+
+pub(crate) fn npu_graph_specs() -> Vec<(String, usize, usize)> {
+    let slot = NPU_GRAPHS.get_or_init(|| Mutex::new(Vec::new()));
+    let guard = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard.clone()
+}
 static LAYA: OnceLock<Mutex<Result<laya::Engine>>> = OnceLock::new();
+static EXPERIMENTAL_ENGINE: OnceLock<Mutex<Result<ExperimentalEngine>>> = OnceLock::new();
+
+enum ExperimentalEngine {
+    Shared(shared_experimental::Ranker),
+    Laya(laya::Engine),
+}
+
+fn embedded_experimental() -> MutexGuard<'static, Result<ExperimentalEngine>> {
+    EXPERIMENTAL_ENGINE
+        .get_or_init(|| {
+            let engine = if assets::SHARED_PROFILE {
+                shared_experimental::Ranker::embedded()
+                    .map(ExperimentalEngine::Shared)
+                    .map_err(|_| "shared_model_unavailable".into())
+            } else {
+                laya::Engine::embedded()
+                    .map(ExperimentalEngine::Laya)
+                    .map_err(|_| "laya_model_unavailable".into())
+            };
+            Mutex::new(engine)
+        })
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// Input is UTF-8 bytes. Release the returned allocation with local_jev_free.
 #[no_mangle]
 pub unsafe extern "C" fn local_jev_predict(data: *const u8, len: usize) -> *mut c_char {
     reply(data, len, |body| {
+        if assets::SHARED_PROFILE {
+            return uncertain("shared_state_not_human_calibrated");
+        }
         if !assets::LAYA_CONFIG.is_empty() {
-            // Laya remains disabled until independent human calibration and release acceptance exist.
-            return uncertain("laya_not_human_calibrated");
+            // Laya serves only through its manifest calibration (see laya.rs);
+            // uncalibrated or over-budget bodies answer nothing and the caller
+            // falls back to the cloud.
+            let engine = LAYA
+                .get_or_init(|| Mutex::new(laya::Engine::embedded()))
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            return match &*engine {
+                Ok(engine) => engine.predict(body),
+                Err(_) => uncertain("laya_model_unavailable"),
+            };
         }
         let engine = ENGINE
             .get_or_init(|| Mutex::new(Engine::embedded()))
@@ -443,21 +505,104 @@ pub unsafe extern "C" fn local_jev_predict(data: *const u8, len: usize) -> *mut 
     })
 }
 
-/// Experimental logits for an embedded Laya bundle. This never supplies app answers.
+/// Experimental logits for the embedded model. This never supplies app answers.
 #[no_mangle]
 pub unsafe extern "C" fn local_jev_diagnostic_scores(data: *const u8, len: usize) -> *mut c_char {
     reply(data, len, |body| {
-        let engine = LAYA
-            .get_or_init(|| Mutex::new(laya::Engine::embedded()))
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match &*engine {
-            Ok(engine) => engine
-                .diagnostic_scores(body)
-                .unwrap_or_else(|reason| uncertain(&reason)),
-            Err(_) => uncertain("laya_model_unavailable"),
-        }
+        embedded_scores(body, None).unwrap_or_else(|reason| uncertain(&reason))
     })
+}
+
+/// Explicit experimental API: same capped input policy and raw scores as the playground.
+/// The normal local_jev_predict guard above remains unchanged.
+#[no_mangle]
+pub unsafe extern "C" fn local_jev_experimental_decisions(
+    data: *const u8,
+    len: usize,
+) -> *mut c_char {
+    reply(data, len, |body| experimental_reply(body, None))
+}
+
+#[derive(Default)]
+struct BenchmarkProfile {
+    batched: bool,
+    lengths: Vec<Vec<usize>>,
+    timings: laya::ScoreTimings,
+}
+
+fn embedded_scores(body: &str, profile: Option<&mut BenchmarkProfile>) -> Result<Value> {
+    match (&*embedded_experimental(), profile) {
+        (Ok(ExperimentalEngine::Laya(engine)), Some(profile)) => engine.benchmark_scores(
+            body,
+            profile.batched,
+            &mut profile.lengths,
+            &mut profile.timings,
+        ),
+        (Ok(ExperimentalEngine::Laya(engine)), None) => engine.diagnostic_scores(body),
+        (Ok(ExperimentalEngine::Shared(engine)), None) => engine.raw_scores(body),
+        (Ok(ExperimentalEngine::Shared(_)), Some(_)) => Err("laya_model_unavailable".into()),
+        (Err(reason), _) => Err(reason.clone()),
+    }
+}
+
+fn experimental_reply(body: &str, profile: Option<&mut BenchmarkProfile>) -> Value {
+    match embedded_scores(body, profile) {
+        Ok(raw) => experimental_decisions(raw, body),
+        Err(reason) => uncertain(&reason),
+    }
+}
+
+/// Laya benchmark decisions and phase timings. Mode 0 is serial and mode 1 is batched.
+#[no_mangle]
+pub unsafe extern "C" fn local_jev_benchmark_decisions(
+    data: *const u8,
+    len: usize,
+    mode: u32,
+) -> *mut c_char {
+    reply(data, len, |body| {
+        let name = match mode {
+            0 => "serial",
+            1 => "batched",
+            _ => return uncertain("invalid_benchmark_mode"),
+        };
+        let mut profile = BenchmarkProfile {
+            batched: mode == 1,
+            ..Default::default()
+        };
+        let response = experimental_reply(body, Some(&mut profile));
+        json!({
+            "response": response,
+            "benchmark": {
+                "mode": name,
+                "batch_lengths": profile.lengths,
+                "preparation_ms": profile.timings.preparation.as_secs_f64() * 1000.,
+                "forward_ms": profile.timings.forward.as_secs_f64() * 1000.,
+            },
+        })
+    })
+}
+
+/// Loads and validates the embedded bundle. Must run off the UI thread.
+#[no_mangle]
+pub extern "C" fn local_jev_status() -> *mut c_char {
+    let output = std::panic::catch_unwind(|| {
+        let engine = embedded_experimental();
+        let manifest = if assets::SHARED_PROFILE {
+            assets::SHARED_MANIFEST
+        } else {
+            assets::LAYA_MANIFEST
+        };
+        let mut status = json!({"ready":engine.is_ok(), "abi":1, "diagnostic":true,
+            "calibrated":false, "productionAllowed":false,
+            "reason":engine.as_ref().err().map_or("experimental_only", String::as_str),
+            "manifestSha256":format!("{:x}", Sha256::digest(manifest))});
+        if assets::SHARED_PROFILE {
+            status["model"] = json!(shared_experimental::MODEL_ID);
+        }
+        status
+    })
+    .unwrap_or_else(|_| json!({"ready":false,"reason":"inference_failed"}));
+    CString::new(output.to_string()).unwrap().into_raw()
 }
 
 unsafe fn reply(

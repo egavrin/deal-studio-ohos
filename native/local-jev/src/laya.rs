@@ -1,6 +1,7 @@
-//! Experimental quantized Laya. Diagnostic scores never authorize production answers.
+//! Experimental quantized Laya. Serving answers requires a manifest calibration;
+//! without one, predict stays gated and diagnostic scores never authorize production answers.
 use crate::laya_backbone::{attention, Config as EncoderConfig, ModernBert};
-use crate::{parse_diagnostic_request, uncertain, Question};
+use crate::{parse_diagnostic_request, uncertain, Question, Request};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::LayerNorm;
 use candle_transformers::{
@@ -13,17 +14,34 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
+    time::{Duration, Instant},
 };
 use tokenizers::Tokenizer;
 
 const CALL_TOKENS: usize = 8192;
-const MAX_BATCH_QUESTIONS: usize = 4;
+// Questions per forward pass. The matmuls are rayon-parallel (candle:
+// Parallelism::Rayon(num_cpus)), so a larger batch amortizes the serial phases
+// (softmax/layernorm/quantize, tokenization) across the parallel ones;
+// batch_len still bounds padding waste and the call token budget.
+const MAX_BATCH_QUESTIONS: usize = 8;
 const HEAD_INSTRUCTION_RESERVE: usize = 16;
-const OPTION_PAYLOAD_LIMIT: usize = 48;
+const OPTION_PAYLOAD_LIMIT: usize = 256;
 
 #[derive(Deserialize)]
 pub struct Config {
     encoder_config: EncoderConfig,
+    /// Share the state encoding across questions (prefix KV cache): the state
+    /// is encoded once per body and each question's own tokens attend to the
+    /// cache -- an approximation (encoders are bidirectional; the state's
+    /// representations no longer see the questions). The head is unaffected:
+    /// its attention is position-free, and the type embedding is post-encoder.
+    ///
+    /// MEASURED (2026-11-25, prefix-parity.py): 1.52-1.63x faster but NOT
+    /// sound -- 27.7% of argmax picks change and a prefix-specific calibration
+    /// refit caps at ~85-87% cloud-agreement vs 94.4% exact. Default OFF; enable
+    /// only for a model trained with a state-first layout (then it is exact).
+    #[serde(default)]
+    prefix_state: Option<bool>,
     head_layers: usize,
     max_len: usize,
     head_max_len: usize,
@@ -32,6 +50,26 @@ pub struct Config {
     sep_token_id: u32,
     mask_token_id: u32,
     mask_token: String,
+}
+
+/// Serving calibration, from the manifest's `calibration` block. Fitted on the
+/// 2026-11-24 device run against the cloud's answers (agreement calibration,
+/// not ground truth -- see tools/local-jev/eval/laya-calibrate.py); `calibrated`
+/// is the gate that turns the Laya predict path on.
+#[derive(Deserialize, Clone, Copy)]
+pub struct Calibration {
+    pub calibrated: bool,
+    pub temperature: f64,
+    pub min_confidence: f64,
+}
+
+impl Calibration {
+    fn valid(&self) -> bool {
+        self.temperature.is_finite()
+            && self.temperature > 0.
+            && self.min_confidence.is_finite()
+            && (0.5..=1.).contains(&self.min_confidence)
+    }
 }
 
 struct HeadLayer {
@@ -164,6 +202,23 @@ fn allocate_options(source: &[Vec<u32>], head_max_len: usize) -> Result<Vec<Vec<
     Ok(spans)
 }
 
+#[derive(Default)]
+pub(crate) struct ScoreTimings {
+    pub preparation: Duration,
+    pub forward: Duration,
+}
+
+fn measure<T>(elapsed: Option<&mut Duration>, run: impl FnOnce() -> T) -> T {
+    if let Some(elapsed) = elapsed {
+        let start = Instant::now();
+        let result = run();
+        *elapsed += start.elapsed();
+        result
+    } else {
+        run()
+    }
+}
+
 pub struct Engine {
     encoder: ModernBert,
     head: Vec<HeadLayer>,
@@ -173,6 +228,13 @@ pub struct Engine {
     scorer2: Linear,
     tokenizer: Tokenizer,
     config: Config,
+    calibration: Option<Calibration>,
+    /// Registered NPU serving buckets (path, batch, seq), in registration
+    /// order; the group picks the smallest bucket that fits.
+    npu_specs: Vec<(String, usize, usize)>,
+    /// Lazily-compiled bucket instances, aligned with npu_specs. Engine is
+    /// only used under its global Mutex, so RefCell is safe here.
+    npu_buckets: std::cell::RefCell<Vec<Option<crate::npu::NpuForward>>>,
 }
 
 impl Engine {
@@ -266,6 +328,18 @@ impl Engine {
             {
                 return Err("invalid_laya_config".into());
             }
+            // Serving calibration (optional block): when present and declaring
+            // itself calibrated, its parameters must be usable -- same bounds as
+            // the openJev manifest gate in lib.rs. Provenance hashes are checked
+            // by the caller-facing manifest tooling, not the engine.
+            let calibration: Option<Calibration> = manifest
+                .get("calibration")
+                .map(|c| serde_json::from_value(c.clone()))
+                .transpose()
+                .map_err(|_| "invalid_laya_calibration".to_string())?;
+            if calibration.is_some_and(|c| c.calibrated && !c.valid()) {
+                return Err("invalid_laya_calibration".into());
+            }
             let mut tok = Tokenizer::from_bytes(tokenizer).map_err(|e| e.to_string())?;
             // Upstream training can persist the last per-option truncation setting in tokenizer.json.
             tok.with_truncation(None).map_err(|e| e.to_string())?;
@@ -279,6 +353,10 @@ impl Engine {
             let type_embedding = vb
                 .get((3, dim), "type_emb.weight")?
                 .dequantize(&Device::Cpu)?;
+            let npu_specs = crate::npu_graph_specs();
+            let npu_buckets = std::cell::RefCell::new(
+                npu_specs.iter().map(|_| None).collect::<Vec<_>>(),
+            );
             Ok(Self {
                 encoder,
                 head,
@@ -288,6 +366,9 @@ impl Engine {
                 scorer2: qnn::linear(dim, 1, vb.pp("scorer.3"))?,
                 tokenizer: tok,
                 config: cfg,
+                npu_specs,
+                npu_buckets,
+                calibration,
             })
         };
         load().map_err(|e| e.to_string())
@@ -298,9 +379,10 @@ impl Engine {
             .map(|x| x.get_ids().to_vec())
             .map_err(|e| e.to_string())
     }
-    fn sequence<'a>(
+    /// The question's own tokens: [cls][instruction][sep][mask+options...][sep],
+    /// with the option markers. No state -- the prefix path supplies it.
+    fn build_head<'a>(
         &self,
-        state_tokens: &[u32],
         key: &'a str,
         q: &'a Question,
         capped: bool,
@@ -330,7 +412,8 @@ impl Engine {
         let mut option_tokens = Vec::new();
         for (id, description) in &options {
             let mut tokens = self.tokens(&format!(" {id}: {description}"))?;
-            // Upstream caps option descriptions at 48 tokens. Decline if information would be lost.
+            // Option descriptions are capped at OPTION_PAYLOAD_LIMIT tokens (raised from
+            // upstream's 48 so real criteria descriptions are not truncated).
             original_options += tokens.len();
             if tokens.len() > OPTION_PAYLOAD_LIMIT && !capped {
                 return Err("option_token_budget".into());
@@ -341,31 +424,44 @@ impl Engine {
             option_tokens.push(tokens);
         }
         let head = self.config.head_max_len;
+        // The head region plus the frame (cls + three seps + the final token)
+        // must fit inside max_len. When head_max_len sits at max_len (the
+        // untruncated config), a capped allocation budgeted against head alone
+        // overflows max_len and errors -- even though capped mode exists to
+        // degrade, not fail. So the capped path budgets against the reduced
+        // head; the strict path keeps the exact head budgets it errors on.
+        let effective = if capped {
+            head.min(self.config.max_len.saturating_sub(4))
+        } else {
+            head
+        };
         let mut spans: Vec<_> = option_tokens.iter().map(Vec::as_slice).collect();
         let mut used: usize = spans.iter().map(|tokens| tokens.len() + 1).sum();
-        let mut budget = head.saturating_sub(used);
+        let mut budget = effective.saturating_sub(used);
         if budget < HEAD_INSTRUCTION_RESERVE {
             if !capped {
                 return Err("head_token_budget".into());
             }
-            let per = ((head - HEAD_INSTRUCTION_RESERVE) / spans.len()).max(4);
+            let per = (effective.saturating_sub(HEAD_INSTRUCTION_RESERVE) / spans.len()).max(4);
             for tokens in &mut spans {
                 *tokens = &tokens[..tokens.len().min(per - 1)];
             }
             used = spans.iter().map(|tokens| tokens.len() + 1).sum();
-            budget = head.saturating_sub(used);
+            budget = effective.saturating_sub(used);
         }
         if instruction.len() > budget.max(8) && !capped {
             return Err("head_token_budget".into());
         }
         let collapsed = spans.iter().copied().collect::<BTreeSet<_>>().len() != spans.len();
-        let repaired = capped && (collapsed || used + instruction.len().min(budget.max(8)) > head);
+        let repaired =
+            capped && (collapsed || used + instruction.len().min(budget.max(8)) > effective);
         let repaired_options;
         if repaired {
-            repaired_options = allocate_options(&option_tokens, head)?;
+            repaired_options =
+                allocate_options(&option_tokens, effective.max(HEAD_INSTRUCTION_RESERVE))?;
             spans = repaired_options.iter().map(Vec::as_slice).collect();
             used = spans.iter().map(|tokens| tokens.len() + 1).sum();
-            budget = head - used;
+            budget = effective.saturating_sub(used);
         } else if collapsed {
             return Err("option_tokens_collapsed".into());
         }
@@ -383,21 +479,13 @@ impl Engine {
             ids.extend_from_slice(tokens);
         }
         ids.push(self.config.sep_token_id);
-        let original_state = state_tokens.len();
-        let room = self.config.max_len.saturating_sub(ids.len() + 1);
-        if original_state > room && !capped {
-            return Err("state_token_budget".into());
-        }
-        let kept_state = original_state.min(room);
-        ids.extend_from_slice(&state_tokens[..kept_state]);
-        ids.push(self.config.sep_token_id);
         if ids.len() > self.config.max_len {
             return Err("option_token_budget".into());
         }
         let kept_options = used - options.len();
         let mut truncation = json!({"instruction_tokens_dropped":original_instruction-kept_instruction,
-            "option_tokens_dropped":original_options-kept_options,"state_tokens_dropped":original_state-kept_state,
-            "truncated": original_instruction>kept_instruction || original_options>kept_options || original_state>kept_state});
+            "option_tokens_dropped":original_options-kept_options,"state_tokens_dropped":0,
+            "truncated": original_instruction>kept_instruction || original_options>kept_options});
         if repaired {
             truncation["option_budget_repaired"] = json!(true);
         }
@@ -410,11 +498,43 @@ impl Engine {
             truncation,
         })
     }
+
+    /// The full per-question sequence: the head part plus the state. The head
+    /// builder is shared with the prefix path, which encodes the state once.
+    fn sequence<'a>(
+        &self,
+        state_tokens: &[u32],
+        key: &'a str,
+        q: &'a Question,
+        capped: bool,
+    ) -> Result<PreparedQuestion<'a>, String> {
+        let mut prepared = self.build_head(key, q, capped)?;
+        let original_state = state_tokens.len();
+        let room = self
+            .config
+            .max_len
+            .saturating_sub(prepared.ids.len() + 1);
+        if original_state > room && !capped {
+            return Err("state_token_budget".into());
+        }
+        let kept_state = original_state.min(room);
+        prepared.ids.extend_from_slice(&state_tokens[..kept_state]);
+        prepared.ids.push(self.config.sep_token_id);
+        if prepared.ids.len() > self.config.max_len {
+            return Err("option_token_budget".into());
+        }
+        if original_state > kept_state {
+            let dropped = json!(original_state - kept_state);
+            prepared.truncation["state_tokens_dropped"] = dropped.clone();
+            prepared.truncation["truncated"] = json!(true);
+        }
+        Ok(prepared)
+    }
     pub fn scores(&self, body: &str) -> Result<Value, String> {
-        self.score(body, false, false, None)
+        self.score(body, false, false, None, None)
     }
     pub fn diagnostic_scores(&self, body: &str) -> Result<Value, String> {
-        self.score(body, true, false, None)
+        self.score(body, true, false, None, None)
     }
     pub fn batched_scores(
         &self,
@@ -422,7 +542,16 @@ impl Engine {
         capped: bool,
         batch_lengths: Option<&mut Vec<Vec<usize>>>,
     ) -> Result<Value, String> {
-        self.score(body, capped, true, batch_lengths)
+        self.score(body, capped, true, batch_lengths, None)
+    }
+    pub(crate) fn benchmark_scores(
+        &self,
+        body: &str,
+        batched: bool,
+        batch_lengths: &mut Vec<Vec<usize>>,
+        timings: &mut ScoreTimings,
+    ) -> Result<Value, String> {
+        self.score(body, true, batched, Some(batch_lengths), Some(timings))
     }
     fn score(
         &self,
@@ -430,24 +559,42 @@ impl Engine {
         capped: bool,
         batched: bool,
         mut batch_lengths: Option<&mut Vec<Vec<usize>>>,
+        mut timings: Option<&mut ScoreTimings>,
     ) -> Result<Value, String> {
-        let request = parse_diagnostic_request(body)?;
+let request = parse_diagnostic_request(body)?;
+        if self.config.prefix_state.unwrap_or(false) {
+            return self.score_prefix(&request, capped, batched, batch_lengths);
+        }
         // Preflight every question before model execution.
+        // Phase timings print to stderr when LOCAL_JEV_TRACE is set (host runs;
+        // the NAPI stderr is not visible on device).
+        let trace = std::env::var_os("LOCAL_JEV_TRACE").is_some();
+        let started = Instant::now();
+        let timings_started = timings.as_ref().map(|_| Instant::now());
         let state_tokens = self.tokens(&request.state)?;
         let mut sequences = request
             .questions
             .iter()
             .map(|(key, q)| self.sequence(&state_tokens, key, q, capped))
             .collect::<Result<Vec<_>, _>>()?;
+        let tokenized = started.elapsed();
         if sequences.iter().map(|q| q.ids.len()).sum::<usize>() > CALL_TOKENS {
             return Err("call_token_budget".into());
         }
         if batched {
             sequences.sort_by_key(|q| q.ids.len());
         }
+let seq_min = sequences.iter().map(|q| q.ids.len()).min().unwrap_or(0);
+        let seq_max = sequences.iter().map(|q| q.ids.len()).max().unwrap_or(0);
+        if let (Some(timings), Some(timings_started)) = (&mut timings, timings_started) {
+            timings.preparation = timings_started.elapsed();
+        }
         let mut output = BTreeMap::new();
         let mut truncations = BTreeMap::new();
         let mut remaining = sequences.as_slice();
+        let mut infer_ns = std::time::Duration::ZERO;
+        let mut marker_ns = std::time::Duration::ZERO;
+        let mut groups = 0usize;
         while !remaining.is_empty() {
             let count = if batched { batch_len(remaining) } else { 1 };
             let (group, rest) = remaining.split_at(count);
@@ -455,11 +602,20 @@ impl Engine {
             if let Some(report) = &mut batch_lengths {
                 report.push(group.iter().map(|q| q.ids.len()).collect());
             }
-            let hidden = self.infer_group(group).map_err(|e| e.to_string())?;
+groups += 1;
+            let t0 = Instant::now();
+            let hidden = measure(timings.as_deref_mut().map(|t| &mut t.forward), || {
+                self.infer_group(group)
+            })
+            .map_err(|e| e.to_string())?;
+            infer_ns += t0.elapsed();
             for (row, question) in group.iter().enumerate() {
-                let values = self
-                    .marker_scores(&hidden, row, &question.markers)
-                    .map_err(|e| e.to_string())?;
+                let t1 = Instant::now();
+                let values = measure(timings.as_deref_mut().map(|t| &mut t.forward), || {
+                    self.marker_scores(&hidden, row, &question.markers)
+                })
+                .map_err(|e| e.to_string())?;
+                marker_ns += t1.elapsed();
                 if values.iter().any(|v| !v.is_finite()) {
                     return Err("nonfinite_scores".into());
                 }
@@ -472,12 +628,184 @@ impl Engine {
                 output.insert(question.key, json!({"type":question.kind,"logits":logits}));
             }
         }
+        if trace {
+            eprintln!(
+                "LOCAL_JEV_TRACE questions={} groups={} seq_tokens={}..{} tokenize_ms={} infer_ms={} marker_ms={} total_ms={}",
+                request.questions.len(),
+                groups,
+                seq_min,
+                seq_max,
+                tokenized.as_millis(),
+                infer_ns.as_millis(),
+                marker_ns.as_millis(),
+                started.elapsed().as_millis()
+            );
+        }
+        Ok(
+            json!({"answers":{},"scores":output,"local":{"status":"uncertain","reason":"laya_not_human_calibrated","model":"laya-multilingual-quantized","input_policy":if capped {"playground-upstream-token-caps"}else{"strict-no-truncation"},"truncation":truncations}}),
+        )
+    }
+    /// The prefix-mode scorer (Config::prefix_state): encode the shared state
+    /// once, then each question's own tokens attend to the cached per-layer
+    /// K/V. The head runs over [prefix | question] hidden states -- exact for
+    /// the head (position-free attention) and the type embedding
+    /// (post-encoder); the approximation is the state's own representations,
+    /// which no longer see the questions.
+    fn score_prefix(
+        &self,
+        request: &Request,
+        capped: bool,
+        batched: bool,
+        mut batch_lengths: Option<&mut Vec<Vec<usize>>>,
+    ) -> Result<Value, String> {
+        let trace = std::env::var_os("LOCAL_JEV_TRACE").is_some();
+        let started = std::time::Instant::now();
+        let mut sequences = request
+            .questions
+            .iter()
+            .map(|(key, q)| self.build_head(key, q, capped))
+            .collect::<Result<Vec<_>, _>>()?;
+        let tokenized = started.elapsed();
+        let mut state_tokens = self.tokens(&request.state)?;
+        let max_q = sequences.iter().map(|q| q.ids.len()).max().unwrap_or(0);
+        let room = self.config.max_len.saturating_sub(max_q + 1);
+        let original_state = state_tokens.len();
+        if state_tokens.len() > room {
+            if !capped {
+                return Err("state_token_budget".into());
+            }
+            state_tokens.truncate(room);
+        }
+        let mut prefix_ids = state_tokens;
+        prefix_ids.push(self.config.sep_token_id);
+        let prefix_len = prefix_ids.len();
+        let state_dropped = original_state + 1 - prefix_len;
+        if sequences.iter().map(|q| q.ids.len()).sum::<usize>() + prefix_len > CALL_TOKENS {
+            return Err("call_token_budget".into());
+        }
+        if batched {
+            sequences.sort_by_key(|q| q.ids.len());
+        }
+        let device = &Device::Cpu;
+        let prefix_input =
+            Tensor::from_slice(&prefix_ids, (1, prefix_ids.len()), device).map_err(|e| e.to_string())?;
+        let prefix_mask = Tensor::ones((1, prefix_ids.len()), DType::U32, device).map_err(|e| e.to_string())?;
+        let (layers, prefix_hidden) = self
+            .encoder
+            .encode_prefix(&prefix_input, &prefix_mask)
+            .map_err(|e| e.to_string())?;
+        let encoded = started.elapsed();
+        let mut output = BTreeMap::new();
+        let mut truncations: BTreeMap<&str, Value> = BTreeMap::new();
+        let mut remaining = sequences.as_slice();
+        let mut groups = 0usize;
+        while !remaining.is_empty() {
+            let count = if batched { batch_len(remaining) } else { 1 };
+            let (group, rest) = remaining.split_at(count);
+            remaining = rest;
+            groups += 1;
+            if let Some(report) = &mut batch_lengths {
+                report.push(group.iter().map(|q| q.ids.len()).collect());
+            }
+            let b = group.len();
+            let n = group[b - 1].ids.len();
+            let mut ids = Vec::with_capacity(b * n);
+            let mut mask = Vec::with_capacity(b * n);
+            let mut lengths = Vec::with_capacity(b);
+            let mut kinds = Vec::with_capacity(b);
+            for (row, question) in group.iter().enumerate() {
+                ids.extend_from_slice(&question.ids);
+                ids.resize((row + 1) * n, self.config.cls_token_id);
+                mask.resize(row * n + question.ids.len(), 1u32);
+                mask.resize((row + 1) * n, 0);
+                lengths.push(prefix_len + question.ids.len());
+                kinds.push(question.kind_index());
+            }
+            let input = Tensor::from_vec(ids, (b, n), device).map_err(|e| e.to_string())?;
+            let qmask = Tensor::from_vec(mask, (b, n), device).map_err(|e| e.to_string())?;
+            let hidden_q = self
+                .encoder
+                .forward_with_prefix(&input, &qmask, &layers)
+                .map_err(|e| e.to_string())?;
+            let dim = self.config.encoder_config.hidden_size;
+            let kind_emb = self
+                .type_embedding
+                .index_select(&Tensor::new(kinds, device).map_err(|e| e.to_string())?, 0)
+                .and_then(|k| k.reshape((b, 1, dim)))
+                .map_err(|e| e.to_string())?;
+            let prefix_h = prefix_hidden
+                .broadcast_as((b, prefix_len, dim))
+                .and_then(|p| p.broadcast_add(&kind_emb))
+                .map_err(|e| e.to_string())?;
+            let q_h = hidden_q
+                .broadcast_add(&kind_emb)
+                .map_err(|e| e.to_string())?;
+            let mut h = Tensor::cat(&[prefix_h, q_h], 1).map_err(|e| e.to_string())?;
+            for layer in &self.head {
+                h = layer.forward(&h, Some(&lengths)).map_err(|e| e.to_string())?;
+            }
+            for (row, question) in group.iter().enumerate() {
+                let markers: Vec<usize> =
+                    question.markers.iter().map(|m| m + prefix_len).collect();
+                let values = self
+                    .marker_scores(&h, row, &markers)
+                    .map_err(|e| e.to_string())?;
+                if values.iter().any(|v| !v.is_finite()) {
+                    return Err("nonfinite_scores".into());
+                }
+                let mut truncation = question.truncation.clone();
+                if state_dropped > 0 {
+                    truncation["state_tokens_dropped"] = json!(state_dropped);
+                    truncation["truncated"] = json!(true);
+                }
+                truncations.insert(question.key, truncation);
+                let logits = question
+                    .options
+                    .iter()
+                    .zip(values)
+                    .collect::<BTreeMap<_, _>>();
+                output.insert(question.key, json!({"type":question.kind,"logits":logits}));
+            }
+        }
+        if trace {
+            eprintln!(
+                "LOCAL_JEV_TRACE(prefix) questions={} groups={} prefix_tokens={} total_ms={} encode_prefix_ms={} tokenize_ms={}",
+                request.questions.len(),
+                groups,
+                prefix_len,
+                started.elapsed().as_millis(),
+                (encoded - tokenized).as_millis(),
+                tokenized.as_millis()
+            );
+        }
         Ok(
             json!({"answers":{},"scores":output,"local":{"status":"uncertain","reason":"laya_not_human_calibrated","model":"laya-multilingual-quantized","input_policy":if capped {"playground-upstream-token-caps"}else{"strict-no-truncation"},"truncation":truncations}}),
         )
     }
     fn infer_group(&self, group: &[PreparedQuestion<'_>]) -> candle_core::Result<Tensor> {
         let device = &Device::Cpu;
+        // The NPU serving buckets: pick the smallest registered bucket whose
+        // batch and padded seq fit the group. The graph computes the encoder,
+        // the final norm, the type add and the head layers; the marker scorer
+        // runs on the returned hidden states exactly as for the candle path.
+        // The bucket is compiled lazily on first use and kept for the process.
+        if !self.npu_specs.is_empty() {
+            let max_len = group.iter().map(|q| q.ids.len()).max().unwrap_or(0);
+            if let Some(idx) = self.pick_bucket(group.len(), max_len) {
+                // Lazily compiled: the first group that needs a bucket pays
+                // its build (persisted: a later cold start restores it).
+                let npu = self.take_bucket(idx).or_else(|| self.compile_bucket(idx));
+                if let Some(npu) = npu {
+                    let hidden = self.npu_group_forward(&npu, group);
+                    let (s, d) = (self.npu_specs[idx].2, npu.dim);
+                    self.put_bucket(idx, npu);
+                    if let Some(hidden) = hidden {
+                        let b = group.len();
+                        return Tensor::from_vec(hidden, (b, s, d), device);
+                    }
+                }
+            }
+        }
         if let [question] = group {
             let n = question.ids.len();
             let input = Tensor::from_slice(&question.ids, (1, n), device)?;
@@ -527,6 +855,88 @@ impl Engine {
         }
         Ok(hidden)
     }
+    /// Build the NPU graph inputs (raw embeddings, padding mask, type add)
+    /// from the prepared questions and run it. None on any failure: the
+    /// caller falls back to candle.
+    /// The smallest registered bucket that fits the group; None when no
+    /// bucket does (the candle path serves).
+    fn pick_bucket(&self, batch: usize, max_len: usize) -> Option<usize> {
+        let mut best: Option<usize> = None;
+        for (idx, (_, b, s)) in self.npu_specs.iter().enumerate() {
+            if batch <= *b && max_len <= *s {
+                let better = match best {
+                    None => true,
+                    Some(j) => *s < self.npu_specs[j].2,
+                };
+                if better {
+                    best = Some(idx);
+                }
+            }
+        }
+        best
+    }
+
+    /// Take the bucket out of its slot (a taken bucket is absent while in
+    /// use; a failed forward or a panic just drops it -- the next group
+    /// recompiles, and candle serves in the meantime).
+    fn take_bucket(&self, idx: usize) -> Option<crate::npu::NpuForward> {
+        let mut guard = self.npu_buckets.borrow_mut();
+        guard.get_mut(idx).and_then(|slot| slot.take())
+    }
+
+    /// Compile (or restore) the bucket from its spec. None on any failure:
+    /// the group falls back to candle.
+    fn compile_bucket(&self, idx: usize) -> Option<crate::npu::NpuForward> {
+        let (path, batch, seq) = &self.npu_specs[idx];
+        let dim = self.config.encoder_config.hidden_size;
+        crate::npu::NpuForward::try_new(Path::new(path), *batch, *seq, dim)
+    }
+
+    /// Return the bucket to its slot.
+    fn put_bucket(&self, idx: usize, npu: crate::npu::NpuForward) {
+        let mut guard = self.npu_buckets.borrow_mut();
+        if let Some(slot) = guard.get_mut(idx) {
+            *slot = Some(npu);
+        }
+    }
+
+    fn npu_group_forward(&self, npu: &crate::npu::NpuForward, group: &[PreparedQuestion<'_>]) -> Option<Vec<f32>> {
+        let (b, s, dim) = (npu.batch, npu.seq, npu.dim);
+        let bs = b * s;
+        let mut emb = vec![0f32; bs * dim];
+        let mut tadd = vec![0f32; bs * dim];
+        let mut pmask = vec![-1e4f32; b * s * s];
+        for (slot, question) in group.iter().enumerate() {
+            let len = question.ids.len().min(s);
+            if len == 0 {
+                continue;
+            }
+            let rows = self.encoder.embed_rows(&question.ids).ok()?;
+            let base = slot * s;
+            emb[base * dim..(base + len) * dim].copy_from_slice(&rows[..len * dim]);
+            // The type vector goes into the real rows; padding rows stay 0.
+            let kind = self
+                .type_embedding
+                .i(question.kind_index() as usize)
+                .ok()?
+                .to_vec1::<f32>()
+                .ok()?;
+            for i in 0..len {
+                for (d, v) in kind.iter().enumerate() {
+                    tadd[(base + i) * dim + d] = *v;
+                }
+            }
+            // Real rows of this slot attend the real columns only.
+            for i in 0..len {
+                let row = slot * s * s + i * s;
+                for j in 0..len {
+                    pmask[row + j] = 0.0;
+                }
+            }
+        }
+        npu.forward(&emb, &pmask, &tadd)
+    }
+
     fn marker_scores(
         &self,
         hidden: &Tensor,
@@ -545,8 +955,20 @@ impl Engine {
             .flatten_all()?
             .to_vec1::<f32>()
     }
-    pub fn predict(&self, _body: &str) -> Value {
-        uncertain("laya_not_human_calibrated")
+    /// Serve answers when the manifest declares a usable calibration: run the
+    /// (capped) batched scorer and turn the logits into decisions through
+    /// `crate::decisions` with the fitted temperature and min_confidence.
+    /// Questions the calibration is not confident about are simply absent from
+    /// `answers` -- the caller asks the cloud for those. Without a calibration
+    /// this stays the diagnostic-only gate (empty answers, cloud fallback).
+    pub fn predict(&self, body: &str) -> Value {
+        let Some(calibration) = self.calibration.filter(|c| c.calibrated) else {
+            return uncertain("laya_not_human_calibrated");
+        };
+        match self.batched_scores(body, true, None) {
+            Ok(raw) => crate::decisions(&raw, calibration.temperature, calibration.min_confidence),
+            Err(reason) => uncertain(&reason),
+        }
     }
 }
 
@@ -656,6 +1078,10 @@ mod option_budget_tests {
             wide.criteria.keys().cloned().collect::<Vec<_>>()
         );
         assert_eq!(prepared.markers.len(), wide.criteria.len());
+        // The capped path repairs the allocation against the head: with 65 options
+        // the payload shrinks to its shortest unique prefix and the instruction
+        // takes what is left. The public bundle is the head-256 config this
+        // shape was fitted for.
         let head_end = prepared.markers.last().unwrap() + 3;
         assert_eq!(prepared.ids[head_end], config.sep_token_id);
         assert_eq!(head_end - 2, config.head_max_len);
@@ -689,12 +1115,14 @@ mod option_budget_tests {
                     || (source[0] == payload[0] && source[2..48].contains(&payload[1]))
             );
         }
+        // Strict mode keeps the exact head budget: the options fit the payload
+        // limit, so the instruction cannot, and the call is declined.
         assert_eq!(
             engine
                 .sequence(&state_tokens, "wide", &wide, false)
                 .err()
                 .unwrap(),
-            "option_token_budget"
+            "head_token_budget"
         );
         let questions: BTreeMap<_, _> = (0..9).map(|i| (
             i.to_string(),

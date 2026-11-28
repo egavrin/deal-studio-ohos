@@ -75,8 +75,8 @@ python3 -m venv .local-jev/venv
 python -m pip install 'huggingface_hub==2.4.0' 'transformers==5.22.0'
 revision=1720e3e3357cfe1e281542e223f8273b0890ca34
 hf download convaiinnovations/laya-multilingual --revision "$revision" \
-  --local-dir .local-jev/laya-base --include model.safetensors rl_agent_config.json \
-  encoder/config.json 'tokenizer/*'
+  --local-dir .local-jev/laya-base --include model.safetensors --include rl_agent_config.json \
+  --include encoder/config.json --include 'tokenizer/*'
 python tools/local-jev/laya-export.py .local-jev/laya-base .local-jev/bundle-q4 \
   --base-revision "$revision" --q4-embeddings
 export VERA_LAYA_MANIFEST="$PWD/.local-jev/bundle-q4/laya-manifest.json"
@@ -122,6 +122,11 @@ The last two checks print their report paths. The reports record the shared-plan
 hash and Rust worker identity. The pipeline check also covers restart, request
 matching, uncertainty, and failed providers. Run the same checks with
 `VERA_LAYA_MANIFEST` set to test the explicit Laya path.
+
+For standalone generation and structural editing on host and phone, see
+[experimental selector integration](../../docs/local-selector-integration.md).
+The Laya worker uses Rust's `--experimental-decisions`. Both workers convert
+logits to experimental decisions in Rust.
 
 See [OpenHarmony integration](../../native/local-jev/README.md) for the
 embedded build, C ABI verification, and the app call sites.

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On-Device Decision Model — Vera Generation Pipeline</title>
+<style>
+  :root {
+    --ink: #1c2733; --ink-soft: #4a5866; --line: #d8dee4; --surface: #f7f9fa;
+    --accent: #2562ae; --good: #1d7a3e; --bad: #b3382c; --band: #eef3f8;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #dce4ec; --ink-soft: #93a1af; --line: #2c3947; --surface: #131a22;
+      --accent: #7ab0ff; --good: #57d083; --bad: #ff8a7a; --band: #1a2430;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font: 16px/1.65 Georgia, "Times New Roman", serif;
+    color: var(--ink); background: var(--surface);
+    max-width: 920px; margin: 0 auto; padding: 2.2rem 1.4rem 4rem;
+  }
+  header { border-bottom: 3px double var(--line); padding-bottom: 1.1rem; margin-bottom: 1.8rem; }
+  header h1 { font: 700 1.9rem/1.25 Georgia, serif; margin: 0 0 .35rem; }
+  header p { color: var(--ink-soft); margin: 0; font-size: .92rem; }
+  h2 { font: 700 1.28rem/1.3 Georgia, serif; margin: 2.3rem 0 .55rem; color: var(--ink); }
+  h3 { font: 700 1.03rem/1.3 Georgia, serif; margin: 1.5rem 0 .4rem; color: var(--ink); }
+  p { margin: .55rem 0; }
+  ul, ol { margin: .55rem 0 .55rem 1.35rem; padding: 0; }
+  li { margin: .3rem 0; }
+  code { font: .84em var(--mono); background: var(--band); padding: .08em .35em; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; margin: .9rem 0 1.25rem; font: .88rem/1.45 Helvetica, Arial, sans-serif; }
+  th, td { border: 1px solid var(--line); padding: .48rem .7rem; text-align: left; vertical-align: top; }
+  th { background: var(--band); font-weight: 700; }
+  td.n, th.n { text-align: right; font-family: var(--mono); font-size: .84rem; white-space: nowrap; }
+  tr:nth-child(even) td { background: color-mix(in srgb, var(--band) 45%, transparent); }
+  .kpi { display: flex; gap: .7rem; flex-wrap: wrap; margin: 1.1rem 0; }
+  .kpi div {
+    flex: 1 1 200px; border: 1px solid var(--line); border-radius: 6px; padding: .65rem .85rem;
+    background: color-mix(in srgb, var(--band) 55%, var(--surface));
+  }
+  .kpi .v { font: 700 1.3rem/1.1 var(--mono); color: var(--accent); display: block; }
+  .kpi .l { font: .76rem/1.3 Helvetica, sans-serif; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .d { font: .8rem/1.35 Georgia, serif; color: var(--ink-soft); }
+  .verdict {
+    border-left: 4px solid var(--accent); background: var(--band);
+    padding: .85rem 1.05rem; margin: 1.2rem 0; border-radius: 0 6px 6px 0;
+  }
+  .verdict strong { color: var(--accent); }
+  .flow {
+    font: .78rem/1.7 var(--mono); background: var(--band); border: 1px solid var(--line);
+    border-radius: 6px; padding: .95rem 1.1rem; overflow-x: auto; margin: .9rem 0; white-space: pre;
+  }
+  .note { font-size: .82rem; color: var(--ink-soft); border-top: 1px solid var(--line); margin-top: 2.4rem; padding-top: .8rem; }
+  .num { font-variant-numeric: tabular-nums; }
+  .good { color: var(--good); font-weight: 700; }
+  .bad { color: var(--bad); font-weight: 700; }
+  .tag { font: .68rem/1 Helvetica, sans-serif; border: 1px solid var(--line); border-radius: 3px; padding: .1rem .4rem; color: var(--ink-soft); white-space: nowrap; }
+  sup { font-size: .7em; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>On-Device Decision Model — the Vera Generation Pipeline</h1>
+  <p>Status summary, architecture, measured data, and the feasibility record for running the local Jev decision model on CPU and NPU. Data collected 2026-11-24 → 2026-11-27 on engineering devices (Mate&nbsp;70 / Kirin&nbsp;9010, Mate&nbsp;80&nbsp;Pro&nbsp;Max / Kirin&nbsp;9030). Companion documents: <code>docs/local-jev/</code>.</p>
+</header>
+
+<div class="kpi">
+  <div><span class="v">≈4×</span><span class="l">Raw NPU speedup</span><span class="d">1.24 s vs 5 s per decision forward, 22-layer Laya on Kirin 9030</span></div>
+  <div><span class="kpi"></span><span class="v">Δ 0.002</span><span class="l">NPU logit error</span><span class="d">vs the exact numpy spec — closer than the CPU engine (0.12–0.39)</span></div>
+  <div><span class="v">~11 s vs ~90 s</span><span class="l">Cloud vs hybrid generation</span><span class="d">a full generation, all-cloud vs any local backend</span></div>
+  <div><span class="v">547 MB</span><span class="l">NPU hybrid HAP</span><span class="d">284 MB for the CPU build; the gap is the F16 serving graph</span></div>
+</div>
+
+<h2>1. What the model is and what replaced what</h2>
+
+<p>Vera generates apps from a prompt in two model phases. The <strong>language model</strong> (cloud LLM) writes the program; the <strong>decision model</strong> (Jev) answers the structured selector questions the composer asks while assembling the program's screens — theme, widget, formula, step naming, and so on. One real generation asks roughly 15 of these per body, each with a handful of labelled options.</p>
+
+<p>Historically every decision was a cloud call. The on-device work replaces the <em>easy tier</em> of those decisions with a local model, keeping the cloud for the rest:</p>
+
+<table>
+  <thead><tr><th></th><th>CPU path <span class="tag">deployed</span></th><th>NPU path <span class="tag">proven, integrated</span></th><th>Cloud</th></tr></thead>
+  <tbody>
+    <tr><td>model</td><td>Laya (ModernBERT-style, 22 layers × 768, ~39 M params of encoder + a 2-layer head + a small scorer), Q4_0-quantized gguf, run by candle in Rust</td><td>the same weights re-expressed as a HiAI Foundation graph (ge_ir protobuf), executed by the vendor NPU runtime</td><td>glm-5.2 (DashScope) through the in-app proxy</td></tr>
+    <tr><td>decisions it serves</td><td colspan="2">the calibrated subset: steps, asked, theme, arg… — whatever passes <code>min_confidence 0.71</code> at <code>T* 2.2</code></td><td>everything else: <code>expr</code>, <code>show</code> (cloud-tier by routing), below-confidence, retries</td></tr>
+    <tr><td>offline</td><td class="good">yes</td><td class="good">yes</td><td class="bad">no</td></tr>
+  </tbody>
+</table>
+
+<p>The decisive detour on the way here: the attention score product (<code>Q·K<span style="font-size:.8em">T</span></code>) was believed to be a <strong>platform blocker</strong> — no transpose support in the HiAI op set, verified on two phones and two HiAI versions. It was not. It was <strong>two wire-format bugs in our own generator</strong>: the <code>adj_x2</code> attribute must be <em>boolean</em> (an int-typed attribute is silently ignored, so the adjoint never applies and shape inference rejects the graph), and F16 weight Consts are rejected by the builder while F16 is fine after the LayerNorm gamma/beta stay F32. With both fixed, the full 22-layer model compiles and runs on the NPU with correct logits. The earlier "constraint map" is formally retracted in <code>replacement-analysis.md §7.11</code>.</p>
+
+<h2>2. Architecture — where the model sits in the pipeline</h2>
+
+<div class="flow">Generate screen prompt
+        │
+        ▼
+┌─────────────────┐   sketch (cloud LLM)   ┌──────────────────┐
+│ GeneratePage     │ ─────────────────────▶ │ cloud LLM         │
+│ (ArkTS)          │                         │ (glm-5.2, proxy) │
+└───────┬─────────┘                         └──────────────────┘
+        │ compose phase: VeraCompose builds a Jev body (state + questions)
+        ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ askJev → hybrid route (VeraLocalDecision)                       │
+│                                                                  │
+│  hard tier (does./expr./show.) ────────────────▶ cloud batch   │
+│  easy tier ──▶ NapiLocalDecision / NpuNapiLocalDecision         │
+│                 │                                                │
+│                 ▼                                                │
+│  ┌──────────────────────────────────────────┐  Rust engine       │
+│  │ liblocaljev.so (Rust, in-process)       │  (laya.rs)         │
+│  │  tokenizer → build_sequence per question│                    │
+│  │  infer_group:                            │                    │
+│  │    NPU? ─▶ npu.rs forward (graph)       │  ← graph path      │
+│  │    else ─▶ candle CPU forward           │  ← fallback        │
+│  │  marker scorer + calibration (T*, 0.71)  │                    │
+│  └──────────────────────────────────────────┘                    │
+│  answers below confidence ──▶ per-question cloud fallback        │
+└──────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+  compose → compile (VBC2) → ArkUI render     (~5 s model + Jev phase)</div>
+
+<h3>The three backends share everything except the forward</h3>
+
+<p>The NPU integration point is <code>infer_group</code> inside the Rust engine: the graph replaces only the transformer forward. Tokenization, question batching, the embedding lookup, the marker scorer, and the serving calibration run host-side in Rust exactly as for the CPU path — the marker scorer consumes the NPU's hidden states in the same <code>[B, S, 768]</code> shape candle produces. This is why the correctness carries over: the calibration (<code>laya-calibrate.py</code>, fitted on the CPU outputs, n=109, 94.4% in-sample agreement) applies unchanged.</p>
+
+<h3>The serving graph</h3>
+
+<p><code>hiai-gen.py --batched 8 --seq 256</code> emits a fixed-shape graph from the validated numpy reference: 8 question slots padded to 256 tokens each, three inputs (raw embeddings <code>[8·256, 768]</code>, the padding mask <code>[8, 256, 256]</code>, the type embedding <code>[8·256, 768]</code>), and one output — the hidden states after the encoder, final norm, type add and head layers. One graph, one on-device compile (~2.1 s), any body; the padding mask (host-prepared from each question's real length) isolates slots so the padding cannot leak. The scorer stays host-side because the calibration is the product decision layer and per-body. Weights are F16 (accepted by the builder for the big projections), LayerNorm gamma/beta and the small tables F16-rejected and kept F32, identical Consts deduplicated — 278 MB total.</p>
+
+<h3>Fallback chain</h3>
+
+<p>Missing graph / build failure / question longer than 256 → candle CPU → below-confidence or cloud-tier → cloud batch. Every level degrades independently; the E2E pipeline never hard-depends on the NPU.</p>
+
+<h2>3. Measured data</h2>
+
+<h3>3.1 Quality</h3>
+
+<table>
+  <thead><tr><th>metric</th><th class="n">CPU (candle)</th><th class="n">NPU</th><th>notes</th></tr></thead>
+  <tbody>
+    <tr><td>worst logit Δ vs the exact numpy spec</td><td class="n">0.12–0.39</td><td class="n"><strong>0.002</strong></td><td>8 fixtures, offline; the NPU is <em>closer to the spec</em> — candle's own forward drift dominates</td></tr>
+    <tr><td>calibrated confidence shift (same body)</td><td class="n">reference</td><td class="n">−0.003</td><td>device, fixed spike body: ref 0.7588 / candle 0.7574 / NPU 0.7546</td></tr>
+    <tr><td>decisions served locally (same class of body)</td><td class="n">5–8 / 16</td><td class="n">5–7 / 15</td><td>4 CPU runs, 2 NPU runs — the <em>within</em>-CPU variance exceeds the backend difference</td></tr>
+    <tr><td>agreement with the cloud answers</td><td colspan="2" class="n">59.8% overall · 94.4% on the served subset</td><td>the calibration target (n=109, in-sample)</td></tr>
+    <tr><td>end-to-end generation result</td><td colspan="2">correct, compiled, rendered app in every hybrid run</td><td>both backends, all runs</td></tr>
+  </tbody>
+</table>
+
+<p>The decision-relevant reading: only questions within ~0.005 of the 0.71 confidence boundary can flip between backends, and the calibration was fitted on CPU outputs — the NPU's −0.003 is noise around that target, not a bias. The boundary case measured: <code>unit.bill</code> at reference 0.7130 / candle 0.7087 flips serve-vs-cloud on noise smaller than candle's own drift.</p>
+
+<h3>3.2 Latency and throughput</h3>
+
+<table>
+  <thead><tr><th></th><th class="n">CPU forward</th><th class="n">NPU forward</th><th class="n">Cloud (glm-5.2)</th></tr></thead>
+  <tbody>
+    <tr><td>one decision</td><td class="n">~5 s</td><td class="n"><strong>1.24 s</strong> <span style="color:var(--ink-soft)">(seq 108)</span></td><td class="n">~1.75 s</td></tr>
+    <tr><td>batched throughput</td><td class="n">~0.2 q/s</td><td class="n">0.6–1 q/s <span style="color:var(--ink-soft)">(B=8, S=256)</span></td><td class="n">1–4 q/s <span style="color:var(--ink-soft">(concurrency 4)</span></td></tr>
+    <tr><td>one-time cost</td><td class="n">—</td><td class="n">compile 2.1–2.6 s + init 3.7–6.5 s</td><td class="n">—</td></tr>
+    <tr><td>tail / variance</td><td>none</td><td>none</td><td>network; 20 s timeout observed on a poor relay</td></tr>
+  </tbody>
+</table>
+
+<h3>3.3 Impact on the whole generation</h3>
+
+<table>
+  <thead><tr><th>route</th><th class="n">Jev phase</th><th class="n">LLM phase</th><th class="n">total</th></tr></thead>
+  <tbody>
+    <tr><td>all-cloud</td><td class="n">—</td><td class="n">—</td><td class="n"><strong>~11 s</strong></td></tr>
+    <tr><td>CPU hybrid</td><td class="n">86.4 s</td><td class="n">4.4 s</td><td class="n">~91 s</td></tr>
+    <tr><td>NPU hybrid <span class="tag">first gen in process</span></td><td class="n">94.8 s</td><td class="n">4.5 s</td><td class="n">~95 s</td></tr>
+  </tbody>
+</table>
+
+<div class="verdict">
+  <p><strong>The honest headline:</strong> the NPU's raw forward is 4× faster, but the <em>pipeline</em> is not yet faster — 94.8 s vs 86.4 s for the Jev phase. The measured gap comes from fixed-shape padding waste (every batch pays the full 8×256 slots while real questions average ~150 tokens), first-run compile/init, and the cloud fallback round trip, which dominates both hybrid rows equally. And every hybrid route is ~8× slower than pure cloud on wall clock; the hybrid's value is availability (no network, no tail), not speed.</p>
+</div>
+
+<h3>3.4 Size, memory and resource requirements</h3>
+
+<table>
+  <thead><tr><th>resource</th><th class="n">CPU build</th><th class="n">NPU build</th></tr></thead>
+  <tbody>
+    <tr><td>HAP size</td><td class="n">284 MB</td><td class="n">547 MB</td></tr>
+    <tr><td>model storage</td><td class="n">161 MB (Q4 gguf, embedded)</td><td class="n">+ 278 MB graph (F16 weights + F32 LN)</td></tr>
+    <tr><td>native library</td><td class="n">233 MB <code>liblocaljev.so</code></td><td class="n">same + graph loaded at runtime</td></tr>
+    <tr><td>compute for forward</td><td>~5.3 of 8 cores, rayon-parallel, ~4 GFLOPS effective</td><td>NPU FP16 kernels; the NPU runtime owns scheduling</td></tr>
+    <tr><td>first-use</td><td class="n">~5 s (gguf load)</td><td class="n">+ ~6–10 s (graph copy to filesDir, compile, init)</td></tr>
+    <tr><td>RAM</td><td colspan="2">weights + activations per batch; at 39 M params not binding (the 278 MB graph dominates the NPU build's working set)</td></tr>
+  </tbody>
+</table>
+
+<h3>3.5 Model-level facts for feasibility</h3>
+
+<ul>
+  <li><strong>Compute per question</strong>: ~20.5 GFLOP at ~110 tokens (Laya encoder, 22×768). This is fixed by architecture — the rejected openJev-151M shares the same encoder, so a smaller parameter count was <em>not</em> a speed lever (the parameter difference is embedding lookups, no FLOPs).</li>
+  <li><strong>Speed levers already tried and measured</strong>: question batch 4→8 kept (+5%); max_len 512 halving rejected (+3%, identical answers); threading already parallel; state-sharing (prefix KV) rejected on quality (27.7% argmax flips, ~86% agreement ceiling).</li>
+  <li><strong>Calibration is the serving gate</strong>: fitted in-sample (n=109); the per-type refit at scale is the documented follow-up.</li>
+</ul>
+
+<h2>4. Improvement proposals — and what came of them</h2>
+
+<p>Three of the levers below were implemented on 2026-11-27 (commits 78459fe, ebe7f73); their measured results are marked inline. The honest headline: <strong>all three work as designed, and the E2E time stayed flat</strong> — the bucketed local phase measured ~79–81 s against the 73–84 s S=256 baseline, so the expected ~14 s padding saving is within noise, not demonstrated. The per-batch NPU cost may not be shape-proportional at these sizes; resolving that needs per-batch trace timing (still to do).</p>
+
+<h3>Model / serving tuning</h3>
+<ol>
+  <li><strong>Bucketed graph shapes</strong> <span class="tag">implemented, flat result</span> — the registry now takes multiple (path, batch, seq) graphs; <code>infer_group</code> picks the smallest bucket that fits the group and compiles it lazily (persisted). S=192 B=8 replaced S=256 B=8 in the test build (S=384 B=4 was generated and validated but dropped on disk constraints). Correct answers, flat E2E time.</li>
+  <li><strong>Parallel hard tier</strong> <span class="tag">implemented, verified</span> — the hard-tier cloud batch now runs concurrently with the local forward; the Jev phase is <code>max(cloud, local + fallback)</code> instead of the sum. Verified in a live generation.</li>
+  <li><strong>Dynamic-shape graphs</strong> — the <code>HIAI_MR_DynamicShapeConfig</code> API exists in libhiai (enable + 1..10 cached shapes); untested. If it works, one compile serves all lengths and the padding waste disappears entirely. Now the highest-value untried lever.</li>
+  <li><strong>Warm-process amortization</strong> — the compile + engine construction are once per process; a second generation in a warm process skips them. Still unmeasured (the result screen's New navigation resists programmatic driving).</li>
+  <li><strong>Per-type calibration refit at scale</strong> — the current fit is global and in-sample; a recorded set at scale would sharpen <code>min_confidence</code> per question type and lift the served fraction.</li>
+  <li><strong>Graph quantization</strong> — the graph stores F16 weights (F16 rejected only for LN gamma/beta); int8 weight quantization of the projections would halve the graph again if the builder accepts it, and is the shipping path for the 547 MB HAP problem.</li>
+  <li><strong>openJev-151M as the packaging option</strong> — same FLOPs, 3× smaller Q4 bundle, genuine held-out calibration; a quality/packaging choice, not a speed choice.</li>
+</ol>
+
+<h3>OS capability</h3>
+<ul>
+  <li><strong>Model persistence</strong> <span class="tag">implemented, verified</span> — <code>SaveToFile</code>/<code>RestoreFromFile</code> wired into the Rust forward; the compiled graph is cached beside the graph file and cold starts skip the compile (~2.1 s saved; the 3.7–6.5 s init remains either way).</li>
+  <li><strong>Per-backend NNRT access</strong> — the MindSpore NNRT service is deployed but SELinux-gated for debug-profile apps on retail devices; an OS-level permission for signed apps would open the second NPU door and give a vendor-independent fallback.</li>
+  <li><strong>Foreground scheduling</strong> — the NPU forward runs in the app's process with ordinary priority; a QoS class for on-device inference during generation would tighten the first-batch latency.</li>
+</ul>
+
+<h3>Hardware (CPU and NPU)</h3>
+<ul>
+  <li><strong>CPU ceiling</strong> — candle runs ~4 GFLOPS effective on the Kirin CPU (5.3/8 cores); a llama.cpp-grade Q4 kernel rewrite is the only remaining CPU lever, est. 2–3×.</li>
+  <li><strong>NPU generation</strong> — the Kirin 9030 executes the full attention stack once the attr bug is fixed; older HiAI builds (106/107 on the other phones) need the re-run to confirm the same. NPU FLOPS at B=8/S=256 imply ~17–20 GFLOPS effective — an order over CPU, with the fixed-shape overhead, not compute, as today's limiter.</li>
+  <li><strong>DSP/other accelerators</strong> — HiAI exposes AIPP + quantized-tuning options at build time; exploring INT8 execution for the encoder is the natural next experiment.</li>
+</ul>
+
+<h2>5. The feasibility record</h2>
+
+<table>
+  <thead><tr><th>question</th><th>answer</th></tr></thead>
+  <tbody>
+    <tr><td>Can the full decision model run on the NPU?</td><td class="good">Yes — 22 layers, correct logits (Δ 0.002), on Kirin 9030. The "attention transpose blocker" was our attr-encoding bug, not silicon.</td></tr>
+    <tr><td>Is the NPU path integrated end to end?</td><td class="good">Yes — a real hybrid generation served 5–7/15 decisions on the NPU with cloud fallback, in the shipped pipeline.</td></tr>
+    <tr><td>Does it make the pipeline faster today?</td><td class="bad">No — ~86–95 s vs 86.4 s (CPU) Jev phase, flat across the S=256, bucketed S=192, persisted and parallel-routing variants. The 4× forward win is eaten by the fixed-shape overhead, the engine construction and the cloud fallback; padding reduction (S=192 buckets) did not move the total within measurement noise.</td></tr>
+    <tr><td>Does it change answer quality?</td><td class="good">No — within candle's own run-to-run variance; the NPU is closer to the spec than candle is.</td></tr>
+    <tr><td>Why run local at all?</td><td>Availability: offline generation, no network tail, no per-decision cloud cost. Speed was the hoped-for bonus; it is not yet realized.</td></tr>
+  </tbody>
+</table>
+
+<p class="note">
+Data sources: <code>docs/local-jev/cpu-vs-npu-vs-cloud.md</code> (E2E three-backend measurements), <code>cpu-vs-cloud.md</code> (CPU-vs-cloud agreement, n=112), <code>build.md</code> (CPU build/tuning), <code>replacement-analysis.md</code> §7.11 (the NPU breakthrough, constraint history and retraction), commits 8c4d917 (NPU proven), 3e4973c (E2E integration), 78459fe (model persistence) and ebe7f73 (bucketed shapes + parallel hard tier) on <code>cortex/jev-local-hybrid</code>. E2E times are single-run observations on one device; the logit-level numbers are deterministic and reproducible. Updated 2026-11-27 after the optimization round: three levers implemented, the E2E time flat — the decomposition data is in <code>cpu-vs-npu-vs-cloud.md</code> §6–7.
+</p>
+
+</body>
+</html>

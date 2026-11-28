@@ -23,6 +23,7 @@ import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS, SideCall } from '../vera/Deep
 import { OperationController, throwIfCancelled } from '../vera/OperationCancellation'
 import { VeraPreview, VeraPreviewController } from '../components/VeraPreview'
 import { settings, MODE_DEEPSEEK, MODE_SERVER, MODE_LOCAL } from '../vera/SettingsStore'
+import { localJev } from '../vera/LocalJev'
 import { settingsMenuItem } from '../components/SettingsEntry'
 import { withoutWidgetRequests } from '../vera/ProjectText'
 import { consent } from '../vera/VeraConsentStore'
@@ -64,6 +65,7 @@ import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { ToolCall, ToolTotal, toolCalls, resetToolLog, toolTotals, toolMs } from '../vera/ToolLog'
 import { ServiceNote, serviceNotes, resetServiceHealth, describeService, silent, serviceTrouble } from '../vera/ServiceHealth'
 import { Stage, addStage, appMs, yourMs, byWho, WHO_MODEL, WHO_JEV, WHO_SEARCH, WHO_PHONE, WHO_YOU } from '../vera/RunStages'
+import { SelectorCall, selectorCalls, selectorTotals, selectorStages, selectorLabel } from '../vera/SelectorMetrics'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
@@ -328,6 +330,7 @@ export struct GeneratePage {
   @State lastTemplatePick: string = ''
   /** The small model calls of this run (text for blocks, function bodies, second opinion, UI choice), for the Metrics tab. */
   @State sideCalls: SideCall[] = []
+  @State selectorMetrics: SelectorCall[] = []
   /** Where the time of this run went, stage by stage (RunStages.ets): the Metrics tab's first card. */
   @State stages: Stage[] = []
   /** Which of Jev, Exa and DeepSeek answered in this run and which did not: the Metrics tab's last card. */
@@ -529,7 +532,7 @@ export struct GeneratePage {
    * token, attempt and second.
    */
   private runMetrics: VersionMetrics = new VersionMetrics()
-  /** Model requests this run sent: attempts and repairs, auxiliary agent calls, selector calls, server requests. */
+  /** Writer requests only; selector/native invocations are recorded at the shared boundary. */
   private runModelCalls: number = 0
   private metricRunId: number = -1
   private metricMode: string = ''
@@ -660,6 +663,21 @@ export struct GeneratePage {
   private finishMetrics(run: number): void {
     if (this.metricRunId !== run) { return }
     this.collectMetricSideCalls(run)
+    this.selectorMetrics = selectorCalls(this.activeOperation)
+    this.stages = selectorStages(this.stages, this.selectorMetrics)
+    this.services = serviceNotes()
+    this.troubleNote = serviceTrouble()
+    let selectors = selectorTotals(this.selectorMetrics)
+    if (selectors.calls > 0) {
+      // Selector usage has its own tariff; never price TypeSafe tokens as writer tokens.
+      for (let metrics of [this.metricTotals, this.runMetrics]) {
+        metrics.inputTokens = this.measuredTotal(metrics.inputTokens, selectors.inputTokens)
+        metrics.cacheHitTokens = this.measuredTotal(metrics.cacheHitTokens, selectors.cacheHitTokens)
+        metrics.outputTokens = this.measuredTotal(metrics.outputTokens, selectors.outputTokens)
+        metrics.estimatedUsd = this.measuredTotal(metrics.estimatedUsd, selectors.estimatedUsd)
+      }
+      if (selectors.partial) { this.markMetricsPartial() }
+    }
     let elapsed = Math.max(0, Date.now() - this.genStartTime)
     this.metricTotals.elapsedMs += elapsed
     // Not accumulated: the record is this run's wall clock, not the session's.
@@ -702,7 +720,13 @@ export struct GeneratePage {
       rec.verdict = this.status
       rec.elapsedMs = run.elapsedMs
       rec.attempts = run.attempts
-      rec.modelCalls = this.runModelCalls
+      let selectors = selectorTotals(this.selectorMetrics)
+      rec.writerCalls = this.runModelCalls
+      rec.selectorCalls = this.selectorMetrics
+      rec.selectorMs = selectors.ms
+      rec.selectorHttpRequests = selectors.requests
+      rec.localSelectorCalls = selectors.localCalls
+      rec.modelCalls = this.runModelCalls + selectors.requests + selectors.localCalls
       rec.inputTokens = run.inputTokens
       rec.cacheHitTokens = run.cacheHitTokens
       rec.outputTokens = run.outputTokens
@@ -1026,6 +1050,7 @@ export struct GeneratePage {
    * it re-renders when the proxy toggle flips.
    */
   private selectorNote(): string {
+    if (settings.useLocalSelector()) { return 'Selector: local experimental / ' + localJev.statusNote() }
     if (this.jevProxyOn) { return 'Selector: cloud proxy' }
     if (settings.hasSelectorKey()) { return 'Selector: TypeSafe' }
     return 'No selector (agent route off)'
@@ -1190,6 +1215,7 @@ export struct GeneratePage {
     this.attempts = []
     this.totalMs = 0
     this.sideCalls = []
+    this.selectorMetrics = []
     this.stages = []
     this.services = []
     this.leftOut = []
@@ -1203,6 +1229,10 @@ export struct GeneratePage {
     if (this.disposed || this.prompt.trim().length === 0 || this.baseError.length > 0 || this.generating || this.snapshotting) { return }
     // Sent before the prompt and the catalogue were read: it goes when they are (aboutToAppear).
     if (!this.resourcesLoaded) { this.runOnOpen = true; return }
+    if (this.mode === MODE_DEEPSEEK && settings.useLocalSelector() && !localJev.isReady()) {
+      this.status = 'Local selector unavailable: ' + localJev.statusNote()
+      return
+    }
     if (this.compiledSource.length > 0) { this.previousSource = this.compiledSource }
     if (this.mode === MODE_SERVER) {
       if (!settings.hasServerUrl()) { this.checkServer(); return }
@@ -1282,13 +1312,6 @@ export struct GeneratePage {
     }, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate, this.surfaceGuide, operation)
     host.worldGuide = this.worldGuide
     host.ask = (question: AgentQuestion): Promise<PersonAnswer> => this.askPerson(question, run, operation)
-    // Every selector call the agent makes goes through host.askJev; count each
-    // as one model request of this run.
-    let askJevForRun = host.askJev
-    host.askJev = async (body: string): Promise<string> => {
-      this.countModelCall(run)
-      return askJevForRun(body)
-    }
     let outcome: RouteOutcome
     try {
       outcome = await this.metricWork(run, (): Promise<RouteOutcome> => buildScreen(route, host))
@@ -1328,7 +1351,8 @@ export struct GeneratePage {
     fields['sketchMs'] = composed.sketchMs
     fields['firstPreviewMs'] = result.firstPreviewMs
     fields['previews'] = result.previews
-    fields['jevMs'] = composed.jevMs
+    fields['initialJevMs'] = composed.jevMs
+    fields['jevMs'] = selectorTotals(selectorCalls(this.activeOperation)).ms
     fields['ms'] = result.ms
     fields['sketch'] = composed.sketch
     fields['answers'] = composed.answers
@@ -1859,6 +1883,8 @@ export struct GeneratePage {
   private closeRun(byAgent: boolean, attempts: number): void {
     let ms = this.totalMs > 0 ? this.totalMs : Date.now() - this.genStartTime
     this.sideCalls = deepseek.getSideCalls(this.activeOperation)
+    this.selectorMetrics = selectorCalls(this.activeOperation)
+    this.stages = selectorStages(this.stages, this.selectorMetrics)
     let rest = ms - appMs(this.stages) - yourMs(this.stages)
     let stages = this.stages.slice()
     if (byAgent) {
@@ -2137,6 +2163,10 @@ export struct GeneratePage {
     // A change that only adds, removes, replaces or moves a block of a composed screen is made on its
     // record, with no model rewrite; anything else, and any step that does not hold, refines as before.
     // Make widget is not a structural edit: only the model, told what a widget may add, writes it.
+    if (this.mode === MODE_DEEPSEEK && settings.useLocalSelector() && !localJev.isReady()) {
+      this.status = 'Local selector unavailable: ' + localJev.statusNote()
+      return
+    }
     if (!this.makeWidget && this.compositionJson.length > 0 && this.mode === MODE_DEEPSEEK && templateSelectEnabled() &&
         settings.hasSelector()) {
       this.tryStructuralEdit(ask)
@@ -2157,6 +2187,7 @@ export struct GeneratePage {
     this.generating = true
     this.cancelRequested = false
     let run = ++this.runId
+    this.resetRunMetrics()
     this.genStartTime = Date.now()
     this.markMetricsPartial()
     this.status = 'Checking whether this changes the structure...'
@@ -2165,8 +2196,6 @@ export struct GeneratePage {
       result = await this.metricWork(run, (): Promise<EditResult> => editComposition(ask, record!, this.mode,
         async (request: string, c: Composition): Promise<CompositionEdit> => {
           throwIfCancelled(operation)
-          // Each structural decision is one selector (model) request.
-          this.countModelCall(run)
           let edit = await selectEdit(request, c, settings.getSelectorKey(), operation)
           throwIfCancelled(operation)
           return edit
@@ -2262,17 +2291,12 @@ export struct GeneratePage {
     this.generating = true
     this.cancelRequested = false
     let run = continuing ? this.runId : ++this.runId
-    if (!continuing) { this.genStartTime = Date.now() }
+    if (!continuing) { this.resetRunMetrics(); this.genStartTime = Date.now() }
     this.markMetricsPartial()
     let host = appAgentHost((text: string): void => { if (run === this.runId) { this.status = text } },
       (_vbc2: string): void => {}, (): boolean => run !== this.runId || this.cancelRequested,
       this.promptTemplate, this.surfaceGuide, operation)
     host.worldGuide = this.worldGuide
-    let askJevForRun = host.askJev
-    host.askJev = async (body: string): Promise<string> => {
-      this.countModelCall(run)
-      return askJevForRun(body)
-    }
     let base = this.compiledSource
     let record: Composition | null = this.compositionJson.length > 0 ? compositionFromJson(this.compositionJson) : null
     let source = ''
@@ -2363,18 +2387,12 @@ export struct GeneratePage {
     this.generating = true
     this.cancelRequested = false
     let run = continuing ? this.runId : ++this.runId
-    if (!continuing) { this.genStartTime = Date.now() }
+    if (!continuing) { this.resetRunMetrics(); this.genStartTime = Date.now() }
     this.markMetricsPartial()
     let host = appAgentHost((text: string): void => { if (run === this.runId) { this.status = text } },
       (_vbc2: string): void => {}, (): boolean => run !== this.runId || this.cancelRequested,
       this.promptTemplate, this.surfaceGuide, operation)
 host.worldGuide = this.worldGuide
-    // The edit agent's selector calls are model requests of this run too.
-    let askJevForRun = host.askJev
-    host.askJev = async (body: string): Promise<string> => {
-      this.countModelCall(run)
-      return askJevForRun(body)
-    }
     let base = this.compiledSource
     let made: SurfaceEdit
     try {
@@ -2433,16 +2451,13 @@ host.worldGuide = this.worldGuide
     this.generating = true
     this.cancelRequested = false
     let run = ++this.runId
+    let operation = this.beginOperation()
+    this.resetRunMetrics()
     this.genStartTime = Date.now()
     this.markMetricsPartial()
     let host = appAgentHost((text: string): void => { if (run === this.runId) { this.status = text } },
-      (_vbc2: string): void => {}, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate)
-    // The widget agent's selector calls are model requests of this run too.
-    let askJevForRun = host.askJev
-    host.askJev = async (body: string): Promise<string> => {
-      this.countModelCall(run)
-      return askJevForRun(body)
-    }
+      (_vbc2: string): void => {}, (): boolean => run !== this.runId || this.cancelRequested,
+      this.promptTemplate, this.surfaceGuide, operation)
     // Redo: neither the old widget nor what it was asked to show goes to the model, or it makes the same one again.
     let base = this.widgetFresh ? withoutWidget(this.compiledSource) : this.compiledSource
     let madeFor = this.modelRequestHistory()
@@ -2871,7 +2886,31 @@ host.worldGuide = this.worldGuide
     if (!call.ok) { return 'failed' }
     return call.inputTokens + ' in' + (call.cachedTokens > 0 ? ' (' + call.cachedTokens + ' cached)' : '') + ' \u00B7 ' +
       call.outputTokens + ' out' + (call.ms > 0 && call.outputTokens > 0 ? ' (' + Math.round(call.outputTokens * 1000 / call.ms) + ' tok/s)' : '') +
-      ' \u00B7 ~' + this.formatUsd(this.costOf(call.inputTokens, call.cachedTokens, call.outputTokens))
+      (this.metricPriced ? ' \u00B7 ~' + this.formatUsd(this.costOf(call.inputTokens, call.cachedTokens, call.outputTokens)) : ' · cost unknown')
+  }
+
+  private selectorDetail(call: SelectorCall): string {
+    let cost = call.backend === 'local-experimental' ? '$0 API cost' :
+      (call.estimatedUsd >= 0 ? '~' + this.formatUsd(call.estimatedUsd) : 'cost unknown')
+    let usage = call.backend === 'local-experimental' ? '' :
+      (' · ' + (call.inputTokens >= 0 ? call.inputTokens.toString() : '?') + ' input / ' +
+      (call.outputTokens >= 0 ? call.outputTokens.toString() : '?') + ' output tokens')
+    return call.answered.toString() + '/' + call.questions.toString() + ' questions answered · ' +
+      call.requests.toString() + ' HTTP request(s) · ' + cost + usage +
+      (call.partial ? ' (partial)' : '') + (call.cancelled ? ' · cancelled' :
+      (!call.ok ? ' · ' + call.error : ''))
+  }
+
+  @LocalBuilder
+  selectorPanel() {
+    MetricCard({ title: 'Selector calls', value: this.formatMs(selectorTotals(this.selectorMetrics).ms) }) {
+      Text('Separate from cloud planning and code writing. Local inference has no model API charge.')
+        .fontSize(11).fontColor(app.inkMuted).width('100%')
+      ForEach(this.selectorMetrics, (call: SelectorCall, index: number) => {
+        MetricLine({ title: selectorLabel(call.backend), right: this.formatMs(call.ms),
+          detail: this.selectorDetail(call), bad: !call.ok })
+      }, (call: SelectorCall, index: number) => index.toString())
+    }
   }
 
   /** The head figure of the services card, and its colour: whether anyone in this run did not answer. */
@@ -2960,7 +2999,7 @@ host.worldGuide = this.worldGuide
    */
   @LocalBuilder
   tokensPanel() {
-    MetricCard({ title: 'Model calls', value: this.mode === MODE_DEEPSEEK ? '~' + this.formatUsd(this.allCost()) : '' }) {
+    MetricCard({ title: 'Writer model calls', value: this.mode === MODE_DEEPSEEK && this.metricPriced ? '~' + this.formatUsd(this.allCost()) : '' }) {
       Row({ space: 8 }) {
         MetricTile({ label: 'Input', value: this.allInputTokens() + ' tokens', note: 'rules, request, old code' }).layoutWeight(1)
         MetricTile({ label: 'Cached', value: this.allCachedTokens() + ' tokens', note: this.allCachePercentNote() }).layoutWeight(1)
@@ -3937,6 +3976,7 @@ host.worldGuide = this.worldGuide
       if (this.tab === TAB_METRICS) {
         Column({ space: 10 }) {
           if (this.stages.length > 0) { this.stagesPanel() }
+          if (this.selectorMetrics.length > 0) { this.selectorPanel() }
           if (this.lastTemplatePick.length > 0) { this.editCheckPanel() }
           if (this.attempts.length > 0) { this.attemptsPanel() }
           if (this.mode !== MODE_SERVER && (this.sideCalls.length > 0 || this.attempts.length > 0)) { this.tokensPanel() }

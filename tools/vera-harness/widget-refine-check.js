@@ -497,7 +497,7 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   const {OperationController, throwIfCancelled} = loadVera('OperationCancellation')
   const {GenerateRequest, GenerateResult} = loadVera('LlamaEngine')
   const names = ['aboutToAppear', 'makeWidgetAlone', 'doServerGenerate', 'commitSave', 'widgetSaveState', 'checkWidgetSave', 'hasResult', 'versionCount',
-    'modelRequestHistory', 'prepareRequest', 'markMetricsPartial', 'confirmScreenRemovals', 'acceptRequest', 'doRefine', 'refineWithModel', 'startAttemptOne', 'runAttempt', 'markMetricsPartial', 'callModel']
+    'modelRequestHistory', 'prepareRequest', 'confirmScreenRemovals', 'acceptRequest', 'doRefine', 'refineWithModel', 'startAttemptOne', 'runAttempt', 'markMetricsPartial', 'callModel']
   const methods = names.map(name => {
     const match = pageSource.match(new RegExp('^  (?:private )?(?:async )?' + name + '\\([^\\{]*\\{[\\s\\S]*?^  \\}', 'm'))
     assert(match, 'GeneratePage.' + name + ' must exist')
@@ -531,12 +531,12 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
       }
     }
     const dependencies = {
-      store, appUsesWidgetError, withoutWidget, hasWidgetFunction, veraStateStamp, validateWidgetRefinement,
+      store, VersionMetrics: loadVera('ProjectStore').VersionMetrics,
+      appUsesWidgetError, withoutWidget, hasWidgetFunction, veraStateStamp, validateWidgetRefinement,
       widgetRefinementError: loadVera('VeraCompiler').widgetRefinementError,
       validateWidgetOffMain: async (...args) => validateWidgetRefinement(...args),
       compileVeraSource, spliceWidget, smokeRun, widgetRefinementPrompt, Curve: {EaseInOut: 'ease-in-out'},
       ...loadVera('VeraAppRefine'),
-      VersionMetrics: loadVera('ProjectStore').VersionMetrics,
       serverUrl: () => 'http://fixture.invalid', http: {RequestMethod: {POST: 'POST'}, createHttp: () => ({
         async request(url, options) { serverRequests.push({url, ...options}); assert(serverResponse); return serverResponse },
         destroy() {}
@@ -546,7 +546,6 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
         hasServerUrl: () => true, getBaseUrl: () => 'https://fixture.invalid'},
       MODE_DEEPSEEK: 'DeepSeek', MODE_LOCAL: 'Local', MODE_SERVER: 'Server', UI_SELECT_MODE: 'full', UI_SELECT_FULL: 'full',
       MAX_RETRIES: 3, GenerateRequest, GenerateResult, throwIfCancelled,
-      VersionMetrics: loadVera('ProjectStore').VersionMetrics,
       CompileError: loadVera('VeraCompiler').CompileError, widgetRepairNote,
       logStep() {}, logMark() {}, traceCompile() {},
       engine: {stop() {}, async generate(request) {
@@ -580,7 +579,8 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
       loadResources: async () => {}, currentBase: () => ({}), ratePerMillion: () => 0,
       modeLabel: () => 'fixture', originLabel: () => '', copyMetrics: metrics => metrics,
       beginOperation: () => new OperationController(), resetRunMetrics() { this.attempt = 1; this.attempts = [] },
-      countModelCall() {}, beginMetricAttempt() {}, recordMetricResult() {}, addToProgram() {}, traceEnd() {}, currentRun: () => null, countModelCall() {},
+      beginMetricAttempt() {}, recordMetricResult() {}, markMetricsPartial() {}, countModelCall() {},
+      addToProgram() {}, traceEnd() {}, currentRun: () => null,
       closeRun() {}, grammar: '', skillText: '',
       metricWork: (run, work) => work(), finishMetrics() {}, startRun() {}
     })

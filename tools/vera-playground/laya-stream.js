@@ -1,7 +1,7 @@
 // One serialized Rust stream for the playground server or standalone harness.
 'use strict'
 const cp=require('node:child_process'),readline=require('node:readline'),crypto=require('node:crypto')
-const {specification,metadata,diagnosticDecisions}=require('./local-selector')
+const {specification,metadata}=require('./local-selector')
 const localFailureMessage = error => /^(Local model unavailable|(?:Laya|Rust selector) (process (failed|exited)|startup (failed|timed out)|stream (write failed|closed)|inference timed out|response identity mismatch|call cancelled|frame too large|request too large)|Invalid (?:Laya|Rust selector) frame)$/.test(error.message)
   ? error.message : 'Selector transport or response failure'
 function localOperationalReason(response) {
@@ -21,7 +21,7 @@ class LayaStream {
     const child=cp.spawn(spec.cli,spec.args,{env:{},stdio:['pipe','pipe','pipe']})
     // The public base model can take more than 30 seconds on a wide request.
     const inferenceTimeoutMs = source.model === 'jhu-clsp/mmBERT-base' ? 120000 : this.timeoutMs
-    const state={child,source,runner,laya:spec.laya,inferenceTimeoutMs,pending:null,started,readyDone:false,failed:false,bytes:0}
+    const state={child,source,runner,inferenceTimeoutMs,pending:null,started,readyDone:false,failed:false,bytes:0}
     state.exited=new Promise(resolve=>child.once('close',resolve))
     state.ready=new Promise((resolve,reject)=>{state.readyResolve=resolve;state.readyReject=reject})
     this.state=state
@@ -72,7 +72,8 @@ class LayaStream {
       await this.retiring
       if(this.closed||signal?.aborted)throw Error(`${this.runnerName()} call cancelled`)
       if(Buffer.byteLength(body)>262144)throw Error(`${this.runnerName()} request too large`)
-      const request=JSON.parse(body),state=this.state||this.start(),cold=!state.readyDone
+      JSON.parse(body)
+      const state=this.state||this.start(),cold=!state.readyDone
       const abort=()=>this.fail(state,`${state.runner} call cancelled`)
       signal?.addEventListener('abort',abort,{once:true})
       try{
@@ -84,7 +85,6 @@ class LayaStream {
           state.pending={id,resolve,reject,timer,sent,entered,cold}
           state.child.stdin.write(`{"id":${JSON.stringify(id)},"request":${body.replace(/[\r\n]/g,' ')}}\n`)
         })
-        if(state.laya)result.response=diagnosticDecisions(result.response,request)
         result.timings.totalMs=performance.now()-entered
         return result
       }finally{signal?.removeEventListener('abort',abort)}

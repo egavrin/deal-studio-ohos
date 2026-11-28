@@ -1,31 +1,60 @@
 # Embed the local selector in the OpenHarmony app
 
-The selector is a Rust static library with embedded weights and tokenizer.
-The experimental C entry point returns scores for the app's existing JSON
-`state` and `questions`. The regular prediction entry point returns an empty
-answer map with `laya_not_human_calibrated` for embedded Laya bundles.
+The Rust static library embeds the same mmBERT shared-state Q8 bundle that
+`local-jev-shared` reads from the repository. Readiness reports the model ID
+and manifest SHA-256. The shared-state and Laya Q4 profiles expose scores
+for the app's JSON `state` and `questions` through the experimental C API.
+Regular prediction returns an empty answer map for both experimental profiles.
+
+Keep the tokenizer notice, Gemma terms, prohibited-use policy, and mmBERT
+license with distributions that include the shared-state bundle.
+[Bundle assets and terms](../../tools/vera-playground/models/mmbert-shared-state-q8/README.md)
+[Q8 HAP distribution](../../docs/local-selector-integration.md#distribute-a-shared-state-q8-hap)
 
 ## Verify on the development machine
 
-Build or obtain a Q4 bundle by following the
-[playground guide](../../tools/vera-playground/README.md). Run from the repository
-root. Set `BUNDLE` to the absolute directory with all four bundle files.
-For Cycle 2, use the directory extracted from `mmbert-small-cycle2-q4.tar.gz`.
-For the public export, use `$PWD/.local-jev/bundle-q4`.
+Run the commands from the repository root. Build the archive for the model
+you want to verify.
+
+### Build the default Q8 host archive
 
 ```sh
-BUNDLE="$PWD/.local-jev/mmbert-small-cycle2-q4"
-LAYA_BUNDLE_DIR="$BUNDLE" cargo build --locked --release \
+env -u LAYA_BUNDLE_DIR -u JEV_BUNDLE_DIR cargo build --locked --release \
   --manifest-path native/local-jev/Cargo.toml --lib
+```
+
+### Build a Laya Q4 host archive
+
+Set `BUNDLE` to the absolute directory with the four Laya Q4 bundle files.
+The command builds the host runner and the embedded archive.
+[Laya Q4 bundle instructions](../../tools/vera-playground/README.md#select-a-laya-q4-bundle)
+
+```sh
+BUNDLE=/absolute/path/to/laya-q4
+env -u JEV_BUNDLE_DIR LAYA_BUNDLE_DIR="$BUNDLE" cargo build --locked --release \
+  --manifest-path native/local-jev/Cargo.toml --lib --bin local-laya
+```
+
+`JEV_BUNDLE_DIR` selects the existing legacy BERT prediction bundle.
+Only one bundle variable can be set for each build.
+
+### Verify the host C ABI
+
+Link the probe again after each change of model.
+
+```sh
+mkdir -p .local-jev
 cc -I native/local-jev/include tools/local-jev/abi-check.c \
   native/local-jev/target/release/liblocal_jev.a -lpthread -ldl -lm \
   -o .local-jev/abi-check
-.local-jev/abi-check
 ```
 
-The check expects ABI version 1, an empty answer map from
-`local_jev_predict`, and finite diagnostic logits from
-`local_jev_diagnostic_scores`. Both diagnostic calls use the same loaded model.
+Run `.local-jev/abi-check` for shared-state Q8.
+Run `.local-jev/abi-check --laya` for Laya Q4.
+
+The check verifies ABI version 1, guarded prediction, finite diagnostic scores,
+and experimental decisions. For Q8, it also verifies the pinned manifest.
+Readiness and scoring use the same loaded model.
 
 ## Build for arm64 OpenHarmony
 
@@ -40,18 +69,67 @@ export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_OHOS_LINKER=/path/to/aarch64-unknown-l
 export CC_aarch64_unknown_linux_ohos="$CARGO_TARGET_AARCH64_UNKNOWN_LINUX_OHOS_LINKER"
 export CXX_aarch64_unknown_linux_ohos=/path/to/aarch64-unknown-linux-ohos-clang++.sh
 export AR_aarch64_unknown_linux_ohos=/path/to/native/llvm/bin/llvm-ar
-LAYA_BUNDLE_DIR="$BUNDLE" cargo build --locked --release \
+```
+
+### Build the default Q8 archive for OpenHarmony
+
+```sh
+env -u LAYA_BUNDLE_DIR -u JEV_BUNDLE_DIR cargo build --locked --release \
   --manifest-path native/local-jev/Cargo.toml --lib \
   --target aarch64-unknown-linux-ohos
 ```
 
-The archive path is
+### Build a Laya Q4 archive for OpenHarmony
+
+Set `BUNDLE` to the absolute directory with the four Laya Q4 bundle files.
+
+```sh
+BUNDLE=/absolute/path/to/laya-q4
+env -u JEV_BUNDLE_DIR LAYA_BUNDLE_DIR="$BUNDLE" cargo build --locked --release \
+  --manifest-path native/local-jev/Cargo.toml --lib \
+  --target aarch64-unknown-linux-ohos
+```
+
+Both commands write the archive to
 `native/local-jev/target/aarch64-unknown-linux-ohos/release/liblocal_jev.a`.
 Each app ABI needs its own Rust target and archive.
 
-## Add an opt-in NAPI bridge
+### Verify the OpenHarmony C ABI
 
-For a test build, add a `liblocaljev.so` NAPI module in
+Link the probe with the archive for the selected model.
+Transfer it to the phone and set its executable permission.
+
+```sh
+mkdir -p .local-jev
+"$CC_aarch64_unknown_linux_ohos" -I native/local-jev/include tools/local-jev/abi-check.c \
+  native/local-jev/target/aarch64-unknown-linux-ohos/release/liblocal_jev.a \
+  -ldl -lm -o .local-jev/abi-check-ohos
+hdc file send .local-jev/abi-check-ohos /data/local/tmp/vera-local-jev-abi-check
+hdc shell chmod +x /data/local/tmp/vera-local-jev-abi-check
+```
+
+Run `hdc shell /data/local/tmp/vera-local-jev-abi-check` for shared-state Q8.
+Run `hdc shell /data/local/tmp/vera-local-jev-abi-check --laya` for Laya Q4.
+
+## Integrated experimental adapter
+
+The developer-only bridge is implemented in `entry/src/main/cpp/napi_local_jev.cpp`,
+with `liblocaljev.so` types, async readiness and experimental decision calls.
+`VeraSelector.ets` routes both generation and structural edits through it when
+Settings > Jev selector is Local experimental (or a trusted native launch supplies
+`--ps localJev 1`). The demo choice persists across restarts. Cloud defaults and guarded regular
+prediction remain unchanged. See [integration and verification](../../docs/local-selector-integration.md)
+for the actual build, host usage, cancellation limits and remaining device checks.
+
+The C ABI also exposes `local_jev_status` (loads the model off-thread) and
+`local_jev_experimental_decisions` (uncalibrated temperature-1 answers plus raw scores).
+The host uses `local-jev-shared` for shared-state Q8 and
+`local-laya --experimental-decisions` for Laya. Both use the same Rust policy for
+experimental decisions.
+
+## NAPI wiring reference
+
+The integrated test module is linked in
 [entry/src/main/cpp/CMakeLists.txt](../../entry/src/main/cpp/CMakeLists.txt).
 Use the archive built for that app ABI and the [C header](include/local_jev.h).
 Pass `-DVERA_LOCAL_JEV_ARCHIVE=/absolute/path/to/liblocal_jev.a` in the
@@ -64,26 +142,18 @@ target_include_directories(localjev PRIVATE
 target_link_libraries(localjev PRIVATE "${VERA_LOCAL_JEV_ARCHIVE}" libace_napi.z.so)
 ```
 
-Use the async-work and module registration pattern in
-[napi_llama.cpp](../../entry/src/main/cpp/napi_llama.cpp). Name the new
-registration `localjev`. Copy the ArkTS input to a UTF-8 string before queuing
-the work. In the worker, call `local_jev_diagnostic_scores` with the buffer and
-its byte length. Copy the returned NUL-terminated JSON string and call
-`local_jev_free` once. Resolve the promise with the copied string on the
-completion thread. Reject it if the input, ABI version, or native call fails.
-Discard the result if its app operation was cancelled.
-
-Follow the [existing native type package](../../entry/src/main/cpp/types/libllama)
-and add a `liblocaljev.so` file dependency to
-[entry/oh-package.json5](../../entry/oh-package.json5). Declare the diagnostic
-method in the new package:
+The bridge copies UTF-8 input before queuing work, calls the experimental Rust API
+on a worker, copies and frees the returned string, and resolves its promise on the
+completion thread. `LocalJev.ets` discards cancelled results. Native work is bounded
+to one operation; cancellation does not interrupt an already-running inference.
+The type package and dependency are included:
 
 ```typescript
-export const diagnosticScores: (request: string) => Promise<string>
+export const status: () => Promise<string>
+export const experimentalDecisions: (request: string) => Promise<string>
 ```
 
-Wire the experimental call into a developer-only action. Use a synthetic
-request first, then inspect scores from the app's existing decision bodies:
+Both entry points feed the application's common selector boundary:
 
 - Generation and component selection use `host.askJev` in
   [AgentAppHost.ets](../../entry/src/main/ets/vera/agent/AgentAppHost.ets)
@@ -91,19 +161,19 @@ request first, then inspect scores from the app's existing decision bodies:
   [VeraCompose.ets](../../entry/src/main/ets/vera/VeraCompose.ets).
 - Structural edits send the body built by `buildEditRequest` in
   [VeraComposition.ets](../../entry/src/main/ets/vera/VeraComposition.ets).
-  This path has its own transport call.
+  It now uses the same `VeraSelector.askSelector` transport as generation.
 - [GeneratePage.ets](../../entry/src/main/ets/pages/GeneratePage.ets)
-  checks `settings.hasSelector()` before these paths. A future offline mode
-  needs a separate local availability check at both gates.
+  checks `settings.hasSelector()` before these paths; in experimental local mode
+  that checks the loaded model's readiness rather than cloud credentials.
 
-Use the diagnostic reply only for inspection. Keep the existing option filters
-and empty-answer behavior. DeepSeek still handles plans, section content, and
-custom code. For a future offline selector, keep unavailable decisions local
-and return uncertainty to the caller.
+Experimental replies are explicitly uncalibrated and not production-approved.
+Existing option filters and empty-answer behavior remain. DeepSeek still handles
+plans, section content and custom code. Unavailable local decisions remain local:
+there is no cloud selector fallback.
 
-The commands in this guide cover the host C ABI and describe the phone wiring.
-Verify the OpenHarmony build, HAP loading, cancellation, and warm inference on
-the target phone before enabling any local decision route.
+Verify HAP loading, cancellation and warm inference on the target phone before
+relying on the integrated experimental route. Production remains separately gated
+on human evaluation, calibration and release acceptance.
 
 ## Build the experimental Candle scheduler
 

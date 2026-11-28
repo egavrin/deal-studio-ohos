@@ -4,6 +4,25 @@ project(llama_napi)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Optional Rust archive with a pinned embedded Laya bundle. Missing means an honest
+# unavailable stub, never a cloud fallback. Supply via -D or the build environment.
+set(VERA_LOCAL_JEV_ARCHIVE "" CACHE FILEPATH "Local Jev Rust archive")
+# Explicit environment paths are instructions, including an empty value to build
+# the stub. Override stale cache entries when switching bundles incrementally.
+if(DEFINED ENV{VERA_LOCAL_JEV_ARCHIVE})
+  set(VERA_LOCAL_JEV_ARCHIVE "$ENV{VERA_LOCAL_JEV_ARCHIVE}")
+endif()
+add_library(localjev SHARED napi_local_jev.cpp)
+target_link_libraries(localjev PRIVATE libace_napi.z.so libhilog_ndk.z.so)
+if(VERA_LOCAL_JEV_ARCHIVE)
+  if(NOT EXISTS "${VERA_LOCAL_JEV_ARCHIVE}")
+    message(FATAL_ERROR "VERA_LOCAL_JEV_ARCHIVE does not exist: ${VERA_LOCAL_JEV_ARCHIVE}")
+  endif()
+  target_compile_definitions(localjev PRIVATE VERA_LOCAL_JEV=1)
+  target_include_directories(localjev PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../../../native/local-jev/include")
+  target_link_libraries(localjev PRIVATE "${VERA_LOCAL_JEV_ARCHIVE}" dl m)
+endif()
+
 # llama.cpp source -- fetch the pinned commit into this directory:
 #   cd entry/src/main/cpp
 #   git init llama.cpp && cd llama.cpp
@@ -148,3 +167,11 @@ else()
   target_compile_definitions(phys PRIVATE PHYS_STUB=1)
   target_link_libraries(phys PRIVATE libace_napi.z.so libhilog_ndk.z.so)
 endif()
+
+
+# MindSpore Lite NDK NNRT probe (napi_msnnrt.cpp): runs the converted decision model
+# on the Kirin NPU via NNRT using the C NDK (the ArkTS @ohos.ai.mindSporeLite API's
+# getInputs() is undefined for NNRT models). libmindspore_lite_ndk.so + mindspore/*.h
+# come from the OHOS SDK sysroot; the phone provides the runtime.
+add_library(msnnrt SHARED napi_msnnrt.cpp)
+target_link_libraries(msnnrt PRIVATE mindspore_lite_ndk libace_napi.z.so libhilog_ndk.z.so)

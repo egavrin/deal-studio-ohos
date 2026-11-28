@@ -13,6 +13,7 @@
 'use strict'
 const fs = require('node:fs')
 const path = require('node:path')
+const {AsyncLocalStorage} = require('node:async_hooks')
 // --host-lookup DIR: the phone's function lookup run on the host (host-lookup.js) from DIR, what was pulled from the phone
 // (models/, vera/ caches, intent-registry.json). Read before anything is loaded: its stand-ins must be in place first.
 const hostLookupDir = (() => { const i = process.argv.indexOf('--host-lookup'); return i < 0 ? '' : process.argv.splice(i, 2)[1] })()
@@ -49,6 +50,10 @@ if (relayLocal && (selector !== 'local' || !process.connected)) throw Error('Loc
 const {LayaStream, localFailureMessage} = require('../vera-playground/laya-stream')
 const {askCloud} = require('../vera-playground/selector-comparison')
 const localStream = selector === 'local' && !relayLocal ? new LayaStream() : null
+// Standalone generation uses the same application boundary as structural editing.
+const localEvents = new AsyncLocalStorage()
+const localAdapter = localStream ? require('../local-jev/host-selector').installLocalSelector({loadVera,stream:localStream,
+  onEvent:event => { localEvents.getStore().event = event }}) : null
 let relayId = 0
 function askLocal(body) {
   if (localStream) return localStream.query(body)
@@ -93,7 +98,7 @@ const lookups = lookupFile ? new Map(Object.entries(JSON.parse(fs.readFileSync(l
 const lookupKey = (tool, query, both) => tool + '\u0000' + query + '\u0000' + (both ? '1' : '0')
 // The log of the request being run, for the lookups the route's own modules make (they are not given a host); requests run
 // side by side (-j), so it goes with each one's async calls.
-const requestLog = new (require('node:async_hooks').AsyncLocalStorage)()
+const requestLog = new AsyncLocalStorage()
 function requireTransport() {
   const {failure} = requestLog.getStore().transport
   if (failure) throw Error(failure)
@@ -225,8 +230,15 @@ function host(log, dir) {
     let text = '', error = '', local = {}
     try {
       if (selector === 'local') {
-        local = await askLocal(body)
-        text = JSON.stringify(local.response)
+        if (localAdapter) {
+          const call = {}
+          text = await localEvents.run(call, () => loadVera('VeraSelector').askSelector(body, ''))
+          local = call.event || {}
+          if (!local.source) throw Error(local.error || 'Local model unavailable')
+        } else {
+          local = await askLocal(body)
+          text = JSON.stringify(local.response)
+        }
       } else if (selector === 'cloud') text = await askCloud(body, process.env.TYPESAFE_API_KEY)
       else {
         const res = await fetch('https://api.typesafe.ai/v1/systemone', {method: 'POST',
@@ -582,5 +594,5 @@ async function runOne(log, [label, prompt]) {
   fs.writeFileSync(path.join(out, 'language.txt'), language)
   const queue = prompts.slice()
   try { await Promise.all(Array.from({length: Math.min(jobs, queue.length)}, async () => { while (queue.length) await one(queue.shift()) })) }
-  finally { localStream?.close(); if (relayLocal && process.connected) process.disconnect() }
+  finally { localAdapter?.close(); localStream?.close(); if (relayLocal && process.connected) process.disconnect() }
 })()
