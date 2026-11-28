@@ -12,7 +12,7 @@ import { SelectorCall, beginSelectorCall, finishSelectorCall, selectorUsage, sel
 const JEV_ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
 
 export async function askSelector(body: string, apiKey: string, cancellation?: OperationCancellation,
-    cloudOnly: boolean = false): Promise<string> {
+    cloudOnly: boolean = false, stageMs: number = -1, callOut?: SelectorCall[]): Promise<string> {
   throwIfCancelled(cancellation)
   // The hybrid decision route sends the questions its on-device model declines
   // to the cloud even when the selector itself is configured local: one local
@@ -21,6 +21,8 @@ export async function askSelector(body: string, apiKey: string, cancellation?: O
     (settings.useJevProxy() ? 'llm' : 'typesafe')
   let call = beginSelectorCall(backend, backend === 'llm' ? settings.getModel() :
     (backend === 'typesafe' ? 'jev-latest' : localJev.identity()), body, cancellation)
+  if (stageMs >= 0) { call.stageMs = stageMs }
+  if (callOut !== undefined) { callOut.push(call) }
   let started = Date.now()
   try {
     let reply = await sendSelector(body, apiKey, call, cancellation)

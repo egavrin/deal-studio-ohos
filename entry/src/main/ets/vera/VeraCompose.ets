@@ -4758,8 +4758,8 @@ export class ComposeResult {
  * hybrid route needs a cloud source for the half its own model declines.
  */
 async function askJevCloud(body: string, apiKey: string, cancellation?: OperationCancellation,
-    cloudOnly: boolean = false): Promise<string> {
-  return askSelector(body, apiKey, cancellation, cloudOnly)
+    cloudOnly: boolean = false, stageMs: number = -1, callOut?: SelectorCall[]): Promise<string> {
+  return askSelector(body, apiKey, cancellation, cloudOnly, stageMs, callOut)
 }
 
 /** How many answers a Jev reply carries (0 for '', unparseable, or {"answers":{}}). */
@@ -4792,11 +4792,16 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
   let split = splitJevBody(body)
   // The hard-tier cloud batch runs concurrently with the local forward — the two are independent and the cloud is fast, so the total becomes max(cloud, local) not cloud + local.
   let hardPromise: Promise<string> = Promise.resolve('')
+  let hardCalls: SelectorCall[] = []
   if (split.hardCount > 0) {
-    hardPromise = askJevCloud(split.hard, apiKey, cancellation, true)
+    // Its ordinary duration is shown in the Jev calls card, but only the part
+    // that outlasts the local forward belongs in the wall-clock stage total.
+    hardPromise = askJevCloud(split.hard, apiKey, cancellation, true,
+      split.easyCount > 0 ? 0 : -1, hardCalls)
   }
   let easyReply = ''
   let hardReply = ''
+  let localWallMs = 0
   if (split.easyCount > 0) {
     // The local forward is a Jev call like the cloud ones: the Metrics tab and
     // the run log must show its share of the time and the questions it answered.
@@ -4817,9 +4822,10 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
       easyReply = ''
     }
     throwIfCancelled(cancellation)
+    localWallMs = Date.now() - localStarted
     let localAnswers = jevAnswerCount(easyReply)
     if (localCall !== null && !localClosed) {
-      finishLocalDecisionCall(localCall, localAnswers, Date.now() - localStarted, false)
+      finishLocalDecisionCall(localCall, localAnswers, localWallMs, false)
       localClosed = true
     }
     // Observability: without this line the local share of a hybrid run is
@@ -4840,6 +4846,9 @@ async function askJevViaLocal(body: string, apiKey: string, cancellation?: Opera
     }
   }
   hardReply = await hardPromise
+  if (hardCalls.length > 0) {
+    hardCalls[0].stageMs = Math.max(0, hardCalls[0].ms - localWallMs)
+  }
   throwIfCancelled(cancellation)
   return mergeJevAnswers(hardReply, easyReply)
 }

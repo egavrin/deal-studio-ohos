@@ -49,8 +49,16 @@ const near = (actual, expected) => assert(Math.abs(actual-expected)<1e-12,`${act
   assert.equal(hc.questions,2);assert.equal(hc.answered,1);assert.equal(hc.ok,true)
   assert.equal(hc.finished,true);assert.equal(hc.ms,40)
   assert.equal(M.selectorLabel('local-decision'),'On-device Jev model (Laya)')
+  // A cloud call that overlapped the local forward: shown with its real 10 ms in
+  // the detail list, but contributing only its residual to the stage total.
+  const hcloud=M.beginSelectorCall('llm','fixture',body,hybrid)
+  Object.assign(hcloud,{ms:10,stageMs:0,finished:true,ok:true,answered:2,requests:1})
+  const overlap=M.selectorTotals(M.selectorCalls(hybrid))
+  assert.equal(overlap.ms,40,'stage total keeps the wall-clock local time, not local+overlap')
+  assert.equal(overlap.requests,1,'detail requests are still counted')
   const hybridStages=M.selectorStages(coarse,M.selectorCalls(hybrid))
   assert(hybridStages.some(s=>s.name==='On-device Jev model (Laya)'&&s.ms===40))
+  assert.equal(hybridStages.find(s=>s.name==='Cloud LLM Jev approximation').ms,0)
   globalThis.__veraLocalJev.experimentalDecisions=async()=>{throw Error('inference failed')}
   const failed=new OperationController();await askSelector(body,'',failed)
   assert.equal(M.selectorCalls(failed)[0].ok,false);assert.equal(H.serviceNotes()[0].failed,1)

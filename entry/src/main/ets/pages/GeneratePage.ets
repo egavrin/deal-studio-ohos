@@ -2906,7 +2906,7 @@ host.worldGuide = this.worldGuide
   @LocalBuilder
   selectorPanel() {
     MetricCard({ title: 'Jev decision calls', value: this.formatMs(selectorTotals(this.selectorMetrics).ms) }) {
-      Text('Every source this run used: on-device Laya, TypeSafe Jev, or the cloud model. Local inference has no model API charge.')
+      Text('Every source this run used. Rows show each call\'s own time; the headline is wall-clock, so concurrent local and cloud calls are not double-counted. Local inference has no model API charge.')
         .fontSize(11).fontColor(app.inkMuted).width('100%')
       ForEach(this.selectorMetrics, (call: SelectorCall, index: number) => {
         MetricLine({ title: selectorLabel(call.backend), right: this.formatMs(call.ms),

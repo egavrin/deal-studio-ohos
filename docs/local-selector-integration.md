@@ -157,8 +157,11 @@ rows name On-device Jev model (Laya), Local Jev selector (experimental), TypeSaf
 Jev or Cloud LLM Jev approximation, show batch wall time, answered/requested
 question counts and actual HTTP attempts (including proxy retries). A hybrid run
 therefore shows the local model's time and the questions it answered, next to the
-cloud calls that answered the rest. Local calls show **$0 API cost** and zero HTTP
-requests; this does not mean cloud planning/writing is free. Sub-50ms and even
+cloud calls that answered the rest. A cloud call that ran concurrently with the
+local forward is shown in full in the call rows but contributes only its residual
+to the wall-clock stage total, so the stages still sum to the run's elapsed time.
+Local calls show **$0 API cost** and zero HTTP requests; this does not mean cloud
+planning/writing is free. Sub-50ms and even
 zero-rounded calls are retained. Coarse agent Jev stages are replaced, not added
 to, with the measured boundary totals. `compose.jevMs` sums all Jev phases
 including local inference; `initialJevMs` preserves the earlier

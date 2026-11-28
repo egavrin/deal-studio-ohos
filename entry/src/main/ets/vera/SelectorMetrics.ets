@@ -9,6 +9,10 @@ export class SelectorCall {
   backend: string = ''
   model: string = ''
   ms: number = 0
+  /** Time this call contributes to the run's Jev stage total. -1 means `ms`.
+   *  The hybrid cloud half runs concurrently with the Laya forward, so its call
+   *  is shown in full but must not be added to the wall-clock stage twice. */
+  stageMs: number = -1
   startedAt: number = Date.now()
   finished: boolean = false
   questions: number = 0
@@ -160,6 +164,7 @@ export function finishSelectorCall(call: SelectorCall, reply: string): void {
 export function finishLocalDecisionCall(call: SelectorCall, answered: number, ms: number,
     failed: boolean = false): void {
   call.ms = Math.max(0, ms)
+  call.stageMs = Math.max(0, ms)
   call.answered = Math.max(0, Math.min(answered, call.questions))
   call.requests = 0
   call.inputTokens = 0
@@ -170,6 +175,10 @@ export function finishLocalDecisionCall(call: SelectorCall, answered: number, ms
   call.ok = !failed
   call.error = failed ? 'on-device inference failed' : ''
   call.finished = true
+}
+
+function stageMsOf(call: SelectorCall): number {
+  return call.stageMs >= 0 ? call.stageMs : call.ms
 }
 
 export class SelectorTotals {
@@ -196,7 +205,7 @@ export function selectorTotals(list: SelectorCall[]): SelectorTotals {
     out.requests += call.requests
     if (call.backend === 'local-experimental') { out.localCalls++; out.localSelectorCalls++ }
     if (call.backend === 'local-decision') { out.localCalls++; out.localDecisionCalls++ }
-    out.ms += call.ms
+    out.ms += stageMsOf(call)
     out.inputTokens = plus(out.inputTokens, call.inputTokens)
     out.cacheHitTokens = plus(out.cacheHitTokens, call.cacheHitTokens)
     out.outputTokens = plus(out.outputTokens, call.outputTokens)
